@@ -1,0 +1,155 @@
+// ============================================================================
+// GameProvider owns the authoritative game state (in a ref) and drives the
+// simulation with a requestAnimationFrame loop. UI re-renders are throttled so
+// a 60fps sim doesn't force 60fps React renders. Actions mutate the ref and
+// request an immediate render.
+// ============================================================================
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import type { GameState, Speed } from '../game/types';
+import { advance } from '../game/simulation';
+import { createInitialState } from '../game/init';
+import { clearSave, loadOrCreate, saveGame } from '../game/storage';
+
+interface GameContextValue {
+  state: GameState;
+  /** Force a re-render after mutating state directly via an action. */
+  mutate: (fn: (s: GameState) => void) => void;
+  setSpeed: (speed: Speed) => void;
+  togglePause: () => void;
+  setPaused: (paused: boolean) => void;
+  newGame: () => void;
+  continueYear: () => void;
+  saveNow: () => void;
+}
+
+const GameContext = createContext<GameContextValue | null>(null);
+
+const RENDER_INTERVAL_MS = 90; // ~11 fps UI updates
+const AUTOSAVE_INTERVAL_MS = 4000;
+
+export function GameProvider({ children }: { children: ReactNode }) {
+  const stateRef = useRef<GameState>(loadOrCreate());
+  const [, forceRender] = useState(0);
+  const render = useCallback(() => forceRender((n) => n + 1), []);
+
+  const lastFrameRef = useRef<number>(performance.now());
+  const lastRenderRef = useRef<number>(0);
+  const lastSaveRef = useRef<number>(performance.now());
+
+  useEffect(() => {
+    // A setInterval ticker drives the simulation from wall-clock deltas. This is
+    // more robust than requestAnimationFrame, which stalls on hidden/offscreen
+    // pages (and never fires for headless browsers). advance() caps the delta so
+    // a long gap between ticks can't skip events.
+    const TICK_MS = 60;
+    lastFrameRef.current = performance.now();
+    const id = setInterval(() => {
+      const now = performance.now();
+      const dt = now - lastFrameRef.current;
+      lastFrameRef.current = now;
+
+      const st = stateRef.current;
+      if (!st.paused && !st.gameOver && !st.yearComplete) {
+        advance(st, dt);
+      }
+
+      if (now - lastRenderRef.current >= RENDER_INTERVAL_MS) {
+        lastRenderRef.current = now;
+        render();
+      }
+      if (now - lastSaveRef.current >= AUTOSAVE_INTERVAL_MS) {
+        lastSaveRef.current = now;
+        saveGame(st);
+      }
+    }, TICK_MS);
+    return () => clearInterval(id);
+  }, [render]);
+
+  // Save on tab hide / unload so nothing is lost.
+  useEffect(() => {
+    const handler = () => saveGame(stateRef.current);
+    window.addEventListener('beforeunload', handler);
+    document.addEventListener('visibilitychange', handler);
+    return () => {
+      window.removeEventListener('beforeunload', handler);
+      document.removeEventListener('visibilitychange', handler);
+    };
+  }, []);
+
+  const mutate = useCallback(
+    (fn: (s: GameState) => void) => {
+      fn(stateRef.current);
+      render();
+    },
+    [render],
+  );
+
+  const setSpeed = useCallback(
+    (speed: Speed) => mutate((s) => {
+      s.speed = speed;
+      s.paused = false;
+    }),
+    [mutate],
+  );
+
+  const togglePause = useCallback(
+    () => mutate((s) => {
+      if (s.gameOver || s.yearComplete) return;
+      s.paused = !s.paused;
+    }),
+    [mutate],
+  );
+
+  const setPaused = useCallback((paused: boolean) => mutate((s) => {
+    s.paused = paused;
+  }), [mutate]);
+
+  const newGame = useCallback(() => {
+    clearSave();
+    stateRef.current = createInitialState();
+    saveGame(stateRef.current);
+    render();
+  }, [render]);
+
+  const continueYear = useCallback(() => {
+    mutate((s) => {
+      s.yearComplete = false;
+      s.paused = true;
+    });
+  }, [mutate]);
+
+  const saveNow = useCallback(() => saveGame(stateRef.current), []);
+
+  // A FRESH value object is created on every render on purpose. The render pump
+  // (forceRender) re-renders this provider ~11x/sec; because this object's
+  // identity changes each time, every useGame() consumer re-renders and reads
+  // the latest (mutated-in-place) state. Memoizing it would freeze the UI even
+  // though the simulation keeps running. The callbacks themselves stay stable.
+  const value: GameContextValue = {
+    state: stateRef.current,
+    mutate,
+    setSpeed,
+    togglePause,
+    setPaused,
+    newGame,
+    continueYear,
+    saveNow,
+  };
+
+  return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
+}
+
+export function useGame(): GameContextValue {
+  const ctx = useContext(GameContext);
+  if (!ctx) throw new Error('useGame must be used within a GameProvider');
+  return ctx;
+}
