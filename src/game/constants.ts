@@ -4,7 +4,7 @@
 
 import type { CustomerType, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. */
@@ -192,6 +192,12 @@ export const CUSTOMER_EMOJI: Record<CustomerType, string> = {
 
 /** New-inquiry chance per week (only checked when there is free capacity). */
 export const INQUIRY_CHANCE_PER_WEEK = 0.8;
+
+/** Chance per week that an existing (loyal) customer asks to add another product line. */
+export const EXPANSION_INQUIRY_CHANCE_PER_WEEK = 0.35;
+
+/** Minimum loyalty before a customer will consider expanding its assortment. */
+export const EXPANSION_MIN_LOYALTY = 50;
 
 /** Chance a new inquiry is for a product you already actively sell (so a new
  * customer's first order isn't automatically late from the supply lead time). */

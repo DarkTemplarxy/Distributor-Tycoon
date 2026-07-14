@@ -20,6 +20,8 @@ import {
   CUSTOMER_VOLATILITY,
   CUSTOMER_VOLUME_RANGE,
   DAYS_PER_WEEK,
+  EXPANSION_INQUIRY_CHANCE_PER_WEEK,
+  EXPANSION_MIN_LOYALTY,
   INQUIRY_CHANCE_PER_WEEK,
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
@@ -40,6 +42,7 @@ import {
 } from './constants';
 import type {
   Customer,
+  CustomerLine,
   CustomerType,
   GameState,
   Inquiry,
@@ -269,19 +272,19 @@ function autoAssignWork(state: GameState): void {
 
 // --- Customer orders --------------------------------------------------------
 
-function generateCustomerOrder(state: GameState, customer: Customer): void {
+function generateCustomerOrder(state: GameState, customer: Customer, line: CustomerLine): void {
   const week = weekOf(state.totalDays);
-  const seasonal = seasonalMultiplier(customer.preferredProduct, week);
+  const seasonal = seasonalMultiplier(line.productId, week);
   const discountUplift = 1 + demandUpliftFromDiscount(customer.activeDiscount);
   const jitter = randRange(0.9, 1.1);
-  const qty = Math.max(1, Math.round(customer.contractVolume * seasonal * discountUplift * jitter));
-  const price = customer.contractPrice * (1 - customer.activeDiscount);
+  const qty = Math.max(1, Math.round(line.volume * seasonal * discountUplift * jitter));
+  const price = line.price * (1 - customer.activeDiscount);
   const dueWeek = week + customer.deliveryLeadWeeks;
 
   const order: Order = {
     id: uid('order'),
     customerId: customer.id,
-    productId: customer.preferredProduct,
+    productId: line.productId,
     quantity: qty,
     price,
     createdDay: state.totalDays,
@@ -290,7 +293,7 @@ function generateCustomerOrder(state: GameState, customer: Customer): void {
     late: false,
   };
   state.orders.push(order);
-  const product = getProduct(state, customer.preferredProduct);
+  const product = getProduct(state, line.productId);
   notify(
     state,
     `🧾 Bestellung ${customer.name}: ${qty}× ${product.emoji} ${product.name} – Lieferung bis Woche ${dueWeek}.`,
@@ -521,7 +524,9 @@ function unlockedTypes(state: GameState): CustomerType[] {
  * first order isn't guaranteed late by the supplier lead time. Only products in
  * the current assortment can ever be requested. */
 function pickInquiryProduct(state: GameState): ProductId {
-  const familiar = [...new Set(state.customers.filter((c) => c.active).map((c) => c.preferredProduct))];
+  const familiar = [
+    ...new Set(state.customers.filter((c) => c.active).flatMap((c) => c.lines.map((l) => l.productId))),
+  ];
   if (familiar.length > 0 && Math.random() < INQUIRY_FAMILIAR_PRODUCT_CHANCE) {
     return pick(familiar);
   }
@@ -553,6 +558,40 @@ function maybeGenerateInquiry(state: GameState): void {
   notify(state, `📨 Neue Kundenanfrage: ${inquiry.name} (${type}) sucht ${product.name}.`, 'info');
 }
 
+/** An existing loyal customer asks to add another in-assortment product line. */
+function maybeGenerateExpansionInquiry(state: GameState): void {
+  if (Math.random() > EXPANSION_INQUIRY_CHANCE_PER_WEEK) return;
+  const week = weekOf(state.totalDays);
+  const assortment = state.products.map((p) => p.id);
+  const eligible = state.customers.filter(
+    (c) =>
+      c.active &&
+      c.loyalty >= EXPANSION_MIN_LOYALTY &&
+      assortment.some((pid) => !c.lines.some((l) => l.productId === pid)),
+  );
+  if (eligible.length === 0) return;
+  const cust = pick(eligible);
+  const missing = assortment.filter((pid) => !cust.lines.some((l) => l.productId === pid));
+  const productId = pick(missing);
+  const product = getProduct(state, productId);
+  const [minV, maxV] = CUSTOMER_VOLUME_RANGE[cust.type];
+  const inquiry: Inquiry = {
+    id: uid('inq'),
+    name: cust.name,
+    emoji: cust.emoji,
+    type: cust.type,
+    existingCustomerId: cust.id,
+    preferredProduct: productId,
+    suggestedVolume: randInt(minV, maxV),
+    targetPrice: Math.round(product.verkaufspreis * randRange(0.92, 1.02) * 2) / 2,
+    createdWeek: week,
+    expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
+    status: 'open',
+  };
+  state.inquiries.push(inquiry);
+  notify(state, `🔁 ${cust.name} möchte zusätzlich ${product.emoji} ${product.name} beziehen.`, 'info');
+}
+
 function resolveOffers(state: GameState): void {
   const week = weekOf(state.totalDays);
   for (const inq of state.inquiries) {
@@ -563,7 +602,8 @@ function resolveOffers(state: GameState): void {
     // Cheaper than hoped => more likely to accept.
     const prob = clamp(0.85 - (ratio - 1) * 2.2, 0.05, 0.95);
     if (Math.random() < prob) {
-      if (freeCapacity(state, inq.type) <= 0) {
+      // Expansions never consume KAM capacity (it's an existing customer).
+      if (!inq.existingCustomerId && freeCapacity(state, inq.type) <= 0) {
         inq.status = 'rejected';
         notify(state, `⚠️ ${inq.name} hätte angenommen – aber keine KAM-Kapazität frei!`, 'warn');
         continue;
@@ -576,25 +616,46 @@ function resolveOffers(state: GameState): void {
   }
 }
 
+function makeLine(inq: Inquiry, week: number): CustomerLine {
+  return {
+    productId: inq.preferredProduct,
+    price: inq.offer!.price,
+    volume: inq.offer!.volume,
+    orderDayOfWeek: randInt(0, 5), // Mon-Sat
+    nextOrderWeek: week + 1, // one-week grace to pre-stock before the first order
+  };
+}
+
 function acceptInquiry(state: GameState, inq: Inquiry): void {
   if (!inq.offer) return;
   const week = weekOf(state.totalDays);
+
+  if (inq.existingCustomerId) {
+    const cust = state.customers.find((c) => c.id === inq.existingCustomerId);
+    inq.status = 'accepted';
+    if (!cust || !cust.active) return;
+    const product = getProduct(state, inq.preferredProduct);
+    cust.lines.push(makeLine(inq, week));
+    notify(
+      state,
+      `🎉 ${cust.name} nimmt zusätzlich ${product.emoji} ${product.name} ab! ${inq.offer.volume}× @ ${inq.offer.price}€.`,
+      'success',
+    );
+    return;
+  }
+
   const customer: Customer = {
     id: uid('cust'),
     name: inq.name,
     emoji: inq.emoji,
     type: inq.type,
-    preferredProduct: inq.preferredProduct,
-    contractPrice: inq.offer.price,
-    contractVolume: inq.offer.volume,
+    lines: [makeLine(inq, week)],
     serviceRating: 3,
     loyalty: 60,
     lateDeliveries: 0,
     deliveryLeadWeeks: CUSTOMER_LEAD_WEEKS[inq.type],
     volatility: CUSTOMER_VOLATILITY[inq.type],
     activeDiscount: 0,
-    orderDayOfWeek: randInt(0, 4),
-    nextOrderWeek: week + 1, // one-week grace to pre-stock before the first order
     active: true,
   };
   state.customers.push(customer);
@@ -619,15 +680,18 @@ function expireInquiries(state: GameState): void {
 // --- Quarterly events -------------------------------------------------------
 
 function applyQuarterlyEvents(state: GameState): void {
-  // 1. Customer volatility: ~25% of customers grow or shrink.
+  // 1. Customer volatility: ~25% of customers grow or shrink (each product line).
   for (const cust of state.customers) {
     if (!cust.active) continue;
     if (Math.random() > 0.25) continue;
-    const change = (Math.random() * 2 - 1) * cust.volatility * 0.5;
-    const before = cust.contractVolume;
-    cust.contractVolume = Math.max(4, Math.round(cust.contractVolume * (1 + change)));
-    const dir = cust.contractVolume >= before ? '📈' : '📉';
-    notify(state, `${dir} ${cust.name}: Bedarf ${before} → ${cust.contractVolume}/Woche.`, 'info');
+    const beforeTotal = cust.lines.reduce((s, l) => s + l.volume, 0);
+    for (const line of cust.lines) {
+      const change = (Math.random() * 2 - 1) * cust.volatility * 0.5;
+      line.volume = Math.max(4, Math.round(line.volume * (1 + change)));
+    }
+    const afterTotal = cust.lines.reduce((s, l) => s + l.volume, 0);
+    const dir = afterTotal >= beforeTotal ? '📈' : '📉';
+    notify(state, `${dir} ${cust.name}: Bedarf ${beforeTotal} → ${afterTotal}/Woche.`, 'info');
   }
 
   // 2. Supplier price increase (Einkäufer can soften it).
@@ -728,6 +792,7 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     (t) => freeCapacity(state, t) > 0,
   );
   if (hasFreeCapacity) maybeGenerateInquiry(state);
+  maybeGenerateExpansionInquiry(state);
 
   // 7. Salaries for the new week.
   const totalSalary = state.employees.reduce((s, e) => s + e.salary, 0);
@@ -760,14 +825,18 @@ function onDayStart(state: GameState, dayIndex: number): void {
 
   updateSpoilage(state, dayIndex);
 
-  // Customer weekly orders on their chosen day.
+  // Customer orders: each product line orders once a week on its own day, spread
+  // randomly across Mon-Sat (never Sunday), re-randomised after every order.
   const week = weekOf(dayIndex);
   const dow = dayOfWeek(dayIndex);
   for (const cust of state.customers) {
     if (!cust.active) continue;
-    if (cust.nextOrderWeek <= week && cust.orderDayOfWeek === dow) {
-      generateCustomerOrder(state, cust);
-      cust.nextOrderWeek = week + 1;
+    for (const line of cust.lines) {
+      if (line.nextOrderWeek <= week && line.orderDayOfWeek === dow) {
+        generateCustomerOrder(state, cust, line);
+        line.nextOrderWeek = week + 1;
+        line.orderDayOfWeek = randInt(0, 5); // Mon-Sat, exclude Sunday
+      }
     }
   }
 

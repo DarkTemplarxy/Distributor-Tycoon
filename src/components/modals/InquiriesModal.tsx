@@ -57,16 +57,18 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
           const product = state.products.find((p) => p.id === inq.preferredProduct)!;
           const draft = getDraft(inq.id, inq.targetPrice, inq.suggestedVolume);
           const canOffer = inq.status === 'open' || inq.status === 'rejected';
+          const isExpansion = !!inq.existingCustomerId;
           return (
             <div key={inq.id} className="row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 22 }}>{inq.emoji}</span>
+                <span style={{ fontSize: 22 }}>{isExpansion ? '🔁' : inq.emoji}</span>
                 <div className="grow">
                   <div className="title">
-                    {inq.name} <span className="pill">{TYPE_LABEL[inq.type]}</span>
+                    {inq.name} <span className="pill">{TYPE_LABEL[inq.type]}</span>{' '}
+                    {isExpansion && <span className="pill good">Bestandskunde</span>}
                   </div>
                   <div className="sub">
-                    Wunsch:{' '}
+                    {isExpansion ? 'Möchte zusätzlich:' : 'Wunsch:'}{' '}
                     <span style={{ color: PRODUCT_COLOR[inq.preferredProduct] }}>
                       {product.emoji} {product.name}
                     </span>{' '}
@@ -113,7 +115,7 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                   </label>
                   <button
                     className="btn primary small"
-                    disabled={freeCapacity(state, inq.type) <= 0}
+                    disabled={!isExpansion && freeCapacity(state, inq.type) <= 0}
                     onClick={() => mutate((s) => sendOffer(s, inq.id, draft.price, draft.volume))}
                   >
                     📤 Angebot senden

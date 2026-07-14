@@ -48,16 +48,26 @@ export interface Product {
   autoRestock: { enabled: boolean; min: number; target: number };
 }
 
+/** One product a customer buys: its own price, weekly volume and order timing. */
+export interface CustomerLine {
+  productId: ProductId;
+  /** Agreed price per unit. */
+  price: number;
+  /** Baseline units ordered per week. */
+  volume: number;
+  /** Day of week (0=Mon .. 5=Sat) this line places its weekly order. Re-randomised each week. */
+  orderDayOfWeek: number;
+  /** Next week index on which this line should place an order. */
+  nextOrderWeek: number;
+}
+
 export interface Customer {
   id: string;
   name: string;
   emoji: string;
   type: CustomerType;
-  preferredProduct: ProductId;
-  /** Agreed price per unit. */
-  contractPrice: number;
-  /** Baseline units ordered per week. */
-  contractVolume: number;
+  /** The product lines this customer buys (grows over time via expansion offers). */
+  lines: CustomerLine[];
   /** 1-5 stars this specific customer gives us. */
   serviceRating: number;
   /** 0-100 loyalty. */
@@ -69,10 +79,6 @@ export interface Customer {
   volatility: number;
   /** Active discount fraction (0 - 0.20) the player granted. */
   activeDiscount: number;
-  /** Day of week (0-6) on which this customer places its weekly order. */
-  orderDayOfWeek: number;
-  /** Next week index on which this customer should place an order. */
-  nextOrderWeek: number;
   active: boolean;
 }
 
@@ -81,6 +87,8 @@ export interface Inquiry {
   name: string;
   emoji: string;
   type: CustomerType;
+  /** When set, this is an expansion request from an existing customer (add a product line). */
+  existingCustomerId?: string;
   preferredProduct: ProductId;
   suggestedVolume: number;
   /** The price the potential customer is hoping for (per unit). */

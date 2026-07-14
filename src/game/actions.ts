@@ -211,7 +211,8 @@ export function sendOffer(
   if (inq.status !== 'open' && inq.status !== 'rejected') {
     return { ok: false, message: 'Anfrage kann nicht (mehr) beboten werden.' };
   }
-  if (freeCapacity(state, inq.type) <= 0) {
+  // Expansions of existing customers don't need KAM capacity.
+  if (!inq.existingCustomerId && freeCapacity(state, inq.type) <= 0) {
     return { ok: false, message: 'Keine KAM-Kapazität für diesen Kundentyp frei.' };
   }
   inq.offer = { price: Math.max(1, price), volume: Math.max(1, Math.round(volume)), respondWeek: weekOf(state.totalDays) + 1 };

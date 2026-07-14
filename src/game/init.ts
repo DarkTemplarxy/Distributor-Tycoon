@@ -14,7 +14,7 @@ import {
   type ProductDef,
 } from './constants';
 import type { Batch, Customer, Employee, GameState, Product, Supplier } from './types';
-import { uid } from './util';
+import { randInt, uid } from './util';
 
 /** Build a fresh Product from a catalog definition. Reused by the start scenario
  * and by the runtime "add to assortment" action, so both stay in sync. */
@@ -67,12 +67,10 @@ function makeCustomers(): Customer[] {
     loyalty: 70,
     lateDeliveries: 0,
     activeDiscount: 0,
-    nextOrderWeek: 0,
     active: true,
     volatility: CUSTOMER_VOLATILITY.small,
     deliveryLeadWeeks: CUSTOMER_LEAD_WEEKS.small,
     type: 'small' as const,
-    preferredProduct: 'fisch' as const,
     emoji: '🍕',
   };
   return [
@@ -80,18 +78,14 @@ function makeCustomers(): Customer[] {
       ...base,
       id: 'cust_giuseppe',
       name: 'Pizza Giuseppe',
-      contractPrice: 30,
-      contractVolume: 15,
-      orderDayOfWeek: 1, // Tuesday
+      lines: [{ productId: 'fisch', price: 30, volume: 15, orderDayOfWeek: randInt(0, 5), nextOrderWeek: 0 }],
     },
     {
       ...base,
       id: 'cust_urban',
       name: 'Restaurant Urban',
       emoji: '🍽️',
-      contractPrice: 30,
-      contractVolume: 16,
-      orderDayOfWeek: 2, // Wednesday
+      lines: [{ productId: 'fisch', price: 30, volume: 16, orderDayOfWeek: randInt(0, 5), nextOrderWeek: 0 }],
     },
   ];
 }
