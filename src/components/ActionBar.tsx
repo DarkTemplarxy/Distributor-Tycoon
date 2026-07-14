@@ -5,7 +5,7 @@ import type { ModalId } from '../App';
 export function ActionBar({ onOpen }: { onOpen: (id: ModalId) => void }) {
   const { state } = useGame();
 
-  const openInquiries = state.inquiries.filter((i) => i.status === 'open' || i.status === 'rejected').length;
+  const openInquiries = state.inquiries.filter((i) => i.status === 'open').length;
   const actionableOrders = state.orders.filter(
     (o) => o.status === 'pending' && inventoryTotal(state.products.find((p) => p.id === o.productId)!) >= o.quantity,
   ).length;

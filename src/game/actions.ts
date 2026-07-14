@@ -14,6 +14,7 @@ import {
 } from './constants';
 import type { GameState, ProductId, Role } from './types';
 import {
+  acceptInquiry as onboardInquiry,
   availableCredit,
   createPurchaseOrderInternal,
   freeCapacity,
@@ -200,24 +201,19 @@ export function setDiscount(state: GameState, customerId: string, discount: numb
 
 // --- Inquiries --------------------------------------------------------------
 
-export function sendOffer(
-  state: GameState,
-  inquiryId: string,
-  price: number,
-  volume: number,
-): ActionResult {
+/** Accept an inquiry directly: the product is unlocked for the customer
+ * immediately, at the inquiry's desired price and fixed volume. */
+export function acceptInquiry(state: GameState, inquiryId: string): ActionResult {
   const inq = state.inquiries.find((i) => i.id === inquiryId);
   if (!inq) return { ok: false, message: 'Anfrage nicht gefunden.' };
-  if (inq.status !== 'open' && inq.status !== 'rejected') {
-    return { ok: false, message: 'Anfrage kann nicht (mehr) beboten werden.' };
+  if (inq.status !== 'open') {
+    return { ok: false, message: 'Anfrage ist nicht mehr offen.' };
   }
-  // Expansions of existing customers don't need KAM capacity.
+  // New customers need free KAM capacity; expansions of existing customers don't.
   if (!inq.existingCustomerId && freeCapacity(state, inq.type) <= 0) {
     return { ok: false, message: 'Keine KAM-Kapazität für diesen Kundentyp frei.' };
   }
-  inq.offer = { price: Math.max(1, price), volume: Math.max(1, Math.round(volume)), respondWeek: weekOf(state.totalDays) + 1 };
-  inq.status = 'offered';
-  notify(state, `📤 Angebot an ${inq.name} gesendet: ${Math.round(volume)}× @ ${price}€. Antwort in 1 Woche.`, 'info');
+  onboardInquiry(state, inq);
   return { ok: true };
 }
 

@@ -592,42 +592,19 @@ function maybeGenerateExpansionInquiry(state: GameState): void {
   notify(state, `🔁 ${cust.name} möchte zusätzlich ${product.emoji} ${product.name} beziehen.`, 'info');
 }
 
-function resolveOffers(state: GameState): void {
-  const week = weekOf(state.totalDays);
-  for (const inq of state.inquiries) {
-    if (inq.status !== 'offered' || !inq.offer) continue;
-    if (inq.offer.respondWeek > week) continue;
-
-    const ratio = inq.offer.price / inq.targetPrice;
-    // Cheaper than hoped => more likely to accept.
-    const prob = clamp(0.85 - (ratio - 1) * 2.2, 0.05, 0.95);
-    if (Math.random() < prob) {
-      // Expansions never consume KAM capacity (it's an existing customer).
-      if (!inq.existingCustomerId && freeCapacity(state, inq.type) <= 0) {
-        inq.status = 'rejected';
-        notify(state, `⚠️ ${inq.name} hätte angenommen – aber keine KAM-Kapazität frei!`, 'warn');
-        continue;
-      }
-      acceptInquiry(state, inq);
-    } else {
-      inq.status = 'rejected';
-      notify(state, `✗ ${inq.name} hat unser Angebot abgelehnt.`, 'warn');
-    }
-  }
-}
-
 function makeLine(inq: Inquiry, week: number): CustomerLine {
   return {
     productId: inq.preferredProduct,
-    price: inq.offer!.price,
-    volume: inq.offer!.volume,
+    price: inq.targetPrice, // accepted at the customer's desired price
+    volume: inq.suggestedVolume, // fixed quantity
     orderDayOfWeek: randInt(0, 5), // Mon-Sat
     nextOrderWeek: week + 1, // one-week grace to pre-stock before the first order
   };
 }
 
-function acceptInquiry(state: GameState, inq: Inquiry): void {
-  if (!inq.offer) return;
+/** Immediately onboard an inquiry: create a new customer, or add a product line
+ * to an existing one, at the inquiry's target price and fixed volume. */
+export function acceptInquiry(state: GameState, inq: Inquiry): void {
   const week = weekOf(state.totalDays);
 
   if (inq.existingCustomerId) {
@@ -638,7 +615,7 @@ function acceptInquiry(state: GameState, inq: Inquiry): void {
     cust.lines.push(makeLine(inq, week));
     notify(
       state,
-      `🎉 ${cust.name} nimmt zusätzlich ${product.emoji} ${product.name} ab! ${inq.offer.volume}× @ ${inq.offer.price}€.`,
+      `🎉 ${cust.name} nimmt zusätzlich ${product.emoji} ${product.name} ab! ${inq.suggestedVolume}× @ ${inq.targetPrice}€.`,
       'success',
     );
     return;
@@ -660,13 +637,13 @@ function acceptInquiry(state: GameState, inq: Inquiry): void {
   };
   state.customers.push(customer);
   inq.status = 'accepted';
-  notify(state, `🎉 ${inq.name} ist jetzt Kunde! ${inq.offer.volume}× @ ${inq.offer.price}€.`, 'success');
+  notify(state, `🎉 ${inq.name} ist jetzt Kunde! ${inq.suggestedVolume}× @ ${inq.targetPrice}€.`, 'success');
 }
 
 function expireInquiries(state: GameState): void {
   const week = weekOf(state.totalDays);
   for (const inq of state.inquiries) {
-    if ((inq.status === 'open' || inq.status === 'offered') && inq.expiryWeek <= week) {
+    if (inq.status === 'open' && inq.expiryWeek <= week) {
       inq.status = 'expired';
       notify(state, `⌛ Anfrage von ${inq.name} ist verfallen.`, 'info');
     }
@@ -786,7 +763,6 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   }
 
   // 6. Customer acquisition pipeline.
-  resolveOffers(state);
   expireInquiries(state);
   const hasFreeCapacity = (['small', 'medium', 'large'] as CustomerType[]).some(
     (t) => freeCapacity(state, t) > 0,

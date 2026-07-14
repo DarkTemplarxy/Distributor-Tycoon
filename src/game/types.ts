@@ -96,13 +96,7 @@ export interface Inquiry {
   createdWeek: number;
   /** Week the inquiry disappears if untouched. */
   expiryWeek: number;
-  status: 'open' | 'offered' | 'accepted' | 'rejected' | 'expired';
-  /** Present once the player sent an offer. */
-  offer?: {
-    price: number;
-    volume: number;
-    respondWeek: number;
-  };
+  status: 'open' | 'accepted' | 'expired';
 }
 
 export interface Order {
