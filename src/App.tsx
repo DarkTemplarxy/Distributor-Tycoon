@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useGame } from './state/GameProvider';
 import { weekOf } from './game/util';
 import { TopBar } from './components/TopBar';
-import { Warehouse } from './components/Warehouse';
+import { IsometricWarehouse } from './components/IsometricWarehouse';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
 import { Toasts } from './components/Toasts';
@@ -59,7 +59,7 @@ export function App() {
 
       <div className="main">
         <div className="col-left">
-          <Warehouse />
+          <IsometricWarehouse />
         </div>
         <div className="col-right">
           <OrdersPanel />

@@ -342,11 +342,12 @@ function truckPickup(state: GameState, week: number): void {
     state.truckAnimUntil = state.totalDays + 0.06;
   }
 
-  // Any still-open order whose deadline has now passed counts as late.
+  // With daily pickups, an order is only late once its whole due week has
+  // passed without delivery (it stays deliverable on every day of that week).
   for (const order of state.orders) {
     if (order.late) continue;
     if (order.status === 'delivered') continue;
-    if (order.dueWeek > week) continue;
+    if (order.dueWeek >= week) continue;
 
     order.late = true;
     state.weekAcc.lateOrders += 1;
@@ -797,13 +798,13 @@ export function advance(state: GameState, realDeltaMs: number): void {
   }
   state.totalDays = next;
 
-  // Monday 18:00 truck pickups crossed in this interval.
-  const startWeek = weekOf(prev);
-  const endWeek = weekOf(next);
-  for (let w = startWeek; w <= endWeek; w++) {
-    const threshold = w * DAYS_PER_WEEK + TRUCK_DAY_FRACTION;
+  // Daily 18:00 truck pickups crossed in this interval.
+  const startDay = Math.floor(prev);
+  const endDay = Math.floor(next);
+  for (let d = startDay; d <= endDay; d++) {
+    const threshold = d + TRUCK_DAY_FRACTION;
     if (threshold > prev && threshold <= next) {
-      truckPickup(state, w);
+      truckPickup(state, weekOf(d));
     }
   }
 

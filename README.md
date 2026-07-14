@@ -34,8 +34,9 @@ The whole game state is saved to **localStorage** every few seconds (and on tab 
 
 - **▶ / speed** (`0.5× 1× 2× 4×`, or **Spacebar** to pause): time runs in real time.
   1 in-game day ≈ 12 s at 1×.
-- Customers place **weekly orders** with a delivery deadline. You must have stock and get a
-  palette **ready before Monday 18:00**, when the 🚚 truck picks up everything that's ready.
+- Customers place **weekly orders** with a delivery deadline. The 🚚 truck comes by **every day
+  at 18:00** and picks up whatever palettes are ready — so goods ship as soon as they're
+  prepared (payment then follows a week after that delivery).
 - **🧺 Sortiment**: you start with **only Fischfilet**. New product groups unlock over time
   (**Fleisch ab Woche 3, Gemüse ab Woche 8**); add them to your assortment for a small listing
   fee, then **pre-stock** them before winning customers for them.
@@ -61,7 +62,8 @@ stars are high) and **🗑️ spoilage** (fish 21 d, meat 42 d, veg 56 d).
 - ✅ Inventory with per-batch expiry, FIFO consumption and spoilage (visual warnings)
 - ✅ Dynamic customer orders (seasonal trends, volatility, discounts, delivery deadlines)
 - ✅ Order fulfilment: worker assignment, skill-based prep time, palette creation
-- ✅ Monday truck pickup ritual with per-palette logistics cost + animation
+- ✅ Daily 18:00 truck pickup with per-palette logistics cost, shown in the isometric scene
+- ✅ Top-down isometric warehouse scene (canvas): shelves fill with pallets, workers walk & prep, truck drives in
 - ✅ Payment scheduling (1-week delay), shown in the finance modal
 - ✅ Product pricing with configurable target margins + auto-price
 - ✅ Assortment expansion: start with fish only, unlock & add Fleisch/Gemüse mid-game (listing fee, pre-stocking)
@@ -92,13 +94,13 @@ src/
     util.ts          # ids, RNG, time math, € formatting
   state/
     GameProvider.tsx # owns state in a ref, drives the setInterval game loop, exposes useGame()
-  components/        # TopBar, Warehouse, OrdersPanel, ActionBar, Toasts, overlays
+  components/        # TopBar, IsometricWarehouse (canvas scene), OrdersPanel, ActionBar, Toasts
     modals/          # Inventory, Sortiment, Procurement, Pricing, Customers,
                      #   Inquiries, Employees, Finance, Reports, Log
 ```
 
 The simulation is a **pure module**: `advance(state, realDeltaMs)` mutates a plain state
-object and fires every discrete event (day starts, weekly rollovers, Monday pickups, PO
+object and fires every discrete event (day starts, weekly rollovers, daily 18:00 pickups, PO
 deliveries, payments, spoilage, worker progress) that fell inside the elapsed interval. The
 React layer only calls it on a fixed `setInterval` loop and renders the result — which makes
 the economy testable headlessly, independent of the UI.
