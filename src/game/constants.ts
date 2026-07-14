@@ -7,8 +7,9 @@ import type { CustomerType, ProductId, Role } from './types';
 export const SAVE_VERSION = 3;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
-/** How many real seconds one in-game day lasts at 1x speed. */
-export const SECONDS_PER_DAY_AT_1X = 12;
+/** How many real seconds one in-game day lasts at 1x speed. Higher = more time
+ * to react each day (a week at 1x ≈ 7× this; the 0.5x–4x controls still apply). */
+export const SECONDS_PER_DAY_AT_1X = 20;
 
 /** Units that fit on a single palette. */
 export const PALETTE_SIZE = 40;
