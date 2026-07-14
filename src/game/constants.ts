@@ -4,7 +4,7 @@
 
 import type { CustomerType, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. */
@@ -129,13 +129,25 @@ export interface ProductDef {
   verkaufspreis: number;
   zielmarge: number;
   spoilageDays: number;
+  /** Week from which this product can be added to the assortment (0 = from start). */
+  unlockWeek: number;
+  /** One-time cost to list this product with the supplier and add it to the assortment. */
+  listingFee: number;
 }
 
+// The full product catalog. Only products with unlockWeek 0 are in the assortment
+// at the start; the rest are unlocked over time and added by the player (Sortiment).
+// unlockWeek is the internal 0-based week index; the UI shows unlockWeek + 1, so
+// fleisch (2) becomes available in displayed "Woche 3" and gemuese (7) in "Woche 8".
 export const PRODUCT_DEFS: ProductDef[] = [
-  { id: 'fisch', name: 'Fischfilet', emoji: '🐟', einkaufspreis: 20, verkaufspreis: 30, zielmarge: 33, spoilageDays: 21 },
-  { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 22.5, zielmarge: 33, spoilageDays: 42 },
-  { id: 'gemuese', name: 'Gemüse', emoji: '🥦', einkaufspreis: 10, verkaufspreis: 15, zielmarge: 33, spoilageDays: 56 },
+  { id: 'fisch', name: 'Fischfilet', emoji: '🐟', einkaufspreis: 20, verkaufspreis: 30, zielmarge: 33, spoilageDays: 21, unlockWeek: 0, listingFee: 0 },
+  { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 22.5, zielmarge: 33, spoilageDays: 42, unlockWeek: 2, listingFee: 500 },
+  { id: 'gemuese', name: 'Gemüse', emoji: '🥦', einkaufspreis: 10, verkaufspreis: 15, zielmarge: 33, spoilageDays: 56, unlockWeek: 7, listingFee: 500 },
 ];
+
+export function getProductDef(id: ProductId): ProductDef {
+  return PRODUCT_DEFS.find((d) => d.id === id)!;
+}
 
 /** Seasonal demand multipliers per quarter (Q1..Q4) per product. */
 export const SEASONAL_TREND: Record<ProductId, [number, number, number, number]> = {

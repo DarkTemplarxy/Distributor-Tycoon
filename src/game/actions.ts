@@ -5,6 +5,7 @@
 // ============================================================================
 
 import {
+  getProductDef,
   HIRE_WEEKS_UPFRONT,
   ROLE_LABEL,
   ROLE_SALARY,
@@ -17,10 +18,12 @@ import {
   createPurchaseOrderInternal,
   freeCapacity,
   getProduct,
+  isInAssortment,
   notify,
   spend,
   tryPrepareOrder,
 } from './simulation';
+import { buildProduct } from './init';
 import { clamp, uid, weekOf } from './util';
 
 export interface ActionResult {
@@ -82,6 +85,41 @@ export function setAutoRestock(
     min: Math.max(0, Math.round(rule.min)),
     target: Math.max(0, Math.round(rule.target)),
   };
+}
+
+// --- Assortment -------------------------------------------------------------
+
+/** Add a newly unlocked product group to the assortment (pays the listing fee,
+ * adds the supplier offering). The player can then pre-stock it before taking on
+ * customers for it. */
+export function addProduct(state: GameState, productId: ProductId): ActionResult {
+  if (isInAssortment(state, productId)) {
+    return { ok: false, message: 'Produkt ist bereits im Sortiment.' };
+  }
+  const def = getProductDef(productId);
+  if (weekOf(state.totalDays) < def.unlockWeek) {
+    return { ok: false, message: `Erst ab Woche ${def.unlockWeek + 1} verfügbar.` };
+  }
+  if (state.cash + availableCredit(state) < def.listingFee) {
+    return { ok: false, message: `Listungsgebühr ${def.listingFee}€ nicht bezahlbar.` };
+  }
+
+  state.products.push(buildProduct(def));
+  state.supplier.products.push({
+    productId: def.id,
+    price: def.einkaufspreis,
+    basePrice: def.einkaufspreis,
+  });
+  if (def.listingFee > 0) {
+    spend(state, def.listingFee);
+    state.weekAcc.purchases += def.listingFee;
+  }
+  notify(
+    state,
+    `🧺 ${def.emoji} ${def.name} ins Sortiment aufgenommen! Jetzt einkaufen & bevorraten, bevor du Kunden gewinnst.`,
+    'success',
+  );
+  return { ok: true };
 }
 
 // --- Order fulfilment (manual) ----------------------------------------------

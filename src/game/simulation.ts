@@ -28,6 +28,7 @@ import {
   MEDIUM_UNLOCK_REVENUE,
   PALETTE_SIZE,
   PAYMENT_DELAY_DAYS,
+  PRODUCT_DEFS,
   SEASONAL_TREND,
   SECONDS_PER_DAY_AT_1X,
   SUPPLIER_INCREASE_CHANCE,
@@ -35,6 +36,7 @@ import {
   TRUCK_DAY_FRACTION,
   WEEKS_PER_YEAR,
   demandUpliftFromDiscount,
+  type ProductDef,
 } from './constants';
 import type {
   Customer,
@@ -90,6 +92,30 @@ export function incomingPO(state: GameState, id: ProductId): number {
     for (const item of po.items) if (item.productId === id) sum += item.quantity;
   }
   return sum;
+}
+
+export function isInAssortment(state: GameState, id: ProductId): boolean {
+  return state.products.some((p) => p.id === id);
+}
+
+export type CatalogEntryStatus = 'active' | 'addable' | 'locked';
+
+export interface CatalogEntry {
+  def: ProductDef;
+  status: CatalogEntryStatus;
+  /** Human "ab Woche N" reason when locked. */
+  reason?: string;
+}
+
+/** Status of every product in the catalog: already in the assortment, unlocked
+ * and ready to add, or still locked (with the week it unlocks). */
+export function catalogStatus(state: GameState): CatalogEntry[] {
+  const week = weekOf(state.totalDays);
+  return PRODUCT_DEFS.map((def) => {
+    if (isInAssortment(state, def.id)) return { def, status: 'active' };
+    if (week >= def.unlockWeek) return { def, status: 'addable' };
+    return { def, status: 'locked', reason: `ab Woche ${def.unlockWeek + 1}` };
+  });
 }
 
 /** Remove `qty` units from a product using FIFO (soonest expiry first). */
@@ -491,13 +517,14 @@ function unlockedTypes(state: GameState): CustomerType[] {
 }
 
 /** Bias new inquiries toward products we already sell, so a new customer's
- * first order isn't guaranteed late by the supplier lead time. */
+ * first order isn't guaranteed late by the supplier lead time. Only products in
+ * the current assortment can ever be requested. */
 function pickInquiryProduct(state: GameState): ProductId {
   const familiar = [...new Set(state.customers.filter((c) => c.active).map((c) => c.preferredProduct))];
   if (familiar.length > 0 && Math.random() < INQUIRY_FAMILIAR_PRODUCT_CHANCE) {
     return pick(familiar);
   }
-  return pick<ProductId>(['fisch', 'fleisch', 'gemuese']);
+  return pick(state.products.map((p) => p.id));
 }
 
 function maybeGenerateInquiry(state: GameState): void {
@@ -680,6 +707,17 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   // 5. Quarterly triggers (start of a new quarter, not week 0).
   if (newWeek % 13 === 0 && newWeek > 0 && newWeek < WEEKS_PER_YEAR) {
     applyQuarterlyEvents(state);
+  }
+
+  // 5b. Newly unlocked product groups (not yet in the assortment).
+  for (const def of PRODUCT_DEFS) {
+    if (def.unlockWeek === newWeek && !isInAssortment(state, def.id)) {
+      notify(
+        state,
+        `🆕 Neue Produktgruppe verfügbar: ${def.emoji} ${def.name}! Im Sortiment aufnehmen (Gebühr ${def.listingFee}€).`,
+        'success',
+      );
+    }
   }
 
   // 6. Customer acquisition pipeline.

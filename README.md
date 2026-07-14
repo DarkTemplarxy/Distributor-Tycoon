@@ -36,6 +36,9 @@ The whole game state is saved to **localStorage** every few seconds (and on tab 
   1 in-game day ≈ 12 s at 1×.
 - Customers place **weekly orders** with a delivery deadline. You must have stock and get a
   palette **ready before Monday 18:00**, when the 🚚 truck picks up everything that's ready.
+- **🧺 Sortiment**: you start with **only Fischfilet**. New product groups unlock over time
+  (**Fleisch ab Woche 3, Gemüse ab Woche 8**); add them to your assortment for a small listing
+  fee, then **pre-stock** them before winning customers for them.
 - **🛒 Einkauf**: order stock from the supplier (1-week lead time). Optionally enable
   **auto-restock** per product (fish is on by default).
 - **👷 Herrichtung**: workers prepare palettes automatically ("Auto-Herrichten" toggle), or
@@ -61,6 +64,7 @@ stars are high) and **🗑️ spoilage** (fish 21 d, meat 42 d, veg 56 d).
 - ✅ Monday truck pickup ritual with per-palette logistics cost + animation
 - ✅ Payment scheduling (1-week delay), shown in the finance modal
 - ✅ Product pricing with configurable target margins + auto-price
+- ✅ Assortment expansion: start with fish only, unlock & add Fleisch/Gemüse mid-game (listing fee, pre-stocking)
 - ✅ Supplier procurement with lead time; quarterly price increases (an Einkäufer negotiates them down)
 - ✅ Employee hiring / training / firing (Lager, KAM, Einkäufer) with capacity constraints
 - ✅ Service stars per customer, tolerance & termination on repeated lateness
@@ -89,8 +93,8 @@ src/
   state/
     GameProvider.tsx # owns state in a ref, drives the setInterval game loop, exposes useGame()
   components/        # TopBar, Warehouse, OrdersPanel, ActionBar, Toasts, overlays
-    modals/          # Inventory, Procurement, Pricing, Customers, Inquiries,
-                     #   Employees, Finance, Reports, Log
+    modals/          # Inventory, Sortiment, Procurement, Pricing, Customers,
+                     #   Inquiries, Employees, Finance, Reports, Log
 ```
 
 The simulation is a **pure module**: `advance(state, realDeltaMs)` mutates a plain state

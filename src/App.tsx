@@ -8,6 +8,7 @@ import { ActionBar } from './components/ActionBar';
 import { Toasts } from './components/Toasts';
 import { GameOverScreen, StartScreen, YearCompleteScreen } from './components/OverlayScreens';
 import { InventoryModal } from './components/modals/InventoryModal';
+import { SortimentModal } from './components/modals/SortimentModal';
 import { ProcurementModal } from './components/modals/ProcurementModal';
 import { PricingModal } from './components/modals/PricingModal';
 import { CustomersModal } from './components/modals/CustomersModal';
@@ -19,6 +20,7 @@ import { LogModal } from './components/modals/LogModal';
 
 export type ModalId =
   | 'inventory'
+  | 'sortiment'
   | 'procurement'
   | 'pricing'
   | 'customers'
@@ -69,6 +71,7 @@ export function App() {
       <Toasts />
 
       {modal === 'inventory' && <InventoryModal onClose={() => setModal(null)} />}
+      {modal === 'sortiment' && <SortimentModal onClose={() => setModal(null)} />}
       {modal === 'procurement' && <ProcurementModal onClose={() => setModal(null)} />}
       {modal === 'pricing' && <PricingModal onClose={() => setModal(null)} />}
       {modal === 'customers' && <CustomersModal onClose={() => setModal(null)} />}

@@ -1,5 +1,5 @@
 import { useGame } from '../state/GameProvider';
-import { inventoryTotal } from '../game/simulation';
+import { catalogStatus, inventoryTotal } from '../game/simulation';
 import type { ModalId } from '../App';
 
 export function ActionBar({ onOpen }: { onOpen: (id: ModalId) => void }) {
@@ -10,9 +10,11 @@ export function ActionBar({ onOpen }: { onOpen: (id: ModalId) => void }) {
     (o) => o.status === 'pending' && inventoryTotal(state.products.find((p) => p.id === o.productId)!) >= o.quantity,
   ).length;
   const lowStock = state.products.some((p) => inventoryTotal(p) <= 0);
+  const addableProducts = catalogStatus(state).filter((e) => e.status === 'addable').length;
 
   const buttons: { id: ModalId; icon: string; label: string; badge?: number; badgeInfo?: boolean; warn?: boolean }[] = [
     { id: 'inventory', icon: '📦', label: 'Inventar', warn: lowStock },
+    { id: 'sortiment', icon: '🧺', label: 'Sortiment', badge: addableProducts, badgeInfo: true },
     { id: 'procurement', icon: '🛒', label: 'Einkauf' },
     { id: 'pricing', icon: '🏷️', label: 'Preise' },
     { id: 'customers', icon: '🤝', label: 'Kunden' },

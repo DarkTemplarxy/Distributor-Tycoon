@@ -11,12 +11,33 @@ import {
   STARTING_CASH,
   STARTING_STARS,
   TRUCK_COST_PER_PALLET,
+  type ProductDef,
 } from './constants';
 import type { Batch, Customer, Employee, GameState, Product, Supplier } from './types';
 import { uid } from './util';
 
+/** Build a fresh Product from a catalog definition. Reused by the start scenario
+ * and by the runtime "add to assortment" action, so both stay in sync. */
+export function buildProduct(
+  def: ProductDef,
+  opts?: { batches?: Batch[]; autoRestock?: Product['autoRestock'] },
+): Product {
+  return {
+    id: def.id,
+    name: def.name,
+    emoji: def.emoji,
+    einkaufspreis: def.einkaufspreis,
+    verkaufspreis: def.verkaufspreis,
+    zielmarge: def.zielmarge,
+    spoilageDays: def.spoilageDays,
+    batches: opts?.batches ?? [],
+    autoRestock: opts?.autoRestock ?? { enabled: false, min: 40, target: 120 },
+  };
+}
+
 function makeProducts(): Product[] {
-  return PRODUCT_DEFS.map((def) => {
+  // Only products unlocked at the start (fish) are in the assortment initially.
+  return PRODUCT_DEFS.filter((def) => def.unlockWeek === 0).map((def) => {
     const batches: Batch[] = [];
     // Give the player one starter palette of fish so the very first order can
     // be fulfilled immediately and the mechanics reveal themselves.
@@ -28,14 +49,7 @@ function makeProducts(): Product[] {
         expiryDay: def.spoilageDays, // created on day 0
       });
     }
-    return {
-      id: def.id,
-      name: def.name,
-      emoji: def.emoji,
-      einkaufspreis: def.einkaufspreis,
-      verkaufspreis: def.verkaufspreis,
-      zielmarge: def.zielmarge,
-      spoilageDays: def.spoilageDays,
+    return buildProduct(def, {
       batches,
       // Fish is what the two starting customers buy, so keep it auto-stocked by
       // default (a spoilage-safe ~2.5 weeks) — the player can retune per product.
@@ -43,7 +57,7 @@ function makeProducts(): Product[] {
         def.id === 'fisch'
           ? { enabled: true, min: 45, target: 80 }
           : { enabled: false, min: 40, target: 120 },
-    };
+    });
   });
 }
 
@@ -93,7 +107,9 @@ function makeSupplier(): Supplier {
   return {
     id: 'supp_seafood',
     name: 'GroßMarkt Nord',
-    products: PRODUCT_DEFS.map((def) => ({
+    // The supplier only lists products that are in the assortment; adding a
+    // product later also adds its supplier offering.
+    products: PRODUCT_DEFS.filter((def) => def.unlockWeek === 0).map((def) => ({
       productId: def.id,
       price: def.einkaufspreis,
       basePrice: def.einkaufspreis,

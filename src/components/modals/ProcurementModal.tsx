@@ -4,12 +4,13 @@ import { useGame } from '../../state/GameProvider';
 import { availableCredit, incomingPO, inventoryTotal } from '../../game/simulation';
 import { createPurchaseOrder, setAutoRestock, type ActionResult } from '../../game/actions';
 import { euro } from '../../game/util';
-import type { ProductId } from '../../game/types';
 import { PRODUCT_COLOR } from '../shared';
 
 export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
-  const [qty, setQty] = useState<Record<string, number>>({ fisch: 0, fleisch: 0, gemuese: 0 });
+  // Keyed by product id; missing keys count as 0, so this adapts automatically
+  // when new products are added to the assortment.
+  const [qty, setQty] = useState<Record<string, number>>({});
   const [msg, setMsg] = useState<string | null>(null);
 
   const total = state.supplier.products.reduce((sum, sp) => {
@@ -18,13 +19,16 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const budget = state.cash + availableCredit(state);
 
   const order = () => {
-    const items = (Object.keys(qty) as ProductId[]).map((id) => ({ productId: id, quantity: qty[id] || 0 }));
+    const items = state.supplier.products.map((sp) => ({
+      productId: sp.productId,
+      quantity: qty[sp.productId] || 0,
+    }));
     let result: ActionResult = { ok: false };
     mutate((s) => {
       result = createPurchaseOrder(s, items);
     });
     if (result.ok) {
-      setQty({ fisch: 0, fleisch: 0, gemuese: 0 });
+      setQty({});
       setMsg('✅ Bestellung aufgegeben – Lieferung in 1 Woche.');
     } else {
       setMsg('⚠️ ' + (result.message ?? 'Fehler'));
