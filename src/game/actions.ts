@@ -16,6 +16,7 @@ import type { GameState, ProductId, Role } from './types';
 import {
   acceptInquiry as onboardInquiry,
   availableCredit,
+  counterAcceptChance,
   createPurchaseOrderInternal,
   freeCapacity,
   getProduct,
@@ -214,6 +215,28 @@ export function acceptInquiry(state: GameState, inquiryId: string): ActionResult
     return { ok: false, message: 'Keine KAM-Kapazität für diesen Kundentyp frei.' };
   }
   onboardInquiry(state, inq);
+  return { ok: true };
+}
+
+/** Counter an inquiry with your own price (fixed volume). Resolves immediately:
+ * the customer accepts (onboarding at your price) with a chance that drops the
+ * higher you push above their target; on rejection the deal falls through. */
+export function counterOffer(state: GameState, inquiryId: string, price: number): ActionResult {
+  const inq = state.inquiries.find((i) => i.id === inquiryId);
+  if (!inq) return { ok: false, message: 'Anfrage nicht gefunden.' };
+  if (inq.status !== 'open') {
+    return { ok: false, message: 'Anfrage ist nicht mehr offen.' };
+  }
+  if (!inq.existingCustomerId && freeCapacity(state, inq.type) <= 0) {
+    return { ok: false, message: 'Keine KAM-Kapazität für diesen Kundentyp frei.' };
+  }
+  const offered = Math.max(1, Math.round(price * 100) / 100);
+  if (Math.random() < counterAcceptChance(inq.targetPrice, offered)) {
+    onboardInquiry(state, inq, offered);
+    return { ok: true };
+  }
+  inq.status = 'expired';
+  notify(state, `✗ ${inq.name} lehnt dein Gegenangebot (${offered}€) ab – der Deal ist geplatzt.`, 'warn');
   return { ok: true };
 }
 

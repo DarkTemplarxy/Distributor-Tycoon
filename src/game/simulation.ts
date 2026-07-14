@@ -592,30 +592,39 @@ function maybeGenerateExpansionInquiry(state: GameState): void {
   notify(state, `🔁 ${cust.name} möchte zusätzlich ${product.emoji} ${product.name} beziehen.`, 'info');
 }
 
-function makeLine(inq: Inquiry, week: number): CustomerLine {
+function makeLine(inq: Inquiry, week: number, price: number): CustomerLine {
   return {
     productId: inq.preferredProduct,
-    price: inq.targetPrice, // accepted at the customer's desired price
+    price, // accepted price (target price, or the player's counter offer)
     volume: inq.suggestedVolume, // fixed quantity
     orderDayOfWeek: randInt(0, 5), // Mon-Sat
     nextOrderWeek: week + 1, // one-week grace to pre-stock before the first order
   };
 }
 
+/** Probability a customer accepts a counter offer at `price`. At or below the
+ * target it's certain; above target it drops off the greedier the ask. */
+export function counterAcceptChance(targetPrice: number, price: number): number {
+  if (price <= targetPrice) return 1;
+  return clamp(1 - (price / targetPrice - 1) * 2.5, 0.05, 1);
+}
+
 /** Immediately onboard an inquiry: create a new customer, or add a product line
- * to an existing one, at the inquiry's target price and fixed volume. */
-export function acceptInquiry(state: GameState, inq: Inquiry): void {
+ * to an existing one, at `priceOverride` (defaults to the inquiry's target price)
+ * and the fixed suggested volume. */
+export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: number): void {
   const week = weekOf(state.totalDays);
+  const price = priceOverride ?? inq.targetPrice;
 
   if (inq.existingCustomerId) {
     const cust = state.customers.find((c) => c.id === inq.existingCustomerId);
     inq.status = 'accepted';
     if (!cust || !cust.active) return;
     const product = getProduct(state, inq.preferredProduct);
-    cust.lines.push(makeLine(inq, week));
+    cust.lines.push(makeLine(inq, week, price));
     notify(
       state,
-      `🎉 ${cust.name} nimmt zusätzlich ${product.emoji} ${product.name} ab! ${inq.suggestedVolume}× @ ${inq.targetPrice}€.`,
+      `🎉 ${cust.name} nimmt zusätzlich ${product.emoji} ${product.name} ab! ${inq.suggestedVolume}× @ ${price}€.`,
       'success',
     );
     return;
@@ -626,7 +635,7 @@ export function acceptInquiry(state: GameState, inq: Inquiry): void {
     name: inq.name,
     emoji: inq.emoji,
     type: inq.type,
-    lines: [makeLine(inq, week)],
+    lines: [makeLine(inq, week, price)],
     serviceRating: 3,
     loyalty: 60,
     lateDeliveries: 0,
@@ -637,7 +646,7 @@ export function acceptInquiry(state: GameState, inq: Inquiry): void {
   };
   state.customers.push(customer);
   inq.status = 'accepted';
-  notify(state, `🎉 ${inq.name} ist jetzt Kunde! ${inq.suggestedVolume}× @ ${inq.targetPrice}€.`, 'success');
+  notify(state, `🎉 ${inq.name} ist jetzt Kunde! ${inq.suggestedVolume}× @ ${price}€.`, 'success');
 }
 
 function expireInquiries(state: GameState): void {
