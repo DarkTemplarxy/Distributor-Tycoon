@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useGame } from './state/GameProvider';
 import { weekOf } from './game/util';
 import { TopBar } from './components/TopBar';
+import { Modal } from './components/Modal';
 import { IsometricWarehouse } from './components/IsometricWarehouse';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
@@ -32,9 +33,17 @@ export type ModalId =
   | null;
 
 export function App() {
-  const { state, togglePause, setPaused } = useGame();
+  const { state, togglePause, setPaused, newGame } = useGame();
   const [modal, setModal] = useState<ModalId>(null);
   const [startDismissed, setStartDismissed] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
+
+  const doRestart = () => {
+    newGame();
+    setRestartOpen(false);
+    setModal(null);
+    setStartDismissed(false);
+  };
 
   // Spacebar toggles pause (unless typing in an input).
   useEffect(() => {
@@ -55,7 +64,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar />
+      <TopBar onRestart={() => setRestartOpen(true)} />
 
       <div className="main">
         <div className="col-left">
@@ -89,8 +98,24 @@ export function App() {
           }}
         />
       )}
-      {state.yearComplete && <YearCompleteScreen />}
+      {state.yearComplete && <YearCompleteScreen onRestart={() => setRestartOpen(true)} />}
       {state.gameOver && <GameOverScreen />}
+
+      {restartOpen && (
+        <Modal title="Neues Spiel starten?" icon="🔄" onClose={() => setRestartOpen(false)}>
+          <p className="hint">
+            Der aktuelle Fortschritt geht dabei verloren und kann nicht wiederhergestellt werden.
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+            <button className="btn ghost" onClick={() => setRestartOpen(false)}>
+              Abbrechen
+            </button>
+            <button className="btn danger" onClick={doRestart}>
+              Ja, neu starten
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

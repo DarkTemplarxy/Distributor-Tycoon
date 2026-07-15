@@ -27,8 +27,8 @@ export function StartScreen({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
-export function YearCompleteScreen() {
-  const { state, continueYear, newGame } = useGame();
+export function YearCompleteScreen({ onRestart }: { onRestart: () => void }) {
+  const { state, continueYear } = useGame();
   const profit = state.stats.totalProfit;
   return (
     <div className="overlay-screen">
@@ -58,7 +58,7 @@ export function YearCompleteScreen() {
           <button className="btn primary" onClick={continueYear}>
             Weiterspielen
           </button>
-          <button className="btn" onClick={() => { if (confirm('Neues Spiel starten? Der aktuelle Stand geht verloren.')) newGame(); }}>
+          <button className="btn" onClick={onRestart}>
             Neues Spiel
           </button>
         </div>

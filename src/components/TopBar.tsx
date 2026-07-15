@@ -6,14 +6,11 @@ import { Stars } from './shared';
 
 const SPEEDS: Speed[] = [0.5, 1, 2, 4];
 
-export function TopBar() {
-  const { state, setSpeed, togglePause, newGame, saveNow, mutate } = useGame();
+export function TopBar({ onRestart }: { onRestart: () => void }) {
+  const { state, setSpeed, togglePause, saveNow, mutate } = useGame();
   const week = weekOf(state.totalDays);
   const q = quarterOf(week);
 
-  const handleNew = () => {
-    if (confirm('Neues Spiel starten? Der aktuelle Spielstand wird gelöscht.')) newGame();
-  };
   const handleSave = () => {
     saveNow();
   };
@@ -93,7 +90,7 @@ export function TopBar() {
         <button onClick={handleSave} title="Jetzt speichern">
           💾
         </button>
-        <button onClick={handleNew} title="Neues Spiel">
+        <button onClick={onRestart} title="Neues Spiel">
           🔄
         </button>
       </div>
