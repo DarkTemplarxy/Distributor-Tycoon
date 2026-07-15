@@ -3,10 +3,12 @@ import { useGame } from '../../state/GameProvider';
 import {
   HIRE_WEEKS_UPFRONT,
   KAM_CAPACITY,
+  MONTHLY_RENT,
   ROLE_EMOJI,
   ROLE_LABEL,
   ROLE_SALARY,
   TRAINING_COST,
+  WEEKS_PER_MONTH,
 } from '../../game/constants';
 import { capacityFor, kamCount, usedCapacity } from '../../game/simulation';
 import { fireEmployee, hireEmployee, trainEmployee } from '../../game/actions';
@@ -26,8 +28,9 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Personal" icon="🧑‍💼" onClose={onClose} wide>
       <p className="hint">
-        Wöchentliche Lohnkosten: <b>{euro(weeklyPayroll)}</b>. Einstellung kostet {HIRE_WEEKS_UPFRONT}{' '}
-        Wochen im Voraus. Training +10 Skill für {euro(TRAINING_COST)}.
+        Monatliche Lohnkosten: <b>{euro(weeklyPayroll * WEEKS_PER_MONTH)}</b> (+ Miete{' '}
+        {euro(MONTHLY_RENT)}) – werden am Monatsende verrechnet. Einstellung kostet{' '}
+        {HIRE_WEEKS_UPFRONT} Wochen im Voraus. Training +10 Skill für {euro(TRAINING_COST)}.
       </p>
 
       <div className="two-col" style={{ marginBottom: 16 }}>

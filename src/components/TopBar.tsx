@@ -1,6 +1,6 @@
 import { useGame } from '../state/GameProvider';
-import { QUARTER_LABEL, WEEKS_PER_YEAR } from '../game/constants';
-import { dayName, euro, formatClock, quarterOf, weekOf } from '../game/util';
+import { MONTHS_PER_YEAR, QUARTER_LABEL, WEEKS_PER_MONTH } from '../game/constants';
+import { dayName, euro, formatClock, monthOfYear, quarterOf, weekOf, weekOfMonth } from '../game/util';
 import type { Speed } from '../game/types';
 import { Stars } from './shared';
 
@@ -23,9 +23,15 @@ export function TopBar({ onRestart }: { onRestart: () => void }) {
       </div>
 
       <div className="tb-stat">
+        <span className="label">Monat</span>
+        <span className="value">
+          {monthOfYear(week) + 1}/{MONTHS_PER_YEAR}
+        </span>
+      </div>
+      <div className="tb-stat">
         <span className="label">Woche</span>
         <span className="value">
-          {Math.min(week + 1, WEEKS_PER_YEAR)}/{WEEKS_PER_YEAR}
+          {weekOfMonth(week) + 1}/{WEEKS_PER_MONTH}
         </span>
       </div>
       <div className="tb-stat">

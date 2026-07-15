@@ -187,6 +187,7 @@ export interface WeeklyReport {
   revenue: number;
   purchases: number;
   salaries: number;
+  rent: number;
   logistics: number;
   spoilageLoss: number;
   interest: number;
@@ -203,6 +204,7 @@ export interface WeekAccumulator {
   revenue: number;
   purchases: number;
   salaries: number;
+  rent: number;
   logistics: number;
   spoilageLoss: number;
   interest: number;

@@ -2,7 +2,7 @@
 // Small shared helpers: ids, RNG, time math and formatting.
 // ============================================================================
 
-import { DAYS_PER_WEEK, WEEKS_PER_QUARTER } from './constants';
+import { DAYS_PER_WEEK, MONTHS_PER_YEAR, WEEKS_PER_MONTH, WEEKS_PER_QUARTER, WEEKS_PER_YEAR } from './constants';
 
 let idCounter = 0;
 export function uid(prefix = 'id'): string {
@@ -47,11 +47,26 @@ export function hourOf(totalDays: number): number {
 }
 
 export function quarterOf(week: number): number {
-  return Math.floor((week % 52) / WEEKS_PER_QUARTER); // 0..3
+  return Math.floor((week % WEEKS_PER_YEAR) / WEEKS_PER_QUARTER); // 0..3
 }
 
 export function yearOf(week: number): number {
-  return Math.floor(week / 52);
+  return Math.floor(week / WEEKS_PER_YEAR);
+}
+
+/** Absolute month index since game start (0-based). */
+export function monthOf(week: number): number {
+  return Math.floor(week / WEEKS_PER_MONTH);
+}
+
+/** Week within the current month, 0-based (0..3). */
+export function weekOfMonth(week: number): number {
+  return week % WEEKS_PER_MONTH;
+}
+
+/** Month within the current year, 0-based (0..11). */
+export function monthOfYear(week: number): number {
+  return monthOf(week) % MONTHS_PER_YEAR;
 }
 
 const DAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];

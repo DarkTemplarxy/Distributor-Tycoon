@@ -4,7 +4,7 @@ import { useGame } from '../../state/GameProvider';
 import { availableCredit } from '../../game/simulation';
 import { repayCredit, takeCredit } from '../../game/actions';
 import { CREDIT_INTEREST_RATE } from '../../game/constants';
-import { euro, weekOf } from '../../game/util';
+import { euro, monthOfYear, weekOf } from '../../game/util';
 
 export function FinanceModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
@@ -111,7 +111,7 @@ export function FinanceModal({ onClose }: { onClose: () => void }) {
 
       <p className="hint" style={{ marginTop: 14 }}>
         Gesamt-Umsatz bisher: {euro(state.stats.totalRevenue)} · Kumulierter Gewinn:{' '}
-        {euro(state.stats.totalProfit)} · Woche {week + 1}
+        {euro(state.stats.totalProfit)} · Monat {monthOfYear(week) + 1}
       </p>
     </Modal>
   );

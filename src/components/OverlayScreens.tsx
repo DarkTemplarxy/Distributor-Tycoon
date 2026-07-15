@@ -10,14 +10,15 @@ export function StartScreen({ onDismiss }: { onDismiss: () => void }) {
         <h1>Distributor Tycoon</h1>
         <p style={{ maxWidth: 440, margin: '10px auto' }}>
           Szenario <b>„Der Onkel"</b>: Du übernimmst einen kleinen Lebensmittel-Großhandel – 2 Kunden,
-          1 Lieferant, 2 Lagermitarbeiter, 5.000€ Startkapital. Bringe das Geschäft durch 52 Wochen.
+          1 Lieferant, 2 Lagermitarbeiter, 10.000€ Startkapital. Bringe das Geschäft durch 12 Monate.
         </p>
         <div style={{ textAlign: 'left', maxWidth: 440, margin: '14px auto', fontSize: 13, color: 'var(--text-dim)' }}>
           <p>🧾 Kunden bestellen wöchentlich – halte die Lieferfristen ein.</p>
-          <p>🛒 Kaufe Ware beim Lieferanten (1 Woche Lieferzeit).</p>
+          <p>🛒 Kaufe Ware selbst ein (ein Einkäufer bestellt später automatisch nach).</p>
           <p>👷 Lass Mitarbeiter Paletten herrichten (läuft automatisch).</p>
-          <p>🚚 Montag 18:00 holt der Laster fertige Paletten ab.</p>
+          <p>🚚 Der Laster holt täglich um 18:00 fertige Paletten ab.</p>
           <p>💰 Zahlung vom Kunden folgt 1 Woche nach Lieferung.</p>
+          <p>💸 Personal & Miete werden am Monatsende verrechnet.</p>
         </div>
         <button className="btn primary" style={{ fontSize: 15, padding: '10px 22px' }} onClick={onDismiss}>
           ▶ Los geht's
@@ -35,7 +36,7 @@ export function YearCompleteScreen({ onRestart }: { onRestart: () => void }) {
       <div className="overlay-card">
         <div className="big-emoji">🏁</div>
         <h1>Jahr geschafft!</h1>
-        <p>52 Wochen gemeistert. Hier dein Jahresabschluss:</p>
+        <p>12 Monate gemeistert. Hier dein Jahresabschluss:</p>
         <div className="report-grid" style={{ textAlign: 'left' }}>
           <div className="stat-box">
             <div className="k">Endkapital</div>

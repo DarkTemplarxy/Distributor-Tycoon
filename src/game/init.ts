@@ -159,6 +159,7 @@ export function createInitialState(): GameState {
       revenue: 0,
       purchases: 0,
       salaries: 0,
+      rent: 0,
       logistics: 0,
       spoilageLoss: 0,
       interest: 0,

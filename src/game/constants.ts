@@ -4,7 +4,7 @@
 
 import type { CustomerType, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -14,10 +14,15 @@ export const SECONDS_PER_DAY_AT_1X = 20;
 /** Units that fit on a single palette. */
 export const PALETTE_SIZE = 40;
 
-/** A session lasts one in-game year. */
-export const WEEKS_PER_YEAR = 52;
+/** A session lasts one in-game year = 12 months × 4 weeks = 48 weeks. */
 export const DAYS_PER_WEEK = 7;
-export const WEEKS_PER_QUARTER = 13;
+export const WEEKS_PER_MONTH = 4;
+export const MONTHS_PER_YEAR = 12;
+export const WEEKS_PER_YEAR = WEEKS_PER_MONTH * MONTHS_PER_YEAR; // 48
+export const WEEKS_PER_QUARTER = 12; // 3 months per season
+
+/** Fixed monthly warehouse rent, charged together with salaries at month end. */
+export const MONTHLY_RENT = 600;
 
 /** Truck arrives Monday at this hour (0-24). Day fraction 0.75 = 18:00. */
 export const TRUCK_HOUR = 18;
@@ -141,14 +146,13 @@ export interface ProductDef {
 }
 
 // The full product catalog. Only products with unlockWeek 0 are in the assortment
-// at the start; the rest are unlocked over time and added by the player (Sortiment).
-// unlockWeek is the internal 0-based week index; the UI shows unlockWeek + 1, so
-// fleisch (2) becomes available in displayed "Woche 3" and gemuese (7) in "Woche 8".
+// at the start; the rest unlock over time (aligned to month starts: fleisch at
+// week 4 = month 2, gemuese at week 8 = month 3) and are added by the player.
 // Verkaufspreise auf ~40% Zielmarge: verkaufspreis = EK / (1 - 0.40), auf 0,5€ gerundet.
 export const PRODUCT_DEFS: ProductDef[] = [
   { id: 'fisch', name: 'Fischfilet', emoji: '🐟', einkaufspreis: 20, verkaufspreis: 33.5, zielmarge: 40, spoilageDays: 21, unlockWeek: 0, listingFee: 0 },
-  { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 25, zielmarge: 40, spoilageDays: 42, unlockWeek: 2, listingFee: 500 },
-  { id: 'gemuese', name: 'Gemüse', emoji: '🥦', einkaufspreis: 10, verkaufspreis: 16.5, zielmarge: 40, spoilageDays: 56, unlockWeek: 7, listingFee: 500 },
+  { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 25, zielmarge: 40, spoilageDays: 42, unlockWeek: 4, listingFee: 500 },
+  { id: 'gemuese', name: 'Gemüse', emoji: '🥦', einkaufspreis: 10, verkaufspreis: 16.5, zielmarge: 40, spoilageDays: 56, unlockWeek: 8, listingFee: 500 },
 ];
 
 export function getProductDef(id: ProductId): ProductDef {

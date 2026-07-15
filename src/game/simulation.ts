@@ -28,6 +28,7 @@ import {
   KAM_CAPACITY,
   LARGE_UNLOCK_REVENUE,
   MEDIUM_UNLOCK_REVENUE,
+  MONTHLY_RENT,
   PALETTE_SIZE,
   PAYMENT_DELAY_DAYS,
   PER_ARTICLE_PREP_FACTOR,
@@ -37,6 +38,8 @@ import {
   SUPPLIER_INCREASE_CHANCE,
   SUPPLIER_INCREASE_RANGE,
   TRUCK_DAY_FRACTION,
+  WEEKS_PER_MONTH,
+  WEEKS_PER_QUARTER,
   WEEKS_PER_YEAR,
   demandUpliftFromDiscount,
   type ProductDef,
@@ -55,6 +58,7 @@ import type {
 import {
   clamp,
   dayOfWeek,
+  monthOfYear,
   pick,
   quarterOf,
   randInt,
@@ -107,7 +111,7 @@ export type CatalogEntryStatus = 'active' | 'addable' | 'locked';
 export interface CatalogEntry {
   def: ProductDef;
   status: CatalogEntryStatus;
-  /** Human "ab Woche N" reason when locked. */
+  /** Human "ab Monat N" reason when locked. */
   reason?: string;
 }
 
@@ -118,7 +122,7 @@ export function catalogStatus(state: GameState): CatalogEntry[] {
   return PRODUCT_DEFS.map((def) => {
     if (isInAssortment(state, def.id)) return { def, status: 'active' };
     if (week >= def.unlockWeek) return { def, status: 'addable' };
-    return { def, status: 'locked', reason: `ab Woche ${def.unlockWeek + 1}` };
+    return { def, status: 'locked', reason: `ab Monat ${monthOfYear(def.unlockWeek) + 1}` };
   });
 }
 
@@ -761,15 +765,33 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     state.weekAcc.interest += interest;
   }
 
+  // 1b. Month end: salaries (whole month) + rent, all at once, on the last week
+  // of the month. (newWeek is the start of the next month when divisible by 4.)
+  if (newWeek % WEEKS_PER_MONTH === 0 && newWeek > 0) {
+    const monthlySalary = state.employees.reduce((s, e) => s + e.salary, 0) * WEEKS_PER_MONTH;
+    if (monthlySalary > 0) {
+      spend(state, monthlySalary);
+      state.weekAcc.salaries += monthlySalary;
+    }
+    spend(state, MONTHLY_RENT);
+    state.weekAcc.rent += MONTHLY_RENT;
+    notify(
+      state,
+      `💸 Monatsabschluss: Personal ${Math.round(monthlySalary)}€ + Miete ${MONTHLY_RENT}€ verrechnet.`,
+      'warn',
+    );
+  }
+
   // 2. Close the ended week's report.
   const acc = state.weekAcc;
-  const profit = acc.revenue - acc.purchases - acc.salaries - acc.logistics - acc.interest;
+  const profit = acc.revenue - acc.purchases - acc.salaries - acc.rent - acc.logistics - acc.interest;
   state.stats.totalProfit += profit;
   state.reports.push({
     week: endedWeek,
     revenue: acc.revenue,
     purchases: acc.purchases,
     salaries: acc.salaries,
+    rent: acc.rent,
     logistics: acc.logistics,
     spoilageLoss: acc.spoilageLoss,
     interest: acc.interest,
@@ -792,6 +814,7 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     revenue: 0,
     purchases: 0,
     salaries: 0,
+    rent: 0,
     logistics: 0,
     spoilageLoss: 0,
     interest: 0,
@@ -799,8 +822,8 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     lateOrders: 0,
   };
 
-  // 5. Quarterly triggers (start of a new quarter, not week 0).
-  if (newWeek % 13 === 0 && newWeek > 0 && newWeek < WEEKS_PER_YEAR) {
+  // 5. Quarterly triggers (start of a new quarter/season, not week 0).
+  if (newWeek % WEEKS_PER_QUARTER === 0 && newWeek > 0 && newWeek < WEEKS_PER_YEAR) {
     applyQuarterlyEvents(state);
   }
 
@@ -823,23 +846,18 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   if (hasFreeCapacity) maybeGenerateInquiry(state);
   maybeGenerateExpansionInquiry(state);
 
-  // 7. Salaries for the new week.
-  const totalSalary = state.employees.reduce((s, e) => s + e.salary, 0);
-  spend(state, totalSalary);
-  state.weekAcc.salaries += totalSalary;
-
-  // 8. Weekly report notification.
+  // 7. Weekly report notification.
   notify(
     state,
     `📊 Wochenreport W${endedWeek}: Gewinn ${profit >= 0 ? '+' : ''}${Math.round(profit)}€, Kasse ${Math.round(state.cash)}€.`,
     profit >= 0 ? 'success' : 'warn',
   );
 
-  // 9. Year complete?
+  // 8. Year complete?
   if (newWeek >= WEEKS_PER_YEAR) {
     state.yearComplete = true;
     state.paused = true;
-    notify(state, `🏁 Jahr geschafft! 52 Wochen abgeschlossen. Siehe Jahresbericht.`, 'success');
+    notify(state, `🏁 Jahr geschafft! 12 Monate abgeschlossen. Siehe Jahresbericht.`, 'success');
   }
 }
 
