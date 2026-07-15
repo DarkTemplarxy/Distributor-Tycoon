@@ -171,6 +171,21 @@ export function freeCapacity(state: GameState, type: CustomerType): number {
   return capacityFor(state, type) - usedCapacity(state, type);
 }
 
+/** True once the company employs at least one Einkäufer (unlocks auto-restock). */
+export function hasEinkaeufer(state: GameState): boolean {
+  return state.employees.some((e) => e.role === 'einkaeufer');
+}
+
+/** Contracted weekly demand for a product = sum of active customers' line volumes. */
+export function weeklyDemand(state: GameState, productId: ProductId): number {
+  let sum = 0;
+  for (const c of state.customers) {
+    if (!c.active) continue;
+    for (const l of c.lines) if (l.productId === productId) sum += l.volume;
+  }
+  return sum;
+}
+
 /** Best (highest) skill among warehouse workers, or 0 if none. */
 function bestNegotiationSkill(state: GameState): number {
   const buyers = state.employees.filter((e) => e.role === 'einkaeufer');
@@ -472,6 +487,9 @@ function collectDuePayments(state: GameState): void {
 // --- Auto restock -----------------------------------------------------------
 
 function runAutoRestock(state: GameState): void {
+  // Automatic restocking is the Einkäufer's job — until one is hired, procurement
+  // is fully manual.
+  if (!hasEinkaeufer(state)) return;
   for (const product of state.products) {
     const rule = product.autoRestock;
     if (!rule.enabled) continue;

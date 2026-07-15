@@ -24,6 +24,7 @@ import {
   notify,
   spend,
   tryPrepareOrder,
+  weeklyDemand,
 } from './simulation';
 import { buildProduct } from './init';
 import { clamp, uid, weekOf } from './util';
@@ -166,6 +167,18 @@ export function hireEmployee(state: GameState, role: Role): ActionResult {
     skill: 45,
   });
   notify(state, `🧑‍💼 ${name} eingestellt (${salary}€/Woche, ${upfront}€ Vorkasse).`, 'success');
+
+  // A newly hired Einkäufer takes over procurement: enable demand-based
+  // auto-restock for every product in the assortment.
+  if (role === 'einkaeufer') {
+    for (const product of state.products) {
+      const d = weeklyDemand(state, product.id);
+      product.autoRestock = d > 0
+        ? { enabled: true, min: Math.ceil(d * 1.2), target: Math.ceil(d * 2.2) }
+        : { enabled: true, min: 0, target: 0 };
+    }
+    notify(state, `📦 ${name} übernimmt ab jetzt die automatische Nachbestellung.`, 'info');
+  }
   return { ok: true };
 }
 

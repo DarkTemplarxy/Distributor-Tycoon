@@ -16,7 +16,7 @@ import type { Role } from '../../game/types';
 const HIREABLE: { role: Role; benefit: string }[] = [
   { role: 'lager', benefit: 'Richtet Ware her – mehr Personal = schnellere Palettenvorbereitung.' },
   { role: 'kam', benefit: `Kapazität für Kunden (${KAM_CAPACITY.small} kleine / ${KAM_CAPACITY.medium} mittlere / ${KAM_CAPACITY.large} große).` },
-  { role: 'einkaeufer', benefit: 'Verhandelt Lieferanten-Preiserhöhungen herunter (skillabhängig).' },
+  { role: 'einkaeufer', benefit: 'Übernimmt die automatische Nachbestellung (bedarfsbasiert) und verhandelt Lieferanten-Preiserhöhungen herunter.' },
 ];
 
 export function EmployeesModal({ onClose }: { onClose: () => void }) {

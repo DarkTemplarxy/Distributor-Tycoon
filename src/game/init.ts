@@ -51,11 +51,11 @@ function makeProducts(): Product[] {
     }
     return buildProduct(def, {
       batches,
-      // Fish is what the two starting customers buy, so keep it auto-stocked by
-      // default (a spoilage-safe ~2.5 weeks) — the player can retune per product.
+      // Procurement starts fully MANUAL — automatic restocking only kicks in once
+      // the player hires an Einkäufer. Sensible min/target are pre-filled for then.
       autoRestock:
         def.id === 'fisch'
-          ? { enabled: true, min: 45, target: 80 }
+          ? { enabled: false, min: 45, target: 80 }
           : { enabled: false, min: 40, target: 120 },
     });
   });
@@ -80,7 +80,7 @@ function makeCustomers(): Customer[] {
       id: 'cust_giuseppe',
       name: 'Pizza Giuseppe',
       orderDayOfWeek: randInt(0, 5),
-      lines: [{ productId: 'fisch', price: 30, volume: 15 }],
+      lines: [{ productId: 'fisch', price: 33.5, volume: 15 }],
     },
     {
       ...base,
@@ -88,7 +88,7 @@ function makeCustomers(): Customer[] {
       name: 'Restaurant Urban',
       emoji: '🍽️',
       orderDayOfWeek: randInt(0, 5),
-      lines: [{ productId: 'fisch', price: 30, volume: 16 }],
+      lines: [{ productId: 'fisch', price: 33.5, volume: 16 }],
     },
   ];
 }

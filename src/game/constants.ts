@@ -4,7 +4,7 @@
 
 import type { CustomerType, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -144,10 +144,11 @@ export interface ProductDef {
 // at the start; the rest are unlocked over time and added by the player (Sortiment).
 // unlockWeek is the internal 0-based week index; the UI shows unlockWeek + 1, so
 // fleisch (2) becomes available in displayed "Woche 3" and gemuese (7) in "Woche 8".
+// Verkaufspreise auf ~40% Zielmarge: verkaufspreis = EK / (1 - 0.40), auf 0,5€ gerundet.
 export const PRODUCT_DEFS: ProductDef[] = [
-  { id: 'fisch', name: 'Fischfilet', emoji: '🐟', einkaufspreis: 20, verkaufspreis: 30, zielmarge: 33, spoilageDays: 21, unlockWeek: 0, listingFee: 0 },
-  { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 22.5, zielmarge: 33, spoilageDays: 42, unlockWeek: 2, listingFee: 500 },
-  { id: 'gemuese', name: 'Gemüse', emoji: '🥦', einkaufspreis: 10, verkaufspreis: 15, zielmarge: 33, spoilageDays: 56, unlockWeek: 7, listingFee: 500 },
+  { id: 'fisch', name: 'Fischfilet', emoji: '🐟', einkaufspreis: 20, verkaufspreis: 33.5, zielmarge: 40, spoilageDays: 21, unlockWeek: 0, listingFee: 0 },
+  { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 25, zielmarge: 40, spoilageDays: 42, unlockWeek: 2, listingFee: 500 },
+  { id: 'gemuese', name: 'Gemüse', emoji: '🥦', einkaufspreis: 10, verkaufspreis: 16.5, zielmarge: 40, spoilageDays: 56, unlockWeek: 7, listingFee: 500 },
 ];
 
 export function getProductDef(id: ProductId): ProductDef {
