@@ -48,17 +48,13 @@ export interface Product {
   autoRestock: { enabled: boolean; min: number; target: number };
 }
 
-/** One product a customer buys: its own price, weekly volume and order timing. */
+/** One product a customer buys: its own price and weekly volume. */
 export interface CustomerLine {
   productId: ProductId;
   /** Agreed price per unit. */
   price: number;
   /** Baseline units ordered per week. */
   volume: number;
-  /** Day of week (0=Mon .. 5=Sat) this line places its weekly order. Re-randomised each week. */
-  orderDayOfWeek: number;
-  /** Next week index on which this line should place an order. */
-  nextOrderWeek: number;
 }
 
 export interface Customer {
@@ -68,6 +64,11 @@ export interface Customer {
   type: CustomerType;
   /** The product lines this customer buys (grows over time via expansion offers). */
   lines: CustomerLine[];
+  /** Day of week (0=Mon .. 5=Sat) the customer places its weekly order — ALL its
+   * product lines order together on this day. Re-randomised each week. */
+  orderDayOfWeek: number;
+  /** Next week index on which this customer should place its order. */
+  nextOrderWeek: number;
   /** 1-5 stars this specific customer gives us. */
   serviceRating: number;
   /** 0-100 loyalty. */

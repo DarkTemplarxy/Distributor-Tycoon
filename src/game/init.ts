@@ -68,6 +68,7 @@ function makeCustomers(): Customer[] {
     lateDeliveries: 0,
     activeDiscount: 0,
     active: true,
+    nextOrderWeek: 0,
     volatility: CUSTOMER_VOLATILITY.small,
     deliveryLeadWeeks: CUSTOMER_LEAD_WEEKS.small,
     type: 'small' as const,
@@ -78,14 +79,16 @@ function makeCustomers(): Customer[] {
       ...base,
       id: 'cust_giuseppe',
       name: 'Pizza Giuseppe',
-      lines: [{ productId: 'fisch', price: 30, volume: 15, orderDayOfWeek: randInt(0, 5), nextOrderWeek: 0 }],
+      orderDayOfWeek: randInt(0, 5),
+      lines: [{ productId: 'fisch', price: 30, volume: 15 }],
     },
     {
       ...base,
       id: 'cust_urban',
       name: 'Restaurant Urban',
       emoji: '🍽️',
-      lines: [{ productId: 'fisch', price: 30, volume: 16, orderDayOfWeek: randInt(0, 5), nextOrderWeek: 0 }],
+      orderDayOfWeek: randInt(0, 5),
+      lines: [{ productId: 'fisch', price: 30, volume: 16 }],
     },
   ];
 }

@@ -4,7 +4,7 @@
 
 import type { CustomerType, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -46,6 +46,10 @@ export const BANKRUPTCY_CASH = -6000;
 
 /** Base preparation time (in game-days) for one full palette at skill 100. */
 export const BASE_PREP_DAYS_PER_PALETTE = 0.9;
+
+/** Extra prep time per additional article in the same customer order: a bundle of
+ * N articles takes each palette (1 + (N-1) * this) longer to prepare. */
+export const PER_ARTICLE_PREP_FACTOR = 0.2;
 
 /** Cost of a single training session. */
 export const TRAINING_COST = 250;

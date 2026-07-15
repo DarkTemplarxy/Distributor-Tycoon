@@ -16,67 +16,106 @@ export function OrdersPanel() {
   const { state, mutate } = useGame();
   const week = weekOf(state.totalDays);
 
-  const open = state.orders
-    .filter((o) => o.status !== 'delivered')
-    .sort((a, b) => Number(b.late) - Number(a.late) || a.dueWeek - b.dueWeek);
+  const open = state.orders.filter((o) => o.status !== 'delivered');
+
+  // Group open orders by customer so a multi-product customer shows one card.
+  const groups = new Map<string, Order[]>();
+  for (const o of open) {
+    const arr = groups.get(o.customerId) ?? [];
+    arr.push(o);
+    groups.set(o.customerId, arr);
+  }
+
+  const cards = [...groups.entries()]
+    .map(([customerId, orders]) => {
+      const late = orders.some((o) => o.late);
+      const minDue = Math.min(...orders.map((o) => o.dueWeek));
+      return { customerId, orders, late, minDue };
+    })
+    .sort((a, b) => Number(b.late) - Number(a.late) || a.minDue - b.minDue);
 
   return (
     <div className="panel">
       <h3>
         🧾 Aufträge <span className="count">{open.length}</span>
       </h3>
-      {open.length === 0 && <div className="empty">Keine offenen Aufträge.</div>}
-      {open.map((order) => {
-        const cust = state.customers.find((c) => c.id === order.customerId);
-        const product = state.products.find((p) => p.id === order.productId)!;
-        const have = inventoryTotal(product);
-        const enough = have >= order.quantity;
-        const badgeClass = order.late
-          ? 'badge-late'
-          : order.status === 'pending'
-            ? 'badge-pending'
-            : order.status === 'preparing'
-              ? 'badge-preparing'
-              : 'badge-ready';
+      {cards.length === 0 && <div className="empty">Keine offenen Aufträge.</div>}
+
+      {cards.map(({ customerId, orders, late, minDue }) => {
+        const cust = state.customers.find((c) => c.id === customerId);
+        const pending = orders.filter((o) => o.status === 'pending');
+        const fulfillable = pending.filter(
+          (o) => inventoryTotal(state.products.find((p) => p.id === o.productId)!) >= o.quantity,
+        );
+        const shortCount = pending.length - fulfillable.length;
+        const totalValue = orders.reduce((s, o) => s + o.quantity * o.price, 0);
+
         return (
-          <div key={order.id} className={`order${order.late ? ' late' : ''}`}>
+          <div key={customerId} className={`order${late ? ' late' : ''}`}>
             <div className="o-top">
               <span className="o-cust">
                 {cust?.emoji} {cust?.name ?? 'Kunde'}
               </span>
-              <span className={`o-badge ${badgeClass}`}>
-                {order.late ? 'Verspätet' : STATUS_LABEL[order.status]}
-              </span>
+              <span className="o-badge badge-preparing">{orders.length} Artikel</span>
             </div>
-            <div className="o-meta">
-              <span style={{ color: PRODUCT_COLOR[order.productId] }}>
-                {product.emoji} {order.quantity}× {product.name}
-              </span>
-              <span>@ {order.price.toFixed(2)}€</span>
-              <span>fällig W{order.dueWeek}{order.dueWeek <= week ? ' ⚠️' : ''}</span>
+
+            {orders.map((order) => {
+              const product = state.products.find((p) => p.id === order.productId)!;
+              const have = inventoryTotal(product);
+              const enough = have >= order.quantity;
+              const badgeClass = order.late
+                ? 'badge-late'
+                : order.status === 'pending'
+                  ? 'badge-pending'
+                  : order.status === 'preparing'
+                    ? 'badge-preparing'
+                    : 'badge-ready';
+              return (
+                <div key={order.id} className="o-meta" style={{ alignItems: 'center' }}>
+                  <span style={{ color: PRODUCT_COLOR[order.productId] }}>
+                    {product.emoji} {order.quantity}× {product.name}
+                  </span>
+                  <span>@ {order.price.toFixed(2)}€</span>
+                  <span className={`o-badge ${badgeClass}`} style={{ marginLeft: 'auto' }}>
+                    {order.late ? 'Verspätet' : STATUS_LABEL[order.status]}
+                  </span>
+                  {order.status === 'pending' && (
+                    <span className={enough ? 'pill' : 'pill bad'}>
+                      {have}/{order.quantity}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+
+            <div className="o-meta" style={{ color: 'var(--text-faint)' }}>
+              <span>fällig W{minDue}{minDue <= week ? ' ⚠️' : ''}</span>
+              <span>· Umsatz {Math.round(totalValue)}€</span>
             </div>
-            {order.status === 'pending' && (
-              <div className="o-meta">
-                <span className={enough ? '' : 'pill bad'}>
-                  Bestand: {have} / {order.quantity}
-                </span>
-              </div>
-            )}
-            {order.status === 'pending' && (
+
+            {pending.length > 0 && (
               <div className="o-actions">
                 <button
                   className="btn small primary"
-                  disabled={!enough}
-                  onClick={() => mutate((s) => prepareOrder(s, order.id))}
+                  disabled={fulfillable.length === 0}
+                  onClick={() =>
+                    mutate((s) => {
+                      for (const o of fulfillable) prepareOrder(s, o.id);
+                    })
+                  }
                 >
-                  👷 Herrichten
+                  👷 Herrichten ({fulfillable.length})
                 </button>
-                {!enough && (
+                {shortCount > 0 && (
                   <button
                     className="btn small"
-                    onClick={() => mutate((s) => restockForOrder(s, order.id))}
+                    onClick={() =>
+                      mutate((s) => {
+                        for (const o of pending) restockForOrder(s, o.id);
+                      })
+                    }
                   >
-                    🛒 Nachbestellen ({order.quantity - have}×)
+                    🛒 Nachbestellen ({shortCount})
                   </button>
                 )}
               </div>

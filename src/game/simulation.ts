@@ -30,6 +30,7 @@ import {
   MEDIUM_UNLOCK_REVENUE,
   PALETTE_SIZE,
   PAYMENT_DELAY_DAYS,
+  PER_ARTICLE_PREP_FACTOR,
   PRODUCT_DEFS,
   SEASONAL_TREND,
   SECONDS_PER_DAY_AT_1X,
@@ -198,9 +199,10 @@ export function serviceStarsRecompute(state: GameState): void {
 
 // --- Order preparation ------------------------------------------------------
 
-function prepDaysFor(quantity: number, skill: number): number {
+function prepDaysFor(quantity: number, skill: number, bundleSize = 1): number {
   const palettes = quantity / PALETTE_SIZE;
-  return palettes * BASE_PREP_DAYS_PER_PALETTE * (100 / Math.max(1, skill));
+  const bundleFactor = 1 + Math.max(0, bundleSize - 1) * PER_ARTICLE_PREP_FACTOR;
+  return palettes * BASE_PREP_DAYS_PER_PALETTE * (100 / Math.max(1, skill)) * bundleFactor;
 }
 
 /**
@@ -226,7 +228,11 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
   });
   order.paletteId = paletteId;
   order.status = 'preparing';
-  const days = prepDaysFor(order.quantity, worker.skill);
+  // More articles in the same customer order => longer prep per palette.
+  const bundleSize = state.orders.filter(
+    (o) => o.customerId === order.customerId && o.status !== 'delivered',
+  ).length;
+  const days = prepDaysFor(order.quantity, worker.skill, bundleSize);
   worker.task = { orderId: order.id, totalDays: days, remainingDays: days };
   return null;
 }
@@ -533,6 +539,25 @@ function pickInquiryProduct(state: GameState): ProductId {
   return pick(state.products.map((p) => p.id));
 }
 
+/** A customer name not already used by an active customer or an open inquiry,
+ * so the customer list never shows confusing duplicates. */
+function uniqueCustomerName(state: GameState, type: CustomerType): string {
+  const taken = new Set<string>();
+  for (const c of state.customers) if (c.active) taken.add(c.name);
+  for (const i of state.inquiries) if (i.status === 'open') taken.add(i.name);
+  const pool = CUSTOMER_NAME_POOL[type];
+  const free = pool.filter((n) => !taken.has(n));
+  if (free.length > 0) return pick(free);
+  // Pool exhausted — append a number suffix until unique.
+  for (let i = 2; i < 999; i++) {
+    for (const base of pool) {
+      const name = `${base} ${i}`;
+      if (!taken.has(name)) return name;
+    }
+  }
+  return `${pick(pool)} ${uid('n')}`;
+}
+
 function maybeGenerateInquiry(state: GameState): void {
   if (Math.random() > INQUIRY_CHANCE_PER_WEEK) return;
   const week = weekOf(state.totalDays);
@@ -544,7 +569,7 @@ function maybeGenerateInquiry(state: GameState): void {
   const product = getProduct(state, preferred);
   const inquiry: Inquiry = {
     id: uid('inq'),
-    name: pick(CUSTOMER_NAME_POOL[type]),
+    name: uniqueCustomerName(state, type),
     emoji: CUSTOMER_EMOJI[type],
     type,
     preferredProduct: preferred,
@@ -592,13 +617,11 @@ function maybeGenerateExpansionInquiry(state: GameState): void {
   notify(state, `🔁 ${cust.name} möchte zusätzlich ${product.emoji} ${product.name} beziehen.`, 'info');
 }
 
-function makeLine(inq: Inquiry, week: number, price: number): CustomerLine {
+function makeLine(inq: Inquiry, price: number): CustomerLine {
   return {
     productId: inq.preferredProduct,
     price, // accepted price (target price, or the player's counter offer)
     volume: inq.suggestedVolume, // fixed quantity
-    orderDayOfWeek: randInt(0, 5), // Mon-Sat
-    nextOrderWeek: week + 1, // one-week grace to pre-stock before the first order
   };
 }
 
@@ -621,7 +644,8 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
     inq.status = 'accepted';
     if (!cust || !cust.active) return;
     const product = getProduct(state, inq.preferredProduct);
-    cust.lines.push(makeLine(inq, week, price));
+    // The new line orders together with the customer's other lines on its day.
+    cust.lines.push(makeLine(inq, price));
     notify(
       state,
       `🎉 ${cust.name} nimmt zusätzlich ${product.emoji} ${product.name} ab! ${inq.suggestedVolume}× @ ${price}€.`,
@@ -635,7 +659,9 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
     name: inq.name,
     emoji: inq.emoji,
     type: inq.type,
-    lines: [makeLine(inq, week, price)],
+    lines: [makeLine(inq, price)],
+    orderDayOfWeek: randInt(0, 5), // Mon-Sat
+    nextOrderWeek: week + 1, // one-week grace to pre-stock before the first order
     serviceRating: 3,
     loyalty: 60,
     lateDeliveries: 0,
@@ -810,18 +836,19 @@ function onDayStart(state: GameState, dayIndex: number): void {
 
   updateSpoilage(state, dayIndex);
 
-  // Customer orders: each product line orders once a week on its own day, spread
-  // randomly across Mon-Sat (never Sunday), re-randomised after every order.
+  // Customer orders: each customer orders ALL its product lines together once a
+  // week, on its own day, spread randomly across Mon-Sat (never Sunday) and
+  // re-randomised after each order.
   const week = weekOf(dayIndex);
   const dow = dayOfWeek(dayIndex);
   for (const cust of state.customers) {
     if (!cust.active) continue;
-    for (const line of cust.lines) {
-      if (line.nextOrderWeek <= week && line.orderDayOfWeek === dow) {
+    if (cust.nextOrderWeek <= week && cust.orderDayOfWeek === dow) {
+      for (const line of cust.lines) {
         generateCustomerOrder(state, cust, line);
-        line.nextOrderWeek = week + 1;
-        line.orderDayOfWeek = randInt(0, 5); // Mon-Sat, exclude Sunday
       }
+      cust.nextOrderWeek = week + 1;
+      cust.orderDayOfWeek = randInt(0, 5); // Mon-Sat, exclude Sunday
     }
   }
 
