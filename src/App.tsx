@@ -3,9 +3,11 @@ import { useGame } from './state/GameProvider';
 import { weekOf } from './game/util';
 import { TopBar } from './components/TopBar';
 import { Modal } from './components/Modal';
-import { IsometricWarehouse } from './components/IsometricWarehouse';
+import { IsometricWarehouse, type BuildTool } from './components/IsometricWarehouse';
+import { BuildBar } from './components/BuildBar';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
+import { buildShelf, buildTable, buildInboundSlot, expandHall } from './game/actions';
 import { Toasts } from './components/Toasts';
 import { GameOverScreen, StartScreen, YearCompleteScreen } from './components/OverlayScreens';
 import { InventoryModal } from './components/modals/InventoryModal';
@@ -40,6 +42,23 @@ export function App() {
   // True while the auto-opened Monday order screen is up, so closing it resumes
   // the game (a manually-opened Einkauf screen must not touch the pause state).
   const [orderPromptActive, setOrderPromptActive] = useState(false);
+  const [buildMode, setBuildMode] = useState(false);
+  const [buildTool, setBuildTool] = useState<BuildTool | null>(null);
+
+  // Opening a modal leaves build mode; entering build mode closes any modal.
+  const openModal = (id: ModalId) => {
+    setBuildMode(false);
+    setBuildTool(null);
+    setModal(id);
+  };
+  const enterBuild = () => {
+    setModal(null);
+    setBuildMode(true);
+  };
+  const exitBuild = () => {
+    setBuildMode(false);
+    setBuildTool(null);
+  };
 
   const doRestart = () => {
     newGame();
@@ -91,15 +110,31 @@ export function App() {
       <TopBar onRestart={() => setRestartOpen(true)} />
 
       <div className="main">
-        <div className="col-left">
-          <IsometricWarehouse />
+        <div className="col-left" style={{ position: 'relative' }}>
+          {buildMode && <BuildBar tool={buildTool} onSelect={setBuildTool} onExit={exitBuild} />}
+          <IsometricWarehouse
+            build={
+              buildMode
+                ? {
+                    tool: buildTool,
+                    onPlaceTile: (gx, gy) =>
+                      mutate((s) => {
+                        if (buildTool === 'shelf') buildShelf(s, gx, gy);
+                        else if (buildTool === 'table') buildTable(s, gx, gy);
+                        else if (buildTool === 'inbound') buildInboundSlot(s, gx, gy);
+                      }),
+                    onExpand: (block) => mutate((s) => expandHall(s, block)),
+                  }
+                : undefined
+            }
+          />
         </div>
         <div className="col-right">
           <OrdersPanel />
         </div>
       </div>
 
-      <ActionBar onOpen={setModal} />
+      <ActionBar onOpen={openModal} onBuild={enterBuild} />
 
       <Toasts />
 

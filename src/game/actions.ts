@@ -8,9 +8,15 @@ import {
   EXPRESS_PO_LEAD_DAYS,
   EXPRESS_RESTOCK_SURCHARGE,
   getProductDef,
+  hallExpansionPrice,
   HIRE_WEEKS_UPFRONT,
+  INBOUND_SLOT_PRICE,
+  PALETTE_SIZE,
   ROLE_LABEL,
   ROLE_SALARY,
+  SHELF_PRICE,
+  SHELF_SLOTS,
+  TABLE_PRICE,
   TRAINING_COST,
   TRAINING_SKILL_GAIN,
 } from './constants';
@@ -316,5 +322,68 @@ export function repayCredit(state: GameState, amount: number): ActionResult {
   state.bankCredit -= amt;
   state.cash -= amt;
   notify(state, `🏦 Kredit getilgt: ${Math.round(amt)}€.`, 'success');
+  return { ok: true };
+}
+
+// --- Build mode (warehouse) -------------------------------------------------
+
+function tileFree(state: GameState, gx: number, gy: number): boolean {
+  return (
+    !state.warehouse.shelves.some((s) => s.gx === gx && s.gy === gy) &&
+    !state.warehouse.tables.some((t) => t.gx === gx && t.gy === gy)
+  );
+}
+
+/** Build a shelf (+4 pallet slots) on a free storage tile. Fixed price. */
+export function buildShelf(state: GameState, gx: number, gy: number): ActionResult {
+  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+  if (!tile || tile.zone !== 'storage') return { ok: false, message: 'Nur in der Lagerzone platzierbar.' };
+  if (!tileFree(state, gx, gy)) return { ok: false, message: 'Kachel bereits belegt.' };
+  if (state.cash + availableCredit(state) < SHELF_PRICE) return { ok: false, message: `Regal kostet ${SHELF_PRICE}€.` };
+  spend(state, SHELF_PRICE);
+  state.warehouse.shelves.push({ id: uid('shelf'), gx, gy });
+  notify(state, `🧱 Regal gebaut (${SHELF_PRICE}€) – +${SHELF_SLOTS * PALETTE_SIZE} Lagerplätze.`, 'info');
+  return { ok: true };
+}
+
+/** Build a prep table on a free storage tile — more parallel Herrichtung. */
+export function buildTable(state: GameState, gx: number, gy: number): ActionResult {
+  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+  if (!tile || tile.zone !== 'storage') return { ok: false, message: 'Nur in der Lagerzone platzierbar.' };
+  if (!tileFree(state, gx, gy)) return { ok: false, message: 'Kachel bereits belegt.' };
+  if (state.cash + availableCredit(state) < TABLE_PRICE) return { ok: false, message: `Tisch kostet ${TABLE_PRICE}€.` };
+  spend(state, TABLE_PRICE);
+  state.warehouse.tables.push({ gx, gy });
+  notify(state, `🔧 Vorbereitungstisch gebaut (${TABLE_PRICE}€) – mehr paralleles Herrichten.`, 'info');
+  return { ok: true };
+}
+
+/** Add an inbound pallet slot (Wareneingang +1) on a free ramp tile. */
+export function buildInboundSlot(state: GameState, gx: number, gy: number): ActionResult {
+  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+  if (!tile || tile.zone !== 'ramp') return { ok: false, message: 'Nur im Rampenbereich platzierbar.' };
+  const rampCount = state.warehouse.tiles.filter((t) => t.zone === 'ramp').length;
+  if (state.warehouse.inboundSlots + state.warehouse.abholzone >= rampCount) {
+    return { ok: false, message: 'Kein Platz mehr im Rampenbereich.' };
+  }
+  if (state.cash + availableCredit(state) < INBOUND_SLOT_PRICE) return { ok: false, message: `Anlieferungsplatz kostet ${INBOUND_SLOT_PRICE}€.` };
+  spend(state, INBOUND_SLOT_PRICE);
+  state.warehouse.inboundSlots += 1;
+  notify(state, `📥 Anlieferungsplatz gebaut (${INBOUND_SLOT_PRICE}€) – Wareneingang +${PALETTE_SIZE}.`, 'info');
+  return { ok: true };
+}
+
+/** Expand the hall by one 2×2 block (4 storage tiles). Only scaling cost. */
+export function expandHall(state: GameState, block: { gx: number; gy: number }[]): ActionResult {
+  const price = hallExpansionPrice(state.warehouse.expansions);
+  if (state.cash + availableCredit(state) < price) return { ok: false, message: `Erweiterung kostet ${price}€.` };
+  for (const c of block) {
+    if (!state.warehouse.tiles.some((t) => t.gx === c.gx && t.gy === c.gy)) {
+      state.warehouse.tiles.push({ gx: c.gx, gy: c.gy, zone: 'storage' });
+    }
+  }
+  spend(state, price);
+  state.warehouse.expansions += 1;
+  notify(state, `🏗️ Halle erweitert (${price}€) – 4 neue Lagerkacheln.`, 'info');
   return { ok: true };
 }

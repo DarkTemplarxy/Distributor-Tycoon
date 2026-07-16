@@ -1,13 +1,13 @@
 import { useGame } from '../state/GameProvider';
-import { catalogStatus, inventoryTotal } from '../game/simulation';
+import { catalogStatus, inventoryTotal, shelfStock } from '../game/simulation';
 import type { ModalId } from '../App';
 
-export function ActionBar({ onOpen }: { onOpen: (id: ModalId) => void }) {
+export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; onBuild: () => void }) {
   const { state } = useGame();
 
   const openInquiries = state.inquiries.filter((i) => i.status === 'open').length;
   const actionableOrders = state.orders.filter(
-    (o) => o.status === 'pending' && inventoryTotal(state.products.find((p) => p.id === o.productId)!) >= o.quantity,
+    (o) => o.status === 'pending' && shelfStock(state.products.find((p) => p.id === o.productId)!) >= o.quantity,
   ).length;
   const lowStock = state.products.some((p) => inventoryTotal(p) <= 0);
   const addableProducts = catalogStatus(state).filter((e) => e.status === 'addable').length;
@@ -27,6 +27,10 @@ export function ActionBar({ onOpen }: { onOpen: (id: ModalId) => void }) {
 
   return (
     <div className="actionbar">
+      <button className="action-btn" onClick={onBuild} title="Lager bauen & erweitern">
+        <span className="ico">🏗️</span>
+        <span>Bauen</span>
+      </button>
       {buttons.map((b) => (
         <button key={b.id} className="action-btn" onClick={() => onOpen(b.id)}>
           <span className="ico">{b.icon}</span>

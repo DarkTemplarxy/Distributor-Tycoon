@@ -12,6 +12,7 @@ import {
   BANKRUPTCY_CASH,
   BASE_CUSTOMER_CAPACITY,
   BASE_PREP_DAYS_PER_PALETTE,
+  BASE_PUTAWAY_DAYS_PER_PALETTE,
   CREDIT_INTEREST_RATE,
   CREDIT_LIMIT_FLOOR,
   CUSTOMER_EMOJI,
@@ -35,6 +36,7 @@ import {
   PAYMENT_DELAY_DAYS,
   PER_ARTICLE_PREP_FACTOR,
   PRODUCT_DEFS,
+  SHELF_SLOTS,
   RECOMMENDATION_BUFFER,
   RECOMMENDATION_COVER_WEEKS,
   SEASONAL_TREND,
@@ -90,8 +92,42 @@ export function notify(state: GameState, message: string, type: NotificationType
 
 // --- Inventory helpers ------------------------------------------------------
 
+/** All units of a product, shelved + waiting in the inbound zone. Used for
+ * ordering/recommendation; only shelf stock (below) can actually fill orders. */
 export function inventoryTotal(product: Product): number {
   return product.batches.reduce((sum, b) => sum + b.quantity, 0);
+}
+
+/** Units on shelves — the only stock available to prepare orders. */
+export function shelfStock(product: Product): number {
+  return product.batches.reduce((s, b) => s + (b.location === 'shelf' ? b.quantity : 0), 0);
+}
+
+/** Units sitting in the inbound zone, waiting to be put away onto shelves. */
+export function inboundStock(product: Product): number {
+  return product.batches.reduce((s, b) => s + (b.location === 'inbound' ? b.quantity : 0), 0);
+}
+
+/** Total shelf capacity in units: shelves × slots × palette size. */
+export function shelfCapacity(state: GameState): number {
+  return state.warehouse.shelves.length * SHELF_SLOTS * PALETTE_SIZE;
+}
+export function shelfUsed(state: GameState): number {
+  return state.products.reduce((s, p) => s + shelfStock(p), 0);
+}
+export function shelfFree(state: GameState): number {
+  return Math.max(0, shelfCapacity(state) - shelfUsed(state));
+}
+
+/** Total inbound (Wareneingang) capacity and how much is free right now. */
+export function inboundCapacity(state: GameState): number {
+  return state.warehouse.inboundSlots * PALETTE_SIZE;
+}
+export function inboundUsed(state: GameState): number {
+  return state.products.reduce((s, p) => s + inboundStock(p), 0);
+}
+export function inboundFree(state: GameState): number {
+  return Math.max(0, inboundCapacity(state) - inboundUsed(state));
 }
 
 export function getProduct(state: GameState, id: ProductId): Product {
@@ -131,12 +167,14 @@ export function catalogStatus(state: GameState): CatalogEntry[] {
   });
 }
 
-/** Remove `qty` units from a product using FIFO (soonest expiry first). */
+/** Remove `qty` units of SHELF stock from a product, FIFO (soonest expiry
+ * first). Inbound stock is never used to fill orders. */
 function deductInventory(product: Product, qty: number): void {
   let remaining = qty;
   product.batches.sort((a, b) => a.expiryDay - b.expiryDay);
   for (const batch of product.batches) {
     if (remaining <= 0) break;
+    if (batch.location !== 'shelf') continue;
     const take = Math.min(batch.quantity, remaining);
     batch.quantity -= take;
     remaining -= take;
@@ -229,14 +267,24 @@ function prepDaysFor(quantity: number, skill: number, bundleSize = 1): number {
   return palettes * BASE_PREP_DAYS_PER_PALETTE * (100 / Math.max(1, skill)) * bundleFactor;
 }
 
+/** Workers currently preparing (each occupies one prep table). */
+function preppingCount(state: GameState): number {
+  return state.employees.filter((e) => e.task?.kind === 'prep').length;
+}
+/** Free prep tables = tables not currently in use. Limits parallel preparation. */
+function freeTables(state: GameState): number {
+  return state.warehouse.tables.length - preppingCount(state);
+}
+
 /**
- * Try to start preparing an order: needs enough inventory and a free worker.
- * Returns a reason string on failure, or null on success.
+ * Try to start preparing an order: needs enough SHELF stock, a free prep table
+ * and a free worker. Returns a reason string on failure, or null on success.
  */
 export function tryPrepareOrder(state: GameState, order: Order): string | null {
   if (order.status !== 'pending') return 'Auftrag ist nicht offen.';
   const product = getProduct(state, order.productId);
-  if (inventoryTotal(product) < order.quantity) return 'Nicht genug Lagerbestand.';
+  if (shelfStock(product) < order.quantity) return 'Nicht genug Regal-Bestand.';
+  if (freeTables(state) <= 0) return 'Kein freier Vorbereitungstisch.';
   const worker = state.employees.find((e) => e.role === 'lager' && !e.task);
   if (!worker) return 'Kein freier Lagermitarbeiter.';
 
@@ -257,7 +305,7 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
     (o) => o.customerId === order.customerId && o.status !== 'delivered',
   ).length;
   const days = prepDaysFor(order.quantity, worker.skill, bundleSize);
-  worker.task = { orderId: order.id, totalDays: days, remainingDays: days };
+  worker.task = { kind: 'prep', orderId: order.id, totalDays: days, remainingDays: days };
   return null;
 }
 
@@ -276,27 +324,89 @@ function updateEmployees(state: GameState, deltaDays: number): void {
     if (!emp.task) continue;
     emp.task.remainingDays -= deltaDays;
     if (emp.task.remainingDays <= 0) {
-      const orderId = emp.task.orderId;
+      const task = emp.task;
       emp.task = undefined;
-      completePreparation(state, orderId);
+      if (task.kind === 'prep') {
+        completePreparation(state, task.orderId);
+      } else {
+        // Put-away done: the pallet (carried in transit) lands on a shelf.
+        const product = getProduct(state, task.productId);
+        product.batches.push({
+          id: uid('batch'),
+          productId: task.productId,
+          quantity: task.quantity,
+          expiryDay: task.expiryDay,
+          location: 'shelf',
+        });
+      }
     }
   }
 }
 
-/** Auto-assign idle workers to the oldest fulfillable pending order. */
+/** Assign one idle worker to put a pallet away (inbound → shelf). The pallet
+ * leaves the inbound zone immediately (carried in transit) so two workers can't
+ * grab the same goods. Returns true if a task was started. */
+function assignPutaway(state: GameState, product: Product): boolean {
+  const worker = state.employees.find((e) => e.role === 'lager' && !e.task);
+  if (!worker) return false;
+  const qty = Math.min(PALETTE_SIZE, inboundStock(product), shelfFree(state));
+  if (qty <= 0) return false;
+
+  // Take qty from inbound (FIFO by expiry) and remember the earliest expiry.
+  let remaining = qty;
+  let expiry = Infinity;
+  const inbound = product.batches
+    .filter((b) => b.location === 'inbound')
+    .sort((a, b) => a.expiryDay - b.expiryDay);
+  for (const b of inbound) {
+    if (remaining <= 0) break;
+    const take = Math.min(b.quantity, remaining);
+    b.quantity -= take;
+    remaining -= take;
+    expiry = Math.min(expiry, b.expiryDay);
+  }
+  product.batches = product.batches.filter((b) => b.quantity > 0);
+
+  const days = (qty / PALETTE_SIZE) * BASE_PUTAWAY_DAYS_PER_PALETTE * (100 / Math.max(1, worker.skill));
+  worker.task = {
+    kind: 'putaway',
+    productId: product.id,
+    quantity: qty,
+    expiryDay: expiry === Infinity ? state.totalDays + product.spoilageDays : expiry,
+    totalDays: days,
+    remainingDays: days,
+  };
+  return true;
+}
+
+/**
+ * Auto-assign idle warehouse workers. Preparation comes first (fulfilling orders
+ * = revenue), each needing a free prep table; whatever workers remain then put
+ * delivered goods away from the inbound zone onto the shelves. With a big
+ * delivery and few workers the inbound zone backs up until more staff/tables/
+ * shelf space is added.
+ */
 function autoAssignWork(state: GameState): void {
   if (!state.settings.autoPrep) return;
   let idle = state.employees.filter((e) => e.role === 'lager' && !e.task).length;
   if (idle === 0) return;
+
+  // 1. Prep due orders from shelf stock (bounded by free tables).
   const pending = state.orders
     .filter((o) => o.status === 'pending')
     .sort((a, b) => a.dueWeek - b.dueWeek || a.createdDay - b.createdDay);
   for (const order of pending) {
-    if (idle === 0) break;
+    if (idle === 0 || freeTables(state) <= 0) break;
     const product = getProduct(state, order.productId);
-    if (inventoryTotal(product) < order.quantity) continue;
-    const err = tryPrepareOrder(state, order);
-    if (err === null) idle -= 1;
+    if (shelfStock(product) < order.quantity) continue;
+    if (tryPrepareOrder(state, order) === null) idle -= 1;
+  }
+
+  // 2. Put remaining idle workers on put-away (no table needed).
+  while (idle > 0 && shelfFree(state) > 0) {
+    const product = state.products.find((p) => inboundStock(p) > 0);
+    if (!product || !assignPutaway(state, product)) break;
+    idle -= 1;
   }
 }
 
@@ -417,7 +527,7 @@ function releaseCustomerOrders(state: GameState, customerId: string): void {
     (o) => o.customerId === customerId && o.status !== 'delivered',
   );
   for (const order of openOrders) {
-    // Return goods that were already picked to the shelf.
+    // Return goods that were already picked back to the shelf.
     if (order.status === 'preparing' || order.status === 'ready') {
       const product = getProduct(state, order.productId);
       product.batches.push({
@@ -425,10 +535,13 @@ function releaseCustomerOrders(state: GameState, customerId: string): void {
         productId: order.productId,
         quantity: order.quantity,
         expiryDay: state.totalDays + product.spoilageDays,
+        location: 'shelf',
       });
     }
     // Free any worker who was preparing it.
-    const worker = state.employees.find((e) => e.task?.orderId === order.id);
+    const worker = state.employees.find(
+      (e) => e.task?.kind === 'prep' && e.task.orderId === order.id,
+    );
     if (worker) worker.task = undefined;
   }
   state.palettes = state.palettes.filter((p) => p.customerId !== customerId);
@@ -461,23 +574,46 @@ function updateSpoilage(state: GameState, dayIndex: number): void {
 
 // --- Purchase orders & payments (checked every tick, idempotent) ------------
 
+/**
+ * Unload due purchase orders into the inbound zone — but only as much as fits.
+ * If the Wareneingang is full the PO stays pending and keeps unloading on later
+ * ticks (a Stau at the dock), which is cleared as workers put goods away and free
+ * up inbound space. Goods land in the inbound zone and are NOT yet available for
+ * orders until a worker shelves them.
+ */
 function receiveDuePurchaseOrders(state: GameState): void {
   for (const po of state.purchaseOrders) {
     if (po.status !== 'pending') continue;
     if (po.deliveryDay > state.totalDays) continue;
+
+    let room = inboundFree(state);
+    let unloadedAny = false;
     for (const item of po.items) {
+      if (room <= 0) break;
+      if (item.quantity <= 0) continue;
+      const take = Math.min(item.quantity, room);
       const product = getProduct(state, item.productId);
       product.batches.push({
         id: uid('batch'),
         productId: item.productId,
-        quantity: item.quantity,
+        quantity: take,
         expiryDay: state.totalDays + product.spoilageDays,
+        location: 'inbound',
       });
+      item.quantity -= take;
+      room -= take;
+      unloadedAny = true;
     }
-    po.status = 'received';
-    notify(state, `📥 Lieferung eingetroffen (Wert ${Math.round(po.totalCost)}€).`, 'success');
+
+    const remaining = po.items.reduce((s, i) => s + i.quantity, 0);
+    if (remaining <= 0) {
+      po.status = 'received';
+      notify(state, `📥 Lieferung im Wareneingang (Wert ${Math.round(po.totalCost)}€) – wird eingelagert.`, 'success');
+    } else if (unloadedAny) {
+      notify(state, `📥 Wareneingang voll – Lieferung wird nach und nach entladen (${remaining} warten).`, 'warn');
+    }
   }
-  // Drop received POs to keep the list tidy.
+  // Drop fully-received POs to keep the list tidy.
   state.purchaseOrders = state.purchaseOrders.filter((po) => po.status === 'pending');
 }
 

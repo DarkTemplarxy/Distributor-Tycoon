@@ -47,6 +47,7 @@ function makeProducts(): Product[] {
         productId: 'fisch',
         quantity: 80,
         expiryDay: def.spoilageDays, // created on day 0
+        location: 'shelf', // starter stock is already shelved
       });
     }
     return buildProduct(def, {
@@ -104,6 +105,24 @@ function makeEmployees(): Employee[] {
   ];
 }
 
+/** The starting hall: an 8×6 rectangle with a 2-row ramp at the front (inbound +
+ * pickup + dock) and a storage area behind it holding 5 narrow shelves and 2
+ * prep tables, with the middle kept clear for flow. */
+function makeWarehouse(): GameState['warehouse'] {
+  const tiles: GameState['warehouse']['tiles'] = [];
+  for (let gy = 0; gy <= 5; gy++) {
+    for (let gx = 0; gx <= 7; gx++) {
+      tiles.push({ gx, gy, zone: gy >= 4 ? 'ramp' : 'storage' });
+    }
+  }
+  const shelves = [1, 2, 3, 4, 5].map((gx) => ({ id: uid('shelf'), gx, gy: 0 }));
+  const tables = [
+    { gx: 2, gy: 3 },
+    { gx: 4, gy: 3 },
+  ];
+  return { tiles, shelves, tables, inboundSlots: 6, abholzone: 3, expansions: 0 };
+}
+
 function makeSupplier(): Supplier {
   return {
     id: 'supp_seafood',
@@ -142,11 +161,7 @@ export function createInitialState(): GameState {
     scheduledPayments: [],
     inquiries: [],
 
-    warehouse: {
-      paletteSlotsTotal: 12,
-      herrichtungTables: 1,
-      abholzone: 3,
-    },
+    warehouse: makeWarehouse(),
 
     notifications: [
       {

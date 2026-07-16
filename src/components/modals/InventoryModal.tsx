@@ -1,6 +1,6 @@
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { incomingPO, inventoryTotal } from '../../game/simulation';
+import { incomingPO, inboundStock, shelfStock } from '../../game/simulation';
 import { PRODUCT_COLOR } from '../shared';
 
 export function InventoryModal({ onClose }: { onClose: () => void }) {
@@ -13,7 +13,8 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
       </p>
       <div className="rows">
         {state.products.map((product) => {
-          const total = inventoryTotal(product);
+          const shelf = shelfStock(product);
+          const inbound = inboundStock(product);
           const incoming = incomingPO(state, product.id);
           const batches = [...product.batches].sort((a, b) => a.expiryDay - b.expiryDay);
           return (
@@ -33,9 +34,12 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="title" style={{ color: PRODUCT_COLOR[product.id] }}>
-                    {total} Stk
+                    {shelf} Stk <span className="sub">im Regal</span>
                   </div>
-                  {incoming > 0 && <div className="sub">+{incoming} unterwegs</div>}
+                  <div className="sub">
+                    {inbound > 0 && <>📥 {inbound} im Wareneingang · </>}
+                    {incoming > 0 ? `+${incoming} unterwegs` : inbound === 0 ? 'nichts unterwegs' : ''}
+                  </div>
                 </div>
               </div>
 
@@ -46,7 +50,12 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
                 const cls = ratio < 0.15 ? 'crit' : ratio < 0.35 ? 'warn' : 'ok';
                 return (
                   <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ width: 60, fontVariantNumeric: 'tabular-nums' }}>{b.quantity}×</span>
+                    <span
+                      style={{ width: 78, fontVariantNumeric: 'tabular-nums' }}
+                      title={b.location === 'inbound' ? 'Im Wareneingang' : 'Im Regal'}
+                    >
+                      {b.location === 'inbound' ? '📥' : '🗄️'} {b.quantity}×
+                    </span>
                     <div className="progress" style={{ flex: 1, marginTop: 0 }}>
                       <span
                         className={cls}

@@ -22,13 +22,16 @@ export type PaletteStatus = 'preparing' | 'ready';
 
 export type NotificationType = 'info' | 'success' | 'warn' | 'error';
 
-/** A single lot of goods with its own expiry moment. */
+/** A single lot of goods with its own expiry moment. Freshly delivered goods
+ * arrive in the inbound zone ('inbound') and are only available for orders once
+ * a worker has put them away on a shelf ('shelf'). */
 export interface Batch {
   id: string;
   productId: ProductId;
   quantity: number;
   /** Absolute game-day (state.totalDays) on which this batch spoils. */
   expiryDay: number;
+  location: 'shelf' | 'inbound';
 }
 
 export interface Product {
@@ -149,17 +152,27 @@ export interface ScheduledPayment {
   label: string;
 }
 
+/** A warehouse worker is either preparing an order for pickup ('prep') or
+ * putting delivered goods away from the inbound zone onto a shelf ('putaway'). */
+export type WorkerTask =
+  | { kind: 'prep'; orderId: string; totalDays: number; remainingDays: number }
+  | {
+      kind: 'putaway';
+      productId: ProductId;
+      quantity: number;
+      /** Expiry carried with the pallet in transit from inbound to the shelf. */
+      expiryDay: number;
+      totalDays: number;
+      remainingDays: number;
+    };
+
 export interface Employee {
   id: string;
   name: string;
   role: Role;
   salary: number; // per week
   skill: number; // 0-100
-  task?: {
-    orderId: string;
-    totalDays: number;
-    remainingDays: number;
-  };
+  task?: WorkerTask;
 }
 
 export interface SupplierProduct {
@@ -246,9 +259,19 @@ export interface GameState {
   inquiries: Inquiry[];
 
   warehouse: {
-    paletteSlotsTotal: number;
-    herrichtungTables: number;
+    /** The hall footprint as grid tiles. 'ramp' tiles (front) host the inbound &
+     * pickup pallets and the truck dock; 'storage' tiles host shelves & tables. */
+    tiles: { gx: number; gy: number; zone: 'storage' | 'ramp' }[];
+    /** Placed shelves; each holds SHELF_SLOTS pallets of PALETTE_SIZE units. */
+    shelves: { id: string; gx: number; gy: number }[];
+    /** Placed preparation tables — limit how many workers can prep in parallel. */
+    tables: { gx: number; gy: number }[];
+    /** Inbound (Wareneingang) pallet-slot capacity; buyable, ramp only. */
+    inboundSlots: number;
+    /** Pickup (Abhol) zone pallet capacity. */
     abholzone: number;
+    /** Number of hall expansions bought (drives the rising expansion price). */
+    expansions: number;
   };
 
   notifications: Notification[];

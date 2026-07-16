@@ -4,7 +4,7 @@
 
 import type { CustomerType, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -12,7 +12,26 @@ export const SAVE_KEY = 'distributor-tycoon-save-v1';
 export const SECONDS_PER_DAY_AT_1X = 20;
 
 /** Units that fit on a single palette. */
-export const PALETTE_SIZE = 80;
+export const PALETTE_SIZE = 40;
+
+/** Pallet slots per shelf → a shelf holds SHELF_SLOTS × PALETTE_SIZE units. */
+export const SHELF_SLOTS = 4;
+
+/** Fixed, non-scaling build prices. */
+export const SHELF_PRICE = 2000;
+export const TABLE_PRICE = 800;
+export const INBOUND_SLOT_PRICE = 500;
+
+/** Hall expansion is the only scaling cost: base price for one 2×2 (4-tile)
+ * block, rising one step for every 10 expansions bought. */
+export const HALL_EXPANSION_BASE = 2500;
+export function hallExpansionPrice(expansions: number): number {
+  return HALL_EXPANSION_BASE * (1 + Math.floor(expansions / 10));
+}
+
+/** Base time (game-days) to put one full palette away from the inbound zone onto
+ * a shelf, at skill 100 (scaled by skill like preparation). */
+export const BASE_PUTAWAY_DAYS_PER_PALETTE = 0.5;
 
 /** A session lasts one in-game year = 12 months × 4 weeks = 48 weeks. */
 export const DAYS_PER_WEEK = 7;

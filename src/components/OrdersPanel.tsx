@@ -1,5 +1,5 @@
 import { useGame } from '../state/GameProvider';
-import { inventoryTotal } from '../game/simulation';
+import { inboundStock, shelfStock } from '../game/simulation';
 import { prepareOrder, restockForOrder } from '../game/actions';
 import { weekOf } from '../game/util';
 import type { Order } from '../game/types';
@@ -45,7 +45,7 @@ export function OrdersPanel() {
         const cust = state.customers.find((c) => c.id === customerId);
         const pending = orders.filter((o) => o.status === 'pending');
         const fulfillable = pending.filter(
-          (o) => inventoryTotal(state.products.find((p) => p.id === o.productId)!) >= o.quantity,
+          (o) => shelfStock(state.products.find((p) => p.id === o.productId)!) >= o.quantity,
         );
         const shortCount = pending.length - fulfillable.length;
         const totalValue = orders.reduce((s, o) => s + o.quantity * o.price, 0);
@@ -61,7 +61,8 @@ export function OrdersPanel() {
 
             {orders.map((order) => {
               const product = state.products.find((p) => p.id === order.productId)!;
-              const have = inventoryTotal(product);
+              const have = shelfStock(product);
+              const incoming = inboundStock(product);
               const enough = have >= order.quantity;
               const badgeClass = order.late
                 ? 'badge-late'
@@ -80,8 +81,12 @@ export function OrdersPanel() {
                     {order.late ? 'Verspätet' : STATUS_LABEL[order.status]}
                   </span>
                   {order.status === 'pending' && (
-                    <span className={enough ? 'pill' : 'pill bad'}>
+                    <span
+                      className={enough ? 'pill' : 'pill bad'}
+                      title={incoming > 0 ? `${incoming} im Wareneingang – wird noch eingelagert` : undefined}
+                    >
                       {have}/{order.quantity}
+                      {!enough && incoming > 0 ? ` +${incoming}📥` : ''}
                     </span>
                   )}
                 </div>
