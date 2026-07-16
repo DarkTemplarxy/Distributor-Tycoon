@@ -5,12 +5,14 @@
 // ============================================================================
 
 import {
+  DESK_PRICE,
   EXPRESS_PO_LEAD_DAYS,
   EXPRESS_RESTOCK_SURCHARGE,
   getProductDef,
   hallExpansionPrice,
   HIRE_WEEKS_UPFRONT,
   INBOUND_SLOT_PRICE,
+  officeExpansionPrice,
   PALETTE_SIZE,
   ROLE_LABEL,
   ROLE_SALARY,
@@ -28,6 +30,7 @@ import {
   counterAcceptChance,
   createPurchaseOrderInternal,
   freeCapacity,
+  freeDesks,
   getProduct,
   isInAssortment,
   notify,
@@ -199,6 +202,10 @@ export function restockForOrder(state: GameState, orderId: string): ActionResult
 export function hireEmployee(state: GameState, role: Role): ActionResult {
   const salary = ROLE_SALARY[role];
   const upfront = salary * HIRE_WEEKS_UPFRONT;
+  // Office roles need a free desk to sit at (warehouse workers don't).
+  if (role !== 'lager' && freeDesks(state) <= 0) {
+    return { ok: false, message: 'Kein freier Arbeitsplatz – baue erst einen Schreibtisch im Büro.' };
+  }
   if (state.cash + availableCredit(state) < upfront) {
     return { ok: false, message: `Einstellung kostet ${upfront}€ (4 Wochen im Voraus).` };
   }
@@ -334,7 +341,8 @@ export function repayCredit(state: GameState, amount: number): ActionResult {
 function tileFree(state: GameState, gx: number, gy: number): boolean {
   return (
     !state.warehouse.shelves.some((s) => s.gx === gx && s.gy === gy) &&
-    !state.warehouse.tables.some((t) => t.gx === gx && t.gy === gy)
+    !state.warehouse.tables.some((t) => t.gx === gx && t.gy === gy) &&
+    !state.warehouse.desks.some((d) => d.gx === gx && d.gy === gy)
   );
 }
 
@@ -389,5 +397,32 @@ export function expandHall(state: GameState, block: { gx: number; gy: number }[]
   spend(state, price);
   state.warehouse.expansions += 1;
   notify(state, `🏗️ Halle erweitert (${price}€) – 4 neue Lagerkacheln.`, 'info');
+  return { ok: true };
+}
+
+/** Build an office desk on a free office tile — seats one office employee. */
+export function buildDesk(state: GameState, gx: number, gy: number): ActionResult {
+  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+  if (!tile || tile.zone !== 'office') return { ok: false, message: 'Nur im Bürobereich platzierbar.' };
+  if (!tileFree(state, gx, gy)) return { ok: false, message: 'Kachel bereits belegt.' };
+  if (state.cash + availableCredit(state) < DESK_PRICE) return { ok: false, message: `Arbeitsplatz kostet ${DESK_PRICE}€.` };
+  spend(state, DESK_PRICE);
+  state.warehouse.desks.push({ gx, gy });
+  notify(state, `🪑 Arbeitsplatz gebaut (${DESK_PRICE}€) – Platz für einen Büro-Mitarbeiter.`, 'info');
+  return { ok: true };
+}
+
+/** Expand the office by one 2×2 block (4 office tiles). Only scaling cost. */
+export function expandOffice(state: GameState, block: { gx: number; gy: number }[]): ActionResult {
+  const price = officeExpansionPrice(state.warehouse.officeExpansions);
+  if (state.cash + availableCredit(state) < price) return { ok: false, message: `Bürogebiet kostet ${price}€.` };
+  for (const c of block) {
+    if (!state.warehouse.tiles.some((t) => t.gx === c.gx && t.gy === c.gy)) {
+      state.warehouse.tiles.push({ gx: c.gx, gy: c.gy, zone: 'office' });
+    }
+  }
+  spend(state, price);
+  state.warehouse.officeExpansions += 1;
+  notify(state, `🏢 Bürogebiet erweitert (${price}€) – 4 neue Bürokacheln.`, 'info');
   return { ok: true };
 }

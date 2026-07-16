@@ -4,7 +4,7 @@
 
 import type { CustomerType, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 10;
+export const SAVE_VERSION = 11;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -21,12 +21,21 @@ export const SHELF_SLOTS = 4;
 export const SHELF_PRICE = 2000;
 export const TABLE_PRICE = 800;
 export const INBOUND_SLOT_PRICE = 500;
+/** An office desk (Arbeitsplatz) — seats one office employee. */
+export const DESK_PRICE = 600;
 
 /** Hall expansion is the only scaling cost: base price for one 2×2 (4-tile)
  * block, rising one step for every 10 expansions bought. */
 export const HALL_EXPANSION_BASE = 2500;
 export function hallExpansionPrice(expansions: number): number {
   return HALL_EXPANSION_BASE * (1 + Math.floor(expansions / 10));
+}
+
+/** Office-area (Bürogebiet) expansion — a 2×2 block of office tiles, same rising
+ * cost model as the hall. */
+export const OFFICE_EXPANSION_BASE = 2000;
+export function officeExpansionPrice(officeExpansions: number): number {
+  return OFFICE_EXPANSION_BASE * (1 + Math.floor(officeExpansions / 10));
 }
 
 

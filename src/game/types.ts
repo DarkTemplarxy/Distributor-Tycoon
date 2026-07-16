@@ -260,19 +260,25 @@ export interface GameState {
   inquiries: Inquiry[];
 
   warehouse: {
-    /** The hall footprint as grid tiles. 'ramp' tiles (front) host the inbound &
-     * pickup pallets and the truck dock; 'storage' tiles host shelves & tables. */
-    tiles: { gx: number; gy: number; zone: 'storage' | 'ramp' }[];
+    /** The footprint as grid tiles. 'ramp' tiles (front) host the inbound &
+     * pickup pallets and the truck dock; 'storage' tiles host shelves & tables;
+     * 'office' tiles (left) host the office desks. */
+    tiles: { gx: number; gy: number; zone: 'storage' | 'ramp' | 'office' }[];
     /** Placed shelves; each holds SHELF_SLOTS pallets of PALETTE_SIZE units. */
     shelves: { id: string; gx: number; gy: number }[];
     /** Placed preparation tables — limit how many workers can prep in parallel. */
     tables: { gx: number; gy: number }[];
+    /** Placed office desks — each seats one office employee; hiring office staff
+     * (Einkäufer/KAM/Admin) needs a free desk. */
+    desks: { gx: number; gy: number }[];
     /** Inbound (Wareneingang) pallet-slot capacity; buyable, ramp only. */
     inboundSlots: number;
     /** Pickup (Abhol) zone pallet capacity. */
     abholzone: number;
     /** Number of hall expansions bought (drives the rising expansion price). */
     expansions: number;
+    /** Number of office-area expansions bought (drives the office expansion price). */
+    officeExpansions: number;
   };
 
   notifications: Notification[];

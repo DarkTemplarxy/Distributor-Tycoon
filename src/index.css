@@ -737,7 +737,10 @@ label.fld {
   font-size: 13px;
   box-shadow: var(--shadow);
   animation: slideIn 0.25s ease;
+  cursor: pointer;
+  pointer-events: auto; /* container is pointer-events:none; re-enable per toast */
 }
+.toast:hover { filter: brightness(1.15); }
 .toast.success { border-left-color: var(--good); }
 .toast.warn { border-left-color: var(--warn); }
 .toast.error { border-left-color: var(--bad); }
@@ -822,6 +825,33 @@ label.fld {
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 560px) { .two-col { grid-template-columns: 1fr; } }
+
+/* --- Warehouse camera controls ------------------------------------------- */
+.scene-cam {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.scene-cam .btn {
+  pointer-events: auto;
+  background: rgba(12, 18, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.scene-cam-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(12, 18, 24, 0.8);
+  padding: 3px 7px;
+  border-radius: 6px;
+}
+@media (max-width: 640px) {
+  .scene-cam-hint { display: none; }
+}
 
 /* --- Tutorial ------------------------------------------------------------ */
 

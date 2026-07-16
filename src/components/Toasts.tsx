@@ -26,10 +26,19 @@ export function Toasts() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastId]);
 
+  // Click a toast to dismiss it early (the pending auto-dismiss timer then simply
+  // finds nothing to remove).
+  const dismiss = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
+
   return (
     <div className="toasts">
       {toasts.map((t) => (
-        <div key={t.id} className={`toast ${t.type}`}>
+        <div
+          key={t.id}
+          className={`toast ${t.type}`}
+          onClick={() => dismiss(t.id)}
+          title="Zum Ausblenden klicken"
+        >
           {t.message}
         </div>
       ))}

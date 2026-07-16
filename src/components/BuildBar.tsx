@@ -1,5 +1,12 @@
 import { useGame } from '../state/GameProvider';
-import { SHELF_PRICE, TABLE_PRICE, INBOUND_SLOT_PRICE, hallExpansionPrice } from '../game/constants';
+import {
+  DESK_PRICE,
+  INBOUND_SLOT_PRICE,
+  SHELF_PRICE,
+  TABLE_PRICE,
+  hallExpansionPrice,
+  officeExpansionPrice,
+} from '../game/constants';
 import { availableCredit } from '../game/simulation';
 import { euro } from '../game/util';
 import type { BuildTool } from './IsometricWarehouse';
@@ -9,6 +16,8 @@ const TOOLS: { id: BuildTool; icon: string; label: string; hint: string }[] = [
   { id: 'table', icon: '🔧', label: 'Tisch', hint: 'mehr paralleles Herrichten' },
   { id: 'inbound', icon: '📥', label: 'Anlieferung', hint: 'Wareneingang +1 Platz' },
   { id: 'expand', icon: '🏗️', label: 'Erweiterung', hint: '+4 Kacheln (rechts/hinten)' },
+  { id: 'desk', icon: '🪑', label: 'Arbeitsplatz', hint: 'Sitzplatz für 1 Büro-Mitarbeiter' },
+  { id: 'officeExpand', icon: '🏢', label: 'Bürogebiet', hint: '+4 Bürokacheln (links)' },
 ];
 
 export function BuildBar({
@@ -29,7 +38,11 @@ export function BuildBar({
         ? TABLE_PRICE
         : id === 'inbound'
           ? INBOUND_SLOT_PRICE
-          : hallExpansionPrice(state.warehouse.expansions);
+          : id === 'desk'
+            ? DESK_PRICE
+            : id === 'officeExpand'
+              ? officeExpansionPrice(state.warehouse.officeExpansions)
+              : hallExpansionPrice(state.warehouse.expansions);
 
   return (
     <div

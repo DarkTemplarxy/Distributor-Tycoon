@@ -7,7 +7,7 @@ import { IsometricWarehouse, type BuildTool } from './components/IsometricWareho
 import { BuildBar } from './components/BuildBar';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
-import { buildShelf, buildTable, buildInboundSlot, expandHall } from './game/actions';
+import { buildShelf, buildTable, buildInboundSlot, buildDesk, expandHall, expandOffice } from './game/actions';
 import { Toasts } from './components/Toasts';
 import { TutorialLayer } from './components/TutorialLayer';
 import { GameOverScreen, YearCompleteScreen } from './components/OverlayScreens';
@@ -132,8 +132,13 @@ export function App() {
                         if (buildTool === 'shelf') buildShelf(s, gx, gy);
                         else if (buildTool === 'table') buildTable(s, gx, gy);
                         else if (buildTool === 'inbound') buildInboundSlot(s, gx, gy);
+                        else if (buildTool === 'desk') buildDesk(s, gx, gy);
                       }),
-                    onExpand: (block) => mutate((s) => expandHall(s, block)),
+                    onExpand: (block) =>
+                      mutate((s) => {
+                        if (buildTool === 'officeExpand') expandOffice(s, block);
+                        else expandHall(s, block);
+                      }),
                   }
                 : undefined
             }

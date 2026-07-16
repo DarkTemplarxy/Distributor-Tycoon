@@ -12,7 +12,7 @@ import { PALETTE_SIZE, SHELF_SLOTS, WORK_END_HOUR, WORK_START_HOUR } from '../ga
 import { dayName, formatClock, hourOf } from '../game/util';
 import type { GameState, ProductId } from '../game/types';
 
-export type BuildTool = 'shelf' | 'table' | 'inbound' | 'expand';
+export type BuildTool = 'shelf' | 'table' | 'inbound' | 'expand' | 'desk' | 'officeExpand';
 export interface BuildProps {
   tool: BuildTool | null;
   /** Place a single-tile object (shelf/table/inbound) at a grid tile. */
@@ -70,18 +70,6 @@ const TILE_H = 30;
 const ELEV = 28;
 const WALK_SPEED = 1.8;
 
-// Office block to the LEFT of the hall.
-const OFFICE = { gx: -3.3, gy: 0.9, w: 2.8, d: 3.7 };
-const OFFICE_COLS = [-2.75, -1.55];
-const OFFICE_ROWS = [1.4, 2.5, 3.6];
-const OFFICE_MAX_DESKS = OFFICE_COLS.length * OFFICE_ROWS.length;
-function officeDeskSpot(i: number) {
-  return {
-    gx: OFFICE_COLS[i % OFFICE_COLS.length],
-    gy: OFFICE_ROWS[Math.floor(i / OFFICE_COLS.length) % OFFICE_ROWS.length],
-  };
-}
-
 interface WorkerAnim {
   gx: number;
   gy: number;
@@ -101,8 +89,23 @@ function truckPhase(state: GameState): 'away' | 'here' | 'leaving' {
 }
 
 // --- Warehouse layout derived from state -----------------------------------
+/** Bounds over the HALL tiles (storage + ramp, i.e. everything except the
+ * office), used for walls, zone labels and worker positioning. */
 function hallBounds(state: GameState) {
-  const t = state.warehouse.tiles;
+  const t = state.warehouse.tiles.filter((x) => x.zone !== 'office');
+  const gxs = t.map((x) => x.gx);
+  const gys = t.map((x) => x.gy);
+  return {
+    minGx: Math.min(...gxs),
+    maxGx: Math.max(...gxs),
+    minGy: Math.min(...gys),
+    maxGy: Math.max(...gys),
+  };
+}
+/** Bounds over the OFFICE tiles (empty-safe: returns null if none). */
+function officeBounds(state: GameState) {
+  const t = state.warehouse.tiles.filter((x) => x.zone === 'office');
+  if (t.length === 0) return null;
   const gxs = t.map((x) => x.gx);
   const gys = t.map((x) => x.gy);
   return {
@@ -120,6 +123,9 @@ function shelfAt(state: GameState, gx: number, gy: number) {
 }
 function tableAt(state: GameState, gx: number, gy: number) {
   return state.warehouse.tables.find((s) => s.gx === gx && s.gy === gy);
+}
+function deskAt(state: GameState, gx: number, gy: number) {
+  return state.warehouse.desks.find((d) => d.gx === gx && d.gy === gy);
 }
 /** Ramp tiles, front row (nearest storage) first, sorted left→right. */
 function rampTiles(state: GameState) {
@@ -201,14 +207,54 @@ function expansionBlocks(state: GameState): { gx: number; gy: number }[][] {
   return blocks;
 }
 
+/** 2×2 office-expansion blocks adjacent to the office on the LEFT (−gx) and
+ * back (−gy), so the office grows away from the hall. */
+function officeExpansionBlocks(state: GameState): { gx: number; gy: number }[][] {
+  const b = officeBounds(state);
+  if (!b) return [];
+  const has = (gx: number, gy: number) => !!tileAt(state, gx, gy);
+  const blocks: { gx: number; gy: number }[][] = [];
+  const align = (v: number, base: number) => base + Math.floor((v - base) / 2) * 2;
+  // Left edge: one column of 2×2 blocks just before minGx.
+  const gx0 = b.minGx - 2;
+  for (let gy = align(b.minGy, b.minGy); gy <= b.maxGy; gy += 2) {
+    if (has(gx0, gy) || has(gx0 + 1, gy)) continue;
+    if (has(gx0 + 2, gy) || has(gx0 + 2, gy + 1)) {
+      blocks.push([
+        { gx: gx0, gy },
+        { gx: gx0 + 1, gy },
+        { gx: gx0, gy: gy + 1 },
+        { gx: gx0 + 1, gy: gy + 1 },
+      ]);
+    }
+  }
+  // Back edge: one row of 2×2 blocks just before minGy.
+  const gy0 = b.minGy - 2;
+  for (let gx = align(b.minGx, b.minGx); gx <= b.maxGx; gx += 2) {
+    if (has(gx, gy0) || has(gx + 1, gy0)) continue;
+    if (has(gx, gy0 + 2) || has(gx + 1, gy0 + 2)) {
+      blocks.push([
+        { gx, gy: gy0 },
+        { gx: gx + 1, gy: gy0 },
+        { gx, gy: gy0 + 1 },
+        { gx: gx + 1, gy: gy0 + 1 },
+      ]);
+    }
+  }
+  return blocks;
+}
+
 /** Tiles that are valid targets for the current build tool. */
 function validBuildTiles(state: GameState, tool: BuildTool): { gx: number; gy: number }[] {
-  if (tool === 'expand') return []; // handled via blocks
+  if (tool === 'expand' || tool === 'officeExpand') return []; // handled via blocks
   const out: { gx: number; gy: number }[] = [];
   const inbUsed = new Set([...inboundPositions(state), ...pickupPositions(state)].map((t) => `${t.gx},${t.gy}`));
   for (const t of state.warehouse.tiles) {
     if (tool === 'inbound') {
       if (t.zone === 'ramp' && !inbUsed.has(`${t.gx},${t.gy}`)) out.push(t);
+    } else if (tool === 'desk') {
+      // desk: empty office tile
+      if (t.zone === 'office' && !deskAt(state, t.gx, t.gy)) out.push(t);
     } else {
       // shelf or table: empty storage tile
       if (t.zone === 'storage' && !shelfAt(state, t.gx, t.gy) && !tableAt(state, t.gx, t.gy)) out.push(t);
@@ -233,7 +279,14 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
   const buildRef = useRef(build);
   buildRef.current = build;
   const viewRef = useRef<View>({ ox: 0, oy: 0, s: 1 });
+  // Persistent camera (world-space center + scale). Unlike the old per-frame
+  // auto-fit, the scale stays fixed after the initial fit, so building expansions
+  // makes the map physically bigger; the player pans (right-drag) to navigate.
+  const camRef = useRef<Camera>({ cx: 0, cy: 0, s: 1, init: false });
   const hoverRef = useRef<{ gx: number; gy: number } | null>(null);
+  const recenter = () => {
+    camRef.current.init = false; // next draw re-fits everything into view
+  };
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -268,7 +321,7 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       updateAnim(dt, stateRef.current, animRef.current);
-      draw(ctx, stateRef.current, animRef.current, cw, ch, viewRef.current, buildRef.current, hoverRef.current);
+      draw(ctx, stateRef.current, animRef.current, cw, ch, camRef.current, viewRef.current, buildRef.current, hoverRef.current);
     };
     tickRef.current = tick;
     const loop = () => {
@@ -284,29 +337,60 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
       const t = invIso(viewRef.current, ev.clientX - rect.left, ev.clientY - rect.top);
       return { gx: Math.floor(t.gx), gy: Math.floor(t.gy) };
     };
+    // Right-button drag pans the camera (world-space center moves with the mouse).
+    let panning = false;
+    let panLastX = 0;
+    let panLastY = 0;
     const onMove = (ev: PointerEvent) => {
+      if (panning) {
+        const cam = camRef.current;
+        cam.cx -= (ev.clientX - panLastX) / cam.s;
+        cam.cy -= (ev.clientY - panLastY) / cam.s;
+        panLastX = ev.clientX;
+        panLastY = ev.clientY;
+        return;
+      }
       if (!buildRef.current?.tool) {
         hoverRef.current = null;
         return;
       }
       hoverRef.current = toTile(ev);
     };
-    const onClick = (ev: PointerEvent) => {
+    const onDown = (ev: PointerEvent) => {
+      if (ev.button === 2) {
+        // Right button → start panning.
+        panning = true;
+        panLastX = ev.clientX;
+        panLastY = ev.clientY;
+        canvas.setPointerCapture(ev.pointerId);
+        canvas.style.cursor = 'grabbing';
+        return;
+      }
+      if (ev.button !== 0) return; // only the left button places
       const b = buildRef.current;
       if (!b?.tool) return;
       const { gx, gy } = toTile(ev);
-      if (b.tool === 'expand') {
-        const block = expansionBlocks(stateRef.current).find((blk) =>
-          blk.some((c) => c.gx === gx && c.gy === gy),
-        );
+      if (b.tool === 'expand' || b.tool === 'officeExpand') {
+        const blocks = b.tool === 'expand' ? expansionBlocks(stateRef.current) : officeExpansionBlocks(stateRef.current);
+        const block = blocks.find((blk) => blk.some((c) => c.gx === gx && c.gy === gy));
         if (block) b.onExpand(block);
       } else {
         const ok = validBuildTiles(stateRef.current, b.tool).some((t) => t.gx === gx && t.gy === gy);
         if (ok) b.onPlaceTile(gx, gy);
       }
     };
+    const onUp = (ev: PointerEvent) => {
+      if (panning && (ev.button === 2 || ev.button === -1)) {
+        panning = false;
+        try { canvas.releasePointerCapture(ev.pointerId); } catch {}
+        canvas.style.cursor = '';
+      }
+    };
+    const onContext = (ev: Event) => ev.preventDefault(); // no browser menu on right-click
     canvas.addEventListener('pointermove', onMove);
-    canvas.addEventListener('pointerdown', onClick);
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('contextmenu', onContext);
     const onLeave = () => (hoverRef.current = null);
     canvas.addEventListener('pointerleave', onLeave);
 
@@ -314,7 +398,9 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
       cancelAnimationFrame(raf);
       ro.disconnect();
       canvas.removeEventListener('pointermove', onMove);
-      canvas.removeEventListener('pointerdown', onClick);
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('contextmenu', onContext);
       canvas.removeEventListener('pointerleave', onLeave);
       tickRef.current = () => {};
     };
@@ -328,6 +414,12 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
   return (
     <div className="scene-wrap" ref={wrapRef} style={{ cursor: build?.tool ? 'pointer' : 'default' }}>
       <canvas ref={canvasRef} />
+      <div className="scene-cam">
+        <button className="btn small" onClick={recenter} title="Ansicht auf die ganze Anlage zentrieren">
+          ⤢ Zentrieren
+        </button>
+        <span className="scene-cam-hint">Rechte Maustaste halten zum Verschieben</span>
+      </div>
     </div>
   );
 }
@@ -401,6 +493,48 @@ interface View {
   ox: number;
   oy: number;
   s: number;
+}
+/** Persistent camera: world-space center point + scale. */
+interface Camera {
+  cx: number;
+  cy: number;
+  s: number;
+  init: boolean;
+}
+/** World-space (pre-offset) iso projection of a grid point at elevation 0. */
+function worldXY(gx: number, gy: number): [number, number] {
+  return [(gx - gy) * (TILE_W / 2), (gx + gy) * (TILE_H / 2)];
+}
+/** Bounds over ALL tiles (hall + ramp + office), used to fit the whole site. */
+function allTileBounds(state: GameState) {
+  const t = state.warehouse.tiles;
+  const gxs = t.map((x) => x.gx);
+  const gys = t.map((x) => x.gy);
+  return { minGx: Math.min(...gxs), maxGx: Math.max(...gxs), minGy: Math.min(...gys), maxGy: Math.max(...gys) };
+}
+/** Fit the whole site into the viewport: returns the camera that centers it. */
+function computeFit(state: GameState, cw: number, ch: number): { cx: number; cy: number; s: number } {
+  const b = allTileBounds(state);
+  const gxLo = b.minGx - 1;
+  const gxHi = b.maxGx + 2;
+  const gyLo = b.minGy - 1;
+  const gyHi = b.maxGy + 4; // room for ramp + dock
+  const corners: [number, number][] = [
+    [gxLo, gyLo],
+    [gxHi, gyLo],
+    [gxHi, gyHi],
+    [gxLo, gyHi],
+  ];
+  const xs = corners.map(([x, y]) => worldXY(x, y)[0]);
+  const ys = corners.map(([x, y]) => worldXY(x, y)[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const contentW = maxX - minX;
+  const contentH = maxY - minY + ELEV * 1.3;
+  const s = Math.max(0.4, Math.min(1.4, Math.min((cw - 36) / contentW, (ch - 36) / contentH)));
+  return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 - ELEV * 0.5, s };
 }
 function iso(v: View, gx: number, gy: number, gz = 0): [number, number] {
   return [
@@ -477,6 +611,39 @@ function pallet(ctx: CanvasRenderingContext2D, v: View, gx: number, gy: number, 
     ctx.fillText('!', mx, my - 2 * v.s);
   }
 }
+/** A goods pallet drawn as a wooden base + a product-coloured crate (with an
+ * urgency marker). Used at the Wareneingang and on the pickup ramp so both zones
+ * clearly show real pallets. */
+function crate(
+  ctx: CanvasRenderingContext2D,
+  v: View,
+  gx: number,
+  gy: number,
+  size: number,
+  col: string,
+  urgency: 'ok' | 'warn' | 'crit',
+) {
+  // Wooden pallet base.
+  box(ctx, v, gx, gy, size, size, 0.08, '#7a5a34', {
+    top: '#8a6a40',
+    left: '#5f4527',
+    right: '#6e5030',
+  });
+  // Product crate on top.
+  const top = urgency === 'crit' ? shade(col, 1.0) : urgency === 'warn' ? shade(col, 1.06) : shade(col, 1.16);
+  box(ctx, v, gx + 0.05, gy + 0.05, size - 0.1, size - 0.1, 0.42, col, {
+    top,
+    left: shade(col, 0.6),
+    right: shade(col, 0.82),
+  });
+  if (urgency !== 'ok') {
+    const [mx, my] = iso(v, gx + size / 2, gy + size / 2, 0.5);
+    ctx.fillStyle = urgency === 'crit' ? '#ff5a5a' : '#ffcf4d';
+    ctx.font = `bold ${Math.round(10 * v.s + 2)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('!', mx, my - 2 * v.s);
+  }
+}
 function worker(ctx: CanvasRenderingContext2D, v: View, a: WorkerAnim, shirt: string, progress: number | null) {
   const [sx, sy] = iso(v, a.gx, a.gy, 0);
   const s = v.s;
@@ -513,16 +680,27 @@ function worker(ctx: CanvasRenderingContext2D, v: View, a: WorkerAnim, shirt: st
   }
 }
 function officeDesk(ctx: CanvasRenderingContext2D, v: View, gx: number, gy: number, occupied: boolean) {
-  box(ctx, v, gx - 0.33, gy - 0.2, 0.66, 0.42, 0.26, C.desk);
-  if (occupied) {
-    box(ctx, v, gx - 0.06, gy - 0.15, 0.24, 0.07, 0.24, C.screen, {
-      top: shade(C.screen, 1.15),
-      left: shade(C.screen, 0.8),
-      right: shade(C.screen, 0.95),
-    });
-  } else {
-    box(ctx, v, gx - 0.06, gy - 0.15, 0.24, 0.07, 0.22, C.monitor);
-  }
+  // Chair behind the desk (toward the front of the tile).
+  box(ctx, v, gx - 0.12, gy + 0.14, 0.24, 0.22, 0.16, '#4a5262', {
+    top: '#5a6373',
+    left: '#3c434f',
+    right: '#4a5262',
+  });
+  box(ctx, v, gx - 0.12, gy + 0.3, 0.24, 0.05, 0.34, '#4a5262'); // chair back
+  // Desk top.
+  box(ctx, v, gx - 0.34, gy - 0.24, 0.68, 0.44, 0.24, C.desk, {
+    top: shade(C.desk, 1.12),
+    left: shade(C.desk, 0.68),
+    right: shade(C.desk, 0.86),
+  });
+  // Monitor on the desk (screen glows when occupied).
+  const screen = occupied ? C.screen : C.monitor;
+  box(ctx, v, gx - 0.1, gy - 0.16, 0.2, 0.05, 0.2, screen, {
+    top: shade(screen, 1.15),
+    left: shade(screen, 0.7),
+    right: shade(screen, 0.9),
+  });
+  box(ctx, v, gx - 0.03, gy - 0.14, 0.06, 0.03, 0.06, '#2a2f38'); // stand
 }
 function officePerson(ctx: CanvasRenderingContext2D, v: View, gx: number, gy: number, shirt: string) {
   const [sx, sy] = iso(v, gx, gy, 0);
@@ -556,6 +734,7 @@ function draw(
   anim: Anim,
   cw: number,
   ch: number,
+  cam: Camera,
   viewOut: View,
   build: BuildProps | undefined,
   hover: { gx: number; gy: number } | null,
@@ -568,35 +747,26 @@ function draw(
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, cw, ch);
 
-  const b = hallBounds(state);
-  // Fit: project extreme grid points at s=1 and center them.
-  const gxLo = Math.min(b.minGx, OFFICE.gx) - 1;
-  const gxHi = b.maxGx + 2;
-  const gyLo = Math.min(b.minGy, OFFICE.gy) - 1;
-  const gyHi = b.maxGy + 4; // room for ramp + dock
-  const corners: [number, number][] = [
-    [gxLo, gyLo],
-    [gxHi, gyLo],
-    [gxHi, gyHi],
-    [gxLo, gyHi],
-  ];
-  const xs = corners.map(([x, y]) => (x - y) * (TILE_W / 2));
-  const ys = corners.map(([x, y]) => (x + y) * (TILE_H / 2));
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const contentW = maxX - minX;
-  const contentH = maxY - minY + ELEV * 1.3;
-  const s = Math.max(0.4, Math.min(1.4, Math.min((cw - 36) / contentW, (ch - 36) / contentH)));
-  const v: View = {
-    ox: cw / 2 - ((minX + maxX) / 2) * s,
-    oy: ch / 2 - ((minY + maxY) / 2) * s + ELEV * 0.5 * s,
-    s,
-  };
+  // Fit once (or on Recenter); afterwards the scale stays fixed and the player
+  // pans. Deriving ox/oy from the canvas size each frame keeps it resize-safe.
+  if (!cam.init) {
+    const f = computeFit(state, cw, ch);
+    cam.cx = f.cx;
+    cam.cy = f.cy;
+    cam.s = f.s;
+    cam.init = true;
+  }
+  const v: View = { ox: cw / 2 - cam.cx * cam.s, oy: ch / 2 - cam.cy * cam.s, s: cam.s };
   viewOut.ox = v.ox;
   viewOut.oy = v.oy;
   viewOut.s = v.s;
+
+  const b = hallBounds(state);
+  const ab = allTileBounds(state);
+  const gxLo = ab.minGx - 1;
+  const gxHi = ab.maxGx + 2;
+  const gyLo = ab.minGy - 1;
+  const gyHi = ab.maxGy + 4;
 
   // Grass under everything.
   quad(
@@ -614,11 +784,15 @@ function draw(
     false,
   );
 
-  // Floor tiles.
+  // Floor tiles (office tiles get the darker office floor).
   for (const t of state.warehouse.tiles) {
     const checker = (t.gx + t.gy) % 2 === 0;
     const fill =
-      t.zone === 'ramp' ? (checker ? C.rampFloor : C.rampFloorAlt) : checker ? C.floor : C.floorAlt;
+      t.zone === 'ramp'
+        ? checker ? C.rampFloor : C.rampFloorAlt
+        : t.zone === 'office'
+          ? checker ? C.officeFloor : shade(C.officeFloor, 0.92)
+          : checker ? C.floor : C.floorAlt;
     tileQuad(ctx, v, t.gx, t.gy, fill, true);
   }
 
@@ -628,6 +802,22 @@ function draw(
   const pickPos = pickupPositions(state);
   if (inbPos[0]) label(ctx, v, inbPos[0].gx + 0.5, inbPos[0].gy + 0.5, 'WARENEINGANG');
   if (pickPos[0]) label(ctx, v, pickPos[0].gx + 0.5, pickPos[0].gy + 0.5, 'RAMPE');
+
+  // Office block: back/left walls + BÜRO label.
+  const ob = officeBounds(state);
+  if (ob) {
+    box(ctx, v, ob.minGx, ob.minGy, ob.maxGx - ob.minGx + 1, 0.1, 0.8, C.officeWall, {
+      top: shade(C.officeWall, 1.15),
+      left: shade(C.officeWall, 0.8),
+      right: shade(C.officeWall, 0.95),
+    });
+    box(ctx, v, ob.minGx, ob.minGy, 0.1, ob.maxGy - ob.minGy + 1, 0.8, C.officeWall, {
+      top: shade(C.officeWall, 1.15),
+      left: shade(C.officeWall, 0.7),
+      right: shade(C.officeWall, 0.9),
+    });
+    label(ctx, v, (ob.minGx + ob.maxGx) / 2 + 0.5, ob.minGy + 0.35, 'BÜRO');
+  }
 
   // Back walls along the hall's back-left edges.
   box(ctx, v, b.minGx, b.minGy, b.maxGx - b.minGx + 1, 0.12, 1.0, C.wallFace, {
@@ -673,42 +863,43 @@ function draw(
     items.push({ depth: t.gx + t.gy, z: 0, draw: () => box(ctx, v, t.gx + 0.1, t.gy + 0.1, 0.8, 0.8, 0.36, C.table) });
   });
 
-  // Inbound pallets in the Wareneingang (chunked stock across the inbound slots).
+  // Inbound pallets in the Wareneingang — product-coloured crates on pallets
+  // (chunked stock across the inbound slots; overflow stacks as a Stau).
   const inbPals = chunkStock(state, 'inbound');
   inbPals.forEach((pal, k) => {
     const pos = inbPos[Math.min(k, inbPos.length - 1)];
     if (!pos) return;
     const overflow = k >= inbPos.length; // Stau — stacked beyond the last slot
     const off = overflow ? 0.12 * (k - inbPos.length + 1) : 0;
+    const col = PROD_HEX[pal.productId] ?? C.inbound;
     items.push({
       depth: pos.gx + pos.gy + off,
       z: overflow ? 1 : 0,
-      draw: () => pallet(ctx, v, pos.gx + 0.2 + off, pos.gy + 0.2 - off, 0.55, C.inbound, pal.urgency),
+      draw: () => crate(ctx, v, pos.gx + 0.18 + off, pos.gy + 0.18 - off, 0.6, col, pal.urgency),
     });
   });
 
-  // Ready pallets on the pickup ramp.
+  // Ready pallets on the pickup ramp — the finished orders waiting for the truck.
   const ready = state.palettes.filter((p) => p.status === 'ready');
   ready.slice(0, pickPos.length).forEach((p, k) => {
     const pos = pickPos[k];
     const col = PROD_HEX[p.productId] ?? '#8a8f98';
-    items.push({ depth: pos.gx + pos.gy, z: 0, draw: () => pallet(ctx, v, pos.gx + 0.2, pos.gy + 0.2, 0.55, col, 'ok') });
+    items.push({ depth: pos.gx + pos.gy, z: 0, draw: () => crate(ctx, v, pos.gx + 0.18, pos.gy + 0.18, 0.6, col, 'ok') });
   });
 
-  // Office desks + seated office staff.
+  // Office desks (from state) + seated office staff at the first N desks.
   const officeStaff = state.employees.filter((e) => e.role !== 'lager');
-  const deskCount = Math.min(OFFICE_MAX_DESKS, Math.max(4, officeStaff.length));
-  for (let i = 0; i < deskCount; i++) {
-    const d = officeDeskSpot(i);
+  state.warehouse.desks.forEach((d, i) => {
+    // desk centre inside the tile
+    const dgx = d.gx + 0.5;
+    const dgy = d.gy + 0.5;
     const staff = officeStaff[i];
-    items.push({ depth: d.gx + d.gy, z: 0, draw: () => officeDesk(ctx, v, d.gx, d.gy, !!staff) });
+    items.push({ depth: d.gx + d.gy, z: 0, draw: () => officeDesk(ctx, v, dgx, dgy, !!staff) });
     if (staff) {
-      const pgx = d.gx + 0.02;
-      const pgy = d.gy - 0.32;
       const shirt = OFFICE_SHIRT[staff.role] ?? '#8a8f98';
-      items.push({ depth: pgx + pgy, z: 1, draw: () => officePerson(ctx, v, pgx, pgy, shirt) });
+      items.push({ depth: dgx + dgy + 0.01, z: 1, draw: () => officePerson(ctx, v, dgx + 0.02, dgy + 0.28, shirt) });
     }
-  }
+  });
 
   // Warehouse workers.
   state.employees
@@ -730,8 +921,14 @@ function draw(
       depth: gx + gy + 6,
       z: 2,
       draw: () => {
-        box(ctx, v, gx, gy, 1.2, 0.8, 0.6, C.truckCargo, { top: shade(C.truckCargo, 1.05), left: shade(C.truckCargo, 0.7), right: shade(C.truckCargo, 0.85) });
+        // A few loaded pallets on the open bed (colours from the waiting orders).
+        const loadCols = ready.slice(0, 2).map((p) => PROD_HEX[p.productId] ?? C.inbound);
+        loadCols.forEach((col, i) => {
+          crate(ctx, v, gx + 0.15 + i * 0.5, gy + 0.2, 0.34, col, 'ok');
+        });
         box(ctx, v, gx + 0.05, gy + 0.85, 1.1, 0.55, 0.5, C.truckCab);
+        // Low side walls of the cargo bed (drawn after so pallets sit inside).
+        box(ctx, v, gx, gy, 1.2, 0.06, 0.3, C.truckCargo, { top: shade(C.truckCargo, 1.05), left: shade(C.truckCargo, 0.7), right: shade(C.truckCargo, 0.85) });
         ctx.fillStyle = '#1b1f24';
         for (const wp of [[gx + 0.15, gy + 0.05], [gx + 1.05, gy + 0.05], [gx + 0.15, gy + 0.75], [gx + 1.05, gy + 0.75]]) {
           const [wx, wy] = iso(v, wp[0], wp[1], 0.05);
@@ -749,11 +946,13 @@ function draw(
   // --- Build mode overlay ---
   if (build && build.tool) {
     const tool = build.tool;
+    const blockTool = tool === 'expand' || tool === 'officeExpand';
+    const blocksFor = () => (tool === 'expand' ? expansionBlocks(state) : officeExpansionBlocks(state));
     // Dim the whole hall.
     ctx.fillStyle = 'rgba(6,10,14,0.45)';
     ctx.fillRect(0, 0, cw, ch);
-    if (tool === 'expand') {
-      for (const block of expansionBlocks(state)) {
+    if (blockTool) {
+      for (const block of blocksFor()) {
         for (const t of block) tileQuad(ctx, v, t.gx, t.gy, C.buildOk, false);
         const gx = Math.min(...block.map((t) => t.gx));
         const gy = Math.min(...block.map((t) => t.gy));
@@ -764,8 +963,8 @@ function draw(
     }
     // Hover highlight.
     if (hover) {
-      if (tool === 'expand') {
-        const block = expansionBlocks(state).find((blk) => blk.some((c) => c.gx === hover.gx && c.gy === hover.gy));
+      if (blockTool) {
+        const block = blocksFor().find((blk) => blk.some((c) => c.gx === hover.gx && c.gy === hover.gy));
         if (block) {
           const gx = Math.min(...block.map((t) => t.gx));
           const gy = Math.min(...block.map((t) => t.gy));

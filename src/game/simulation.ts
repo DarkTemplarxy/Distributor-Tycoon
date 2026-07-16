@@ -223,6 +223,18 @@ export function kamCount(state: GameState): number {
   return state.employees.filter((e) => e.role === 'kam').length;
 }
 
+/** Office employees (everyone who isn't a warehouse worker) occupy one desk each. */
+export function officeStaffCount(state: GameState): number {
+  return state.employees.filter((e) => e.role !== 'lager').length;
+}
+export function deskCount(state: GameState): number {
+  return state.warehouse.desks.length;
+}
+/** Desks not currently occupied by an office employee — gate on hiring office staff. */
+export function freeDesks(state: GameState): number {
+  return Math.max(0, deskCount(state) - officeStaffCount(state));
+}
+
 export function capacityFor(state: GameState, type: CustomerType): number {
   return BASE_CUSTOMER_CAPACITY[type] + kamCount(state) * KAM_CAPACITY[type];
 }

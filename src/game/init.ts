@@ -112,7 +112,8 @@ function makeEmployees(): Employee[] {
 
 /** The starting hall: an 8×6 rectangle with a 2-row ramp at the front (inbound +
  * pickup + dock) and a storage area behind it holding 5 narrow shelves and 2
- * prep tables, with the middle kept clear for flow. */
+ * prep tables, with the middle kept clear for flow. A small office (2×3 tiles)
+ * sits to the LEFT with 2 starting desks. */
 function makeWarehouse(): GameState['warehouse'] {
   const tiles: GameState['warehouse']['tiles'] = [];
   for (let gy = 0; gy <= 5; gy++) {
@@ -120,12 +121,22 @@ function makeWarehouse(): GameState['warehouse'] {
       tiles.push({ gx, gy, zone: gy >= 4 ? 'ramp' : 'storage' });
     }
   }
+  // Office field to the left of the hall (gx −3,−2 × gy 0..2).
+  for (let gy = 0; gy <= 2; gy++) {
+    for (let gx = -3; gx <= -2; gx++) {
+      tiles.push({ gx, gy, zone: 'office' });
+    }
+  }
   const shelves = [1, 2, 3, 4, 5].map((gx) => ({ id: uid('shelf'), gx, gy: 0 }));
   const tables = [
     { gx: 2, gy: 3 },
     { gx: 4, gy: 3 },
   ];
-  return { tiles, shelves, tables, inboundSlots: 6, abholzone: 3, expansions: 0 };
+  const desks = [
+    { gx: -3, gy: 0 },
+    { gx: -2, gy: 0 },
+  ];
+  return { tiles, shelves, tables, desks, inboundSlots: 6, abholzone: 3, expansions: 0, officeExpansions: 0 };
 }
 
 /** The one order that is already open when the game starts — the tutorial's very

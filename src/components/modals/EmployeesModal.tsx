@@ -10,7 +10,7 @@ import {
   TRAINING_COST,
   WEEKS_PER_MONTH,
 } from '../../game/constants';
-import { capacityFor, kamCount, usedCapacity } from '../../game/simulation';
+import { capacityFor, deskCount, freeDesks, kamCount, usedCapacity } from '../../game/simulation';
 import { fireEmployee, hireEmployee, trainEmployee } from '../../game/actions';
 import { euro } from '../../game/util';
 import type { Role } from '../../game/types';
@@ -54,6 +54,15 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
           </div>
           <span className="pill">{state.employees.filter((e) => e.role === 'einkaeufer').length}</span>
         </div>
+        <div className="row" style={{ padding: '8px 10px' }}>
+          <div className="grow">
+            <div className="title" style={{ fontSize: 13 }}>Arbeitsplätze (Büro)</div>
+            <div className="sub">Büro-Personal braucht je einen freien Schreibtisch</div>
+          </div>
+          <span className={`pill ${freeDesks(state) > 0 ? 'good' : 'bad'}`}>
+            {freeDesks(state)} / {deskCount(state)} frei
+          </span>
+        </div>
       </div>
 
       <h3>Belegschaft</h3>
@@ -95,18 +104,28 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
       <div className="rows">
         {HIREABLE.map(({ role, benefit }) => {
           const upfront = ROLE_SALARY[role] * HIRE_WEEKS_UPFRONT;
+          const needsDesk = role !== 'lager';
+          const noDesk = needsDesk && freeDesks(state) <= 0;
           return (
             <div key={role} className="row">
               <span style={{ fontSize: 22 }}>{ROLE_EMOJI[role]}</span>
               <div className="grow">
                 <div className="title">{ROLE_LABEL[role]}</div>
-                <div className="sub">{benefit}</div>
+                <div className="sub">
+                  {benefit}
+                  {noDesk && <span style={{ color: 'var(--bad)' }}> · kein freier Arbeitsplatz</span>}
+                </div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div className="sub">{euro(ROLE_SALARY[role])}/Woche</div>
                 <div className="sub">Vorkasse {euro(upfront)}</div>
               </div>
-              <button className="btn primary small" onClick={() => mutate((s) => hireEmployee(s, role))}>
+              <button
+                className="btn primary small"
+                disabled={noDesk}
+                title={noDesk ? 'Erst einen Schreibtisch im Büro bauen (Bau-Modus).' : undefined}
+                onClick={() => mutate((s) => hireEmployee(s, role))}
+              >
                 Einstellen
               </button>
             </div>
