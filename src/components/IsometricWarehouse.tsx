@@ -38,6 +38,18 @@ const C = {
   truckCab: '#3f6aa0',
   truckCargo: '#e2e7ec',
   label: 'rgba(255,255,255,0.5)',
+  officeFloor: '#39485c',
+  officeWall: '#47576b',
+  desk: '#9c8f79',
+  monitor: '#1c222b',
+  screen: '#63d0ff',
+};
+
+/** Shirt colour per office role (non-warehouse staff seated in the office). */
+const OFFICE_SHIRT: Record<string, string> = {
+  einkaeufer: '#3fb3a2',
+  kam: '#b077e2',
+  admin: '#7f8fa6',
 };
 
 // --- Isometric constants & layout -------------------------------------------
@@ -66,6 +78,20 @@ const RAMP_SPOTS = [
   { gx: 6, gy: 5 },
   { gx: 7, gy: 5 },
 ];
+// Office block to the LEFT of the warehouse (negative gx): a small room with
+// desks (workstations) where the non-warehouse staff — Einkäufer, KAM, Admin —
+// sit and work.
+const OFFICE = { gx: -3.3, gy: 0.9, w: 2.8, d: 3.7 };
+const OFFICE_COLS = [-2.75, -1.55];
+const OFFICE_ROWS = [1.4, 2.5, 3.6];
+const OFFICE_MAX_DESKS = OFFICE_COLS.length * OFFICE_ROWS.length; // 6
+function officeDeskSpot(i: number) {
+  return {
+    gx: OFFICE_COLS[i % OFFICE_COLS.length],
+    gy: OFFICE_ROWS[Math.floor(i / OFFICE_COLS.length) % OFFICE_ROWS.length],
+  };
+}
+
 const idleSpot = (i: number) => ({ gx: 1.5 + i * 1.1, gy: 3.3 });
 const tableWorkSpot = (i: number) => ({ gx: TABLES[i % TABLES.length].gx, gy: TABLES[i % TABLES.length].gy + 0.75 });
 const shelfFetchSpot = (i: number) => ({ gx: 2.5 + i * 1.4, gy: 2.9 });
@@ -353,6 +379,46 @@ function worker(ctx: CanvasRenderingContext2D, v: View, a: WorkerAnim, shirt: st
   }
 }
 
+/** A single office desk (workstation) with a monitor that glows when occupied. */
+function officeDesk(ctx: CanvasRenderingContext2D, v: View, gx: number, gy: number, occupied: boolean) {
+  // Desk surface.
+  box(ctx, v, gx - 0.33, gy - 0.2, 0.66, 0.42, 0.26, C.desk);
+  // Monitor sitting on the desk; the screen lights up when someone works here.
+  if (occupied) {
+    box(ctx, v, gx - 0.06, gy - 0.15, 0.24, 0.07, 0.24, C.screen, {
+      top: shade(C.screen, 1.15),
+      left: shade(C.screen, 0.8),
+      right: shade(C.screen, 0.95),
+    });
+  } else {
+    box(ctx, v, gx - 0.06, gy - 0.15, 0.24, 0.07, 0.22, C.monitor);
+  }
+}
+
+/** A seated office worker (no hard hat), shirt coloured by role. */
+function officePerson(ctx: CanvasRenderingContext2D, v: View, gx: number, gy: number, shirt: string) {
+  const [sx, sy] = iso(v, gx, gy, 0);
+  const s = v.s;
+  // chair back
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  roundRect(ctx, sx - 5.5 * s, sy - 15 * s, 11 * s, 13 * s, 2.5 * s);
+  ctx.fill();
+  // torso (seated → a bit shorter than a walking worker)
+  ctx.fillStyle = shirt;
+  roundRect(ctx, sx - 4.5 * s, sy - 17 * s, 9 * s, 13 * s, 2.5 * s);
+  ctx.fill();
+  // head
+  ctx.beginPath();
+  ctx.arc(sx, sy - 20 * s, 4 * s, 0, Math.PI * 2);
+  ctx.fillStyle = C.skin;
+  ctx.fill();
+  // hair
+  ctx.beginPath();
+  ctx.arc(sx, sy - 21 * s, 4.3 * s, Math.PI, 0);
+  ctx.fillStyle = 'rgba(46,33,27,0.85)';
+  ctx.fill();
+}
+
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
@@ -394,10 +460,10 @@ function draw(ctx: CanvasRenderingContext2D, state: GameState, anim: Anim, cw: n
     s,
   };
 
-  // Grass plot (a big diamond under the building).
+  // Grass plot (a big diamond under the building + office annex on the left).
   quad(
     ctx,
-    [iso(v, -2.5, -2.5), iso(v, GRID_W + 2, -2.5), iso(v, GRID_W + 2, GRID_D + 4), iso(v, -2.5, GRID_D + 4)],
+    [iso(v, -4.8, -2.5), iso(v, GRID_W + 2, -2.5), iso(v, GRID_W + 2, GRID_D + 4), iso(v, -4.8, GRID_D + 4)],
     C.grass,
     false,
   );
@@ -417,10 +483,36 @@ function draw(ctx: CanvasRenderingContext2D, state: GameState, anim: Anim, cw: n
     }
   }
 
+  // Office block floor (a carpeted room to the left of the warehouse).
+  quad(
+    ctx,
+    [
+      iso(v, OFFICE.gx, OFFICE.gy),
+      iso(v, OFFICE.gx + OFFICE.w, OFFICE.gy),
+      iso(v, OFFICE.gx + OFFICE.w, OFFICE.gy + OFFICE.d),
+      iso(v, OFFICE.gx, OFFICE.gy + OFFICE.d),
+    ],
+    C.officeFloor,
+    true,
+  );
+
   // Zone labels (drawn on the floor).
   label(ctx, v, 4.5, 0.4, 'LAGER');
   label(ctx, v, 2.6, 4.5, 'HERRICHTUNG');
   label(ctx, v, 6, 4.6, 'RAMPE');
+  label(ctx, v, OFFICE.gx + OFFICE.w / 2 - 0.5, OFFICE.gy + OFFICE.d - 0.55, 'BÜRO');
+
+  // Office low back walls (far edges of the room).
+  box(ctx, v, OFFICE.gx, OFFICE.gy, OFFICE.w, 0.12, 0.9, C.officeWall, {
+    top: shade(C.officeWall, 1.12),
+    left: shade(C.officeWall, 0.78),
+    right: shade(C.officeWall, 0.92),
+  });
+  box(ctx, v, OFFICE.gx, OFFICE.gy, 0.12, OFFICE.d, 0.9, C.officeWall, {
+    top: shade(C.officeWall, 1.12),
+    left: shade(C.officeWall, 0.7),
+    right: shade(C.officeWall, 0.88),
+  });
 
   // Back walls (far edges) — drawn before objects.
   box(ctx, v, 0, 0, GRID_W, 0.14, 1.15, C.wallFace, { top: C.wallTop, left: shade(C.wallFace, 0.8), right: shade(C.wallFace, 0.95) });
@@ -480,6 +572,22 @@ function draw(ctx: CanvasRenderingContext2D, state: GameState, anim: Anim, cw: n
       draw: () => box(ctx, v, spot.gx + 0.2, spot.gy + 0.2, 0.6, 0.6, 0.45, col, { top: shade(col, 1.15), left: shade(col, 0.62), right: shade(col, 0.84) }),
     });
   });
+
+  // Office desks (workstations) + seated office staff (Einkäufer, KAM, Admin).
+  const officeStaff = state.employees.filter((e) => e.role !== 'lager');
+  const deskCount = Math.min(OFFICE_MAX_DESKS, Math.max(4, officeStaff.length));
+  for (let i = 0; i < deskCount; i++) {
+    const d = officeDeskSpot(i);
+    const staff = officeStaff[i];
+    items.push({ depth: d.gx + d.gy, z: 0, draw: () => officeDesk(ctx, v, d.gx, d.gy, !!staff) });
+    if (staff) {
+      // Seat the worker just behind the desk so the desk overlaps their lap.
+      const pgx = d.gx + 0.02;
+      const pgy = d.gy - 0.32;
+      const shirt = OFFICE_SHIRT[staff.role] ?? '#8a8f98';
+      items.push({ depth: pgx + pgy, z: 1, draw: () => officePerson(ctx, v, pgx, pgy, shirt) });
+    }
+  }
 
   // Workers.
   const lager = state.employees.filter((e) => e.role === 'lager');
