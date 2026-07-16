@@ -963,8 +963,9 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   }
   state.demandThisWeek = {};
 
-  // 5. Quarterly triggers (start of a new quarter/season, not week 0).
-  if (newWeek % WEEKS_PER_QUARTER === 0 && newWeek > 0 && newWeek < WEEKS_PER_YEAR) {
+  // 5. Quarterly triggers (start of a new quarter/season, not week 0). Keeps
+  // running across years so seasons and supplier prices keep evolving.
+  if (newWeek % WEEKS_PER_QUARTER === 0 && newWeek > 0) {
     applyQuarterlyEvents(state);
   }
 
@@ -983,10 +984,11 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   // inquiries now arrive on Friday (see onDayStart), not at the Monday rollover.
   expireInquiries(state);
 
-  // 6b. Weekly procurement decision: with an Einkäufer the recommended order is
-  // placed automatically; otherwise a Monday order prompt is raised. Skipped in
-  // the final week (the year is over).
-  if (newWeek < WEEKS_PER_YEAR) processWeeklyOrder(state, newWeek);
+  // 6b. Weekly procurement decision every Monday (all years): with an Einkäufer
+  // the recommended order is placed automatically; otherwise a Monday order
+  // prompt is raised. At a year boundary the prompt waits behind the year-summary
+  // screen and opens once the player continues into the next year.
+  processWeeklyOrder(state, newWeek);
 
   // 7. Weekly report notification.
   notify(
@@ -995,11 +997,13 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     profit >= 0 ? 'success' : 'warn',
   );
 
-  // 8. Year complete?
-  if (newWeek >= WEEKS_PER_YEAR) {
+  // 8. Year complete? Fires at every year boundary (week 48, 96, …), pausing for
+  // the year-summary screen. The player can then continue into the next year.
+  if (newWeek % WEEKS_PER_YEAR === 0 && newWeek > 0) {
+    const year = newWeek / WEEKS_PER_YEAR;
     state.yearComplete = true;
     state.paused = true;
-    notify(state, `🏁 Jahr geschafft! 12 Monate abgeschlossen. Siehe Jahresbericht.`, 'success');
+    notify(state, `🏁 Jahr ${year} geschafft! 12 Monate abgeschlossen. Siehe Jahresabschluss.`, 'success');
   }
 }
 

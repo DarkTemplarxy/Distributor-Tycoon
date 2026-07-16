@@ -1,6 +1,6 @@
 import { useGame } from '../state/GameProvider';
 import { MONTHS_PER_YEAR, QUARTER_LABEL, WEEKS_PER_MONTH } from '../game/constants';
-import { dayName, euro, formatClock, monthOfYear, quarterOf, weekOf, weekOfMonth } from '../game/util';
+import { dayName, euro, formatClock, monthOfYear, quarterOf, weekOf, weekOfMonth, yearOf } from '../game/util';
 import type { Speed } from '../game/types';
 import { Stars } from './shared';
 
@@ -22,6 +22,10 @@ export function TopBar({ onRestart }: { onRestart: () => void }) {
         <span>Distributor Tycoon</span>
       </div>
 
+      <div className="tb-stat">
+        <span className="label">Jahr</span>
+        <span className="value">{yearOf(week) + 1}</span>
+      </div>
       <div className="tb-stat">
         <span className="label">Monat</span>
         <span className="value">

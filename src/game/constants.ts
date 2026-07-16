@@ -121,8 +121,8 @@ export const KAM_CAPACITY: Record<CustomerType, number> = {
  * spec's aspirational 20k/100k so the medium/large mechanics are actually
  * reachable inside a 52-week MVP session.
  */
-export const MEDIUM_UNLOCK_REVENUE = 4000;
-export const LARGE_UNLOCK_REVENUE = 20000;
+export const MEDIUM_UNLOCK_REVENUE = 40000;
+export const LARGE_UNLOCK_REVENUE = 400000;
 
 export const CUSTOMER_LEAD_WEEKS: Record<CustomerType, number> = {
   small: 1,

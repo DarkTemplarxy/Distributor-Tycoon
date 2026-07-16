@@ -1,5 +1,5 @@
 import { useGame } from '../state/GameProvider';
-import { euro } from '../game/util';
+import { euro, weekOf, yearOf } from '../game/util';
 
 /** Shown at the very start (fresh game, still paused, no time elapsed). */
 export function StartScreen({ onDismiss }: { onDismiss: () => void }) {
@@ -30,13 +30,23 @@ export function StartScreen({ onDismiss }: { onDismiss: () => void }) {
 
 export function YearCompleteScreen({ onRestart }: { onRestart: () => void }) {
   const { state, continueYear } = useGame();
-  const profit = state.stats.totalProfit;
+
+  // Figures for the year that just ended (not cumulative), summed from its
+  // weekly reports. At the boundary week 48/96/… the completed year is the one
+  // before the current year index.
+  const yearNumber = yearOf(weekOf(state.totalDays)); // 1, 2, …
+  const yearReports = state.reports.filter((r) => yearOf(r.week) === yearNumber - 1);
+  const yrRevenue = yearReports.reduce((s, r) => s + r.revenue, 0);
+  const yrProfit = yearReports.reduce((s, r) => s + r.profit, 0);
+  const yrDelivered = yearReports.reduce((s, r) => s + r.deliveredOrders, 0);
+  const yrLate = yearReports.reduce((s, r) => s + r.lateOrders, 0);
+
   return (
     <div className="overlay-screen">
       <div className="overlay-card">
         <div className="big-emoji">🏁</div>
-        <h1>Jahr geschafft!</h1>
-        <p>12 Monate gemeistert. Hier dein Jahresabschluss:</p>
+        <h1>Jahr {yearNumber} geschafft!</h1>
+        <p>12 Monate gemeistert. Dein Jahresabschluss:</p>
         <div className="report-grid" style={{ textAlign: 'left' }}>
           <div className="stat-box">
             <div className="k">Endkapital</div>
@@ -44,20 +54,33 @@ export function YearCompleteScreen({ onRestart }: { onRestart: () => void }) {
           </div>
           <div className="stat-box">
             <div className="k">Jahresgewinn</div>
-            <div className="v" style={{ color: profit >= 0 ? 'var(--good)' : 'var(--bad)' }}>{euro(profit)}</div>
+            <div className="v" style={{ color: yrProfit >= 0 ? 'var(--good)' : 'var(--bad)' }}>{euro(yrProfit)}</div>
           </div>
           <div className="stat-box">
-            <div className="k">Umsatz</div>
-            <div className="v">{euro(state.stats.totalRevenue)}</div>
+            <div className="k">Jahresumsatz</div>
+            <div className="v">{euro(yrRevenue)}</div>
+          </div>
+          <div className="stat-box">
+            <div className="k">Aufträge geliefert</div>
+            <div className="v">
+              {yrDelivered}
+              {yrLate > 0 && <span style={{ color: 'var(--bad)', fontSize: 13 }}> · {yrLate} spät</span>}
+            </div>
           </div>
           <div className="stat-box">
             <div className="k">Kunden aktiv</div>
             <div className="v">{state.customers.filter((c) => c.active).length}</div>
           </div>
+          <div className="stat-box">
+            <div className="k">Gewinn gesamt</div>
+            <div className="v" style={{ color: state.stats.totalProfit >= 0 ? 'var(--good)' : 'var(--bad)' }}>
+              {euro(state.stats.totalProfit)}
+            </div>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 8 }}>
           <button className="btn primary" onClick={continueYear}>
-            Weiterspielen
+            ▶ Jahr {yearNumber + 1} weiterspielen
           </button>
           <button className="btn" onClick={onRestart}>
             Neues Spiel
