@@ -765,19 +765,23 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     state.weekAcc.interest += interest;
   }
 
-  // 1b. Month end: salaries (whole month) + rent, all at once, on the last week
-  // of the month. (newWeek is the start of the next month when divisible by 4.)
+  // 1b. Accrual accounting for the report: book each week its *share* of the
+  // monthly fixed costs (salaries + rent), so the weekly profit reflects the true
+  // economic result even though the cash itself only leaves at month end. Over a
+  // full month the four weekly shares add up to the amount actually debited below.
+  const weeklySalary = state.employees.reduce((s, e) => s + e.salary, 0);
+  state.weekAcc.salaries += weeklySalary;
+  state.weekAcc.rent += MONTHLY_RENT / WEEKS_PER_MONTH;
+
+  // 1c. Cash side — at month end the whole month's salaries + rent are actually
+  // debited, all at once (accrued through the weekly shares above). newWeek is the
+  // start of the next month when it is divisible by 4.
   if (newWeek % WEEKS_PER_MONTH === 0 && newWeek > 0) {
-    const monthlySalary = state.employees.reduce((s, e) => s + e.salary, 0) * WEEKS_PER_MONTH;
-    if (monthlySalary > 0) {
-      spend(state, monthlySalary);
-      state.weekAcc.salaries += monthlySalary;
-    }
-    spend(state, MONTHLY_RENT);
-    state.weekAcc.rent += MONTHLY_RENT;
+    const monthlySalary = weeklySalary * WEEKS_PER_MONTH;
+    spend(state, monthlySalary + MONTHLY_RENT);
     notify(
       state,
-      `💸 Monatsabschluss: Personal ${Math.round(monthlySalary)}€ + Miete ${MONTHLY_RENT}€ verrechnet.`,
+      `💸 Monatsabschluss: Personal ${Math.round(monthlySalary)}€ + Miete ${MONTHLY_RENT}€ abgebucht.`,
       'warn',
     );
   }

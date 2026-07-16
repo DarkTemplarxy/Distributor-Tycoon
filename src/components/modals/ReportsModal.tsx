@@ -81,6 +81,10 @@ export function ReportsModal({ onClose }: { onClose: () => void }) {
             </button>
             <h3 style={{ margin: 0 }}>Monat {selMonth.month + 1} · Wochenübersicht</h3>
           </div>
+          <p className="hint" style={{ marginTop: 8 }}>
+            Personal & Miete werden anteilig je Woche ausgewiesen (echter Wochengewinn), aber erst
+            am Monatsende (Woche 4) tatsächlich vom Konto abgebucht.
+          </p>
           <div className="rows" style={{ marginTop: 10 }}>
             {selMonth.weeks.map((r) => (
               <div key={r.week} className="row" style={{ flexWrap: 'wrap' }}>
@@ -130,7 +134,7 @@ export function ReportsModal({ onClose }: { onClose: () => void }) {
               <button
                 key={m.month}
                 className="row"
-                style={{ cursor: 'pointer', textAlign: 'left', border: 'none', width: '100%' }}
+                style={{ cursor: 'pointer', textAlign: 'left', border: 'none', width: '100%', flexWrap: 'wrap' }}
                 onClick={() => setSelected(m.month)}
               >
                 <div className="grow" style={{ minWidth: 90 }}>
@@ -141,6 +145,8 @@ export function ReportsModal({ onClose }: { onClose: () => void }) {
                   </div>
                 </div>
                 <span className="pill good">Umsatz {euro(m.revenue)}</span>
+                <span className="pill">Ware {euro(m.purchases)}</span>
+                <span className="pill">Logistik {euro(m.logistics)}</span>
                 <span className="pill">Personal {euro(m.salaries)}</span>
                 <span className="pill">Miete {euro(m.rent)}</span>
                 <span
