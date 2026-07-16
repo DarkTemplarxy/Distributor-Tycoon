@@ -3,7 +3,7 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { counterAcceptChance, freeCapacity } from '../../game/simulation';
 import { acceptInquiry, counterOffer, dismissInquiry } from '../../game/actions';
-import { STEP, tutorialOnStep } from '../../game/tutorial';
+import { STEP, TUTORIAL_INQUIRY_IDS, tutorialOnStep } from '../../game/tutorial';
 import type { CustomerType } from '../../game/types';
 import { PRODUCT_COLOR } from '../shared';
 
@@ -14,6 +14,12 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
   const [prices, setPrices] = useState<Record<string, number>>({});
   const list = state.inquiries.filter((i) => i.status === 'open');
 
+  // Guided lesson during the tutorial's growth beat: accept the uncle's first
+  // inquiry, then counter-offer the second (glow points at the active action).
+  const guided = tutorialOnStep(state.tutorial, STEP.GROWTH);
+  const [tut1Id, tut2Id] = TUTORIAL_INQUIRY_IDS;
+  const tut1Open = state.inquiries.some((i) => i.id === tut1Id && i.status === 'open');
+
   return (
     <Modal title="Kundenanfragen" icon="📨" onClose={onClose} wide>
       <p className="hint">
@@ -21,6 +27,19 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
         Preis fordern für mehr Marge – der Kunde nimmt mit sinkender Chance an, sonst platzt der Deal.
         Die Menge ist fix. Neue Kunden brauchen freie KAM-Kapazität.
       </p>
+
+      {guided && (
+        <p className="hint" style={{ borderLeft: '3px solid var(--accent)', paddingLeft: 10 }}>
+          👴 <b>Onkels Anleitung:</b>{' '}
+          <span style={{ opacity: tut1Open ? 1 : 0.45 }}>
+            <b>1.</b> Die erste Anfrage einfach <b>✓ Annehmen</b>.
+          </span>{' '}
+          <span style={{ opacity: tut1Open ? 0.45 : 1 }}>
+            <b>2.</b> Bei der zweiten einen <b>höheren Preis</b> fordern und als{' '}
+            <b>⚖ Gegenangebot</b> zurückschicken – im Tutorial nimmt der Kunde sicher an.
+          </span>
+        </p>
+      )}
 
       <div className="two-col" style={{ marginBottom: 14 }}>
         {(['small', 'medium', 'large'] as CustomerType[]).map((t) => (
@@ -53,7 +72,12 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
           const product = state.products.find((p) => p.id === inq.preferredProduct)!;
           const isExpansion = !!inq.existingCustomerId;
           const noCapacity = !isExpansion && freeCapacity(state, inq.type) <= 0;
-          const price = prices[inq.id] ?? inq.targetPrice;
+          // Guided steps: glow Annehmen on the uncle's first inquiry; once it's
+          // handled, glow Gegenangebot on the second — with the higher price
+          // pre-filled so the button is immediately actionable.
+          const glowAccept = guided && inq.id === tut1Id && !noCapacity;
+          const glowCounter = guided && inq.id === tut2Id && !tut1Open && !noCapacity;
+          const price = prices[inq.id] ?? (glowCounter ? inq.targetPrice + 2 : inq.targetPrice);
           const chance = Math.round(counterAcceptChance(inq.targetPrice, price) * 100);
           const chanceCls = chance >= 70 ? 'good' : chance >= 40 ? 'warn' : 'bad';
           return (
@@ -77,9 +101,7 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
 
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
                 <button
-                  className={`btn good small${
-                    !noCapacity && tutorialOnStep(state.tutorial, STEP.GROWTH) ? ' tut-glow' : ''
-                  }`}
+                  className={`btn good small${glowAccept ? ' tut-glow' : ''}`}
                   disabled={noCapacity}
                   title={noCapacity ? 'Keine KAM-Kapazität frei' : undefined}
                   onClick={() => mutate((s) => acceptInquiry(s, inq.id))}
@@ -102,7 +124,7 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                   Chance ~{chance}%
                 </span>
                 <button
-                  className="btn primary small"
+                  className={`btn primary small${glowCounter && price > inq.targetPrice ? ' tut-glow' : ''}`}
                   disabled={noCapacity || price <= inq.targetPrice}
                   title={price <= inq.targetPrice ? 'Über dem Wunschpreis bieten' : undefined}
                   onClick={() => mutate((s) => counterOffer(s, inq.id, price))}

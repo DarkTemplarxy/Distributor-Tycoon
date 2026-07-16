@@ -79,7 +79,8 @@ const COACH: Record<number, { emoji: string; text: ReactNode }> = {
     text: (
       <>
         Deine Mitarbeiter arbeiten von <b>6–20 Uhr</b>. Ist die Palette fertig, holt sie der{' '}
-        <b>LKW täglich um 18:00</b> ab. ⏩ Beschleunige die Zeit und warte auf den LKW.
+        <b>LKW täglich um 18:00</b> ab. ⏩ Beschleunige die Zeit und warte auf den LKW – nachts
+        (20–6 Uhr) läuft die Zeit automatisch im Schnellvorlauf.
       </>
     ),
   },
@@ -87,8 +88,9 @@ const COACH: Record<number, { emoji: string; text: ReactNode }> = {
     emoji: '📨',
     text: (
       <>
-        Ein neuer Kunde interessiert sich für dich! Öffne unten <b>Anfragen</b> und mach ihm ein{' '}
-        <b>Angebot</b> – so wächst dein Geschäft.
+        Dein Onkel hat dir <b>2 Anfragen</b> hinterlassen! Öffne unten <b>Anfragen</b>: Nimm die{' '}
+        <b>erste an</b> und schick bei der <b>zweiten</b> ein <b>Gegenangebot</b> mit höherem
+        Preis.
       </>
     ),
   },

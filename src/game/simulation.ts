@@ -34,6 +34,7 @@ import {
   LARGE_UNLOCK_REVENUE,
   MEDIUM_UNLOCK_REVENUE,
   MONTHLY_RENT,
+  NIGHT_SPEED,
   PALETTE_SIZE,
   PAYMENT_DELAY_DAYS_BY_TYPE,
   PER_ARTICLE_PREP_FACTOR,
@@ -78,9 +79,9 @@ import {
   weekOf,
 } from './util';
 import {
-  STARTING_CUSTOMER_IDS,
   STEP,
   TUTORIAL_FIRST_PREP_DAYS,
+  TUTORIAL_INQUIRY_IDS,
   TUTORIAL_ORDER_ID,
 } from './tutorial';
 
@@ -1273,8 +1274,9 @@ function onDayStart(state: GameState, dayIndex: number): void {
 
   // New customer & expansion inquiries arrive on Friday — the player sees the
   // fresh demand before the Saturday order. During the tutorial they are held
-  // back until the growth beat, so the one forced inquiry is the player's first.
-  const inquiriesUnlocked = !state.tutorial?.active || state.tutorial.step >= STEP.GROWTH;
+  // back until the growth lesson is DONE, so the uncle's two inquiries stay the
+  // only open ones while the accept/counter guidance runs.
+  const inquiriesUnlocked = !state.tutorial?.active || state.tutorial.step > STEP.GROWTH;
   if (dow === INQUIRY_DAY_OF_WEEK && inquiriesUnlocked) {
     const hasFreeCapacity = (['small', 'medium', 'large'] as CustomerType[]).some(
       (t) => freeCapacity(state, t) > 0,
@@ -1296,38 +1298,44 @@ function onDayStart(state: GameState, dayIndex: number): void {
 
 // --- Tutorial ---------------------------------------------------------------
 
-/** Create the one forced new-customer inquiry for the growth beat (BEAT 2): a
- * small customer for a product we already sell, so accepting it can't be late.
- * No-op if an open new-customer inquiry already exists (avoids duplicates when
- * the recovery path re-enters the growth beat). */
-function forceTutorialInquiry(state: GameState): void {
-  if (state.inquiries.some((i) => i.status === 'open' && !i.existingCustomerId)) return;
+/** Create the two inquiries "the uncle left behind" for the growth beat (BEAT 2):
+ * small fish customers, so accepting can't be late. The first teaches Annehmen,
+ * the second Gegenangebot. Fixed ids; each is only created if it doesn't already
+ * exist (the recovery path may re-enter the growth beat). */
+function forceTutorialInquiries(state: GameState): void {
   const week = weekOf(state.totalDays);
   const product = getProduct(state, 'fisch');
   const [minV, maxV] = CUSTOMER_VOLUME_RANGE.small;
-  const inquiry: Inquiry = {
-    id: uid('inq'),
-    name: uniqueCustomerName(state, 'small'),
-    emoji: CUSTOMER_EMOJI.small,
-    type: 'small',
-    preferredProduct: 'fisch',
-    suggestedVolume: randInt(minV, maxV),
-    targetPrice: Math.round(product.verkaufspreis * 2) / 2,
-    createdWeek: week,
-    expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
-    status: 'open',
-  };
-  state.inquiries.push(inquiry);
-  notify(state, `📨 Neuer Interessent: ${inquiry.name} möchte bei dir bestellen!`, 'info');
+  let created = 0;
+  for (const id of TUTORIAL_INQUIRY_IDS) {
+    if (state.inquiries.some((i) => i.id === id)) continue;
+    state.inquiries.push({
+      id,
+      name: uniqueCustomerName(state, 'small'),
+      emoji: CUSTOMER_EMOJI.small,
+      type: 'small',
+      preferredProduct: 'fisch',
+      suggestedVolume: randInt(minV, maxV),
+      targetPrice: Math.round(product.verkaufspreis * 2) / 2,
+      createdWeek: week,
+      expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
+      status: 'open',
+    });
+    created += 1;
+  }
+  if (created > 0) {
+    notify(state, `📨 Dein Onkel hat dir ${created === 2 ? '2 Kundenanfragen' : 'eine Kundenanfrage'} hinterlassen!`, 'info');
+  }
 }
 
-/** Move to the growth beat: auto-prep on for the rest of the game and the first
- * inquiry dropped in. Shared by the celebration's "Weiter" and the recovery path. */
+/** Move to the growth beat: auto-prep on for the rest of the game and the uncle's
+ * two inquiries dropped in. Shared by the celebration's "Weiter" and the recovery
+ * path. */
 function tutorialEnterGrowth(state: GameState): void {
   if (!state.tutorial) return;
   state.tutorial.step = STEP.GROWTH;
   state.settings.autoPrep = true;
-  forceTutorialInquiry(state);
+  forceTutorialInquiries(state);
 }
 
 /** UI hook for the celebration overlay's "Weiter". */
@@ -1341,7 +1349,7 @@ export function tutorialContinueFromCelebrate(state: GameState): void {
  * UI locked — skip the celebration and carry on with the growth beat instead. */
 function tutorialRecoverToGrowth(state: GameState): void {
   if (!state.tutorial) return;
-  notify(state, `⚠️ Der erste Auftrag ist entfallen – weiter geht's mit einem neuen Interessenten!`, 'warn');
+  notify(state, `⚠️ Der erste Auftrag ist entfallen – weiter geht's mit den Anfragen des Onkels!`, 'warn');
   tutorialEnterGrowth(state);
 }
 
@@ -1392,10 +1400,12 @@ export function advanceTutorial(state: GameState): void {
       break;
     }
     case STEP.GROWTH: {
-      // A brand-new customer (not one of the uncle's two) was onboarded.
-      if (state.customers.some((c) => !STARTING_CUSTOMER_IDS.includes(c.id))) {
-        enterTutorialOrder(state);
-      }
+      // Both of the uncle's inquiries have been dealt with (accepted, countered,
+      // dismissed or expired) — the accept + counter-offer lesson is done.
+      const anyOpen = state.inquiries.some(
+        (i) => TUTORIAL_INQUIRY_IDS.includes(i.id) && i.status === 'open',
+      );
+      if (!anyOpen) enterTutorialOrder(state);
       break;
     }
     case STEP.ORDER: {
@@ -1447,12 +1457,50 @@ function workingDelta(prev: number, next: number): number {
   return total;
 }
 
+/**
+ * Convert a real-time tick into game-days, fast-forwarding the night: day
+ * portions (6–20) run at the chosen speed, night portions at NIGHT_SPEED (×16).
+ * Integrates piecewise up to each next 6:00/20:00 boundary, so a tick that
+ * crosses a boundary applies each factor exactly to its own segment (no
+ * overshooting the morning at night speed).
+ */
+function nightAwareDelta(totalDays: number, realSeconds: number, userSpeed: number): number {
+  const wStart = WORK_START_HOUR / 24;
+  const wEnd = WORK_END_HOUR / 24;
+  // Float-safety margin: the stepping snaps ONTO boundaries, and `t - day` can
+  // round to a hair below the boundary it just landed on — which would classify
+  // the same instant as "before the boundary" forever and freeze the clock at
+  // exactly 20:00. Anything within EPS below a boundary counts as past it.
+  const EPS = 1e-9;
+  let t = totalDays;
+  let rem = realSeconds;
+  let guard = 0;
+  while (rem > 1e-6 && guard++ < 16) {
+    const day = Math.floor(t);
+    const frac = t - day;
+    const beforeWork = frac < wStart - EPS;
+    const inWork = !beforeWork && frac < wEnd - EPS;
+    const factor = inWork ? userSpeed : NIGHT_SPEED;
+    // Next factor-change boundary strictly ahead of t.
+    const boundary = beforeWork ? day + wStart : inWork ? day + wEnd : day + 1 + wStart;
+    const capacity = (rem / SECONDS_PER_DAY_AT_1X) * factor; // game-days at this factor
+    const step = Math.min(capacity, boundary - t);
+    const nt = t + step;
+    if (nt === t) break; // sub-ulp remainder — nothing meaningful left to add
+    rem -= (step / factor) * SECONDS_PER_DAY_AT_1X;
+    t = nt;
+  }
+  // Derive the delta from the position actually reached — exact by construction.
+  return t - totalDays;
+}
+
 export function advance(state: GameState, realDeltaMs: number): void {
   if (state.paused || state.gameOver || state.yearComplete) return;
 
-  // Cap the delta so a long pause (e.g. hidden tab) can't skip events.
+  // Cap the delta so a long pause (e.g. hidden tab) can't skip events. The night
+  // (20–6) fast-forwards at NIGHT_SPEED regardless of the chosen speed.
   const cappedMs = Math.min(realDeltaMs, 250);
-  const deltaDays = (cappedMs / 1000 / SECONDS_PER_DAY_AT_1X) * state.speed;
+  const deltaDays = nightAwareDelta(state.totalDays, cappedMs / 1000, state.speed);
   if (deltaDays <= 0) return;
 
   const prev = state.totalDays;

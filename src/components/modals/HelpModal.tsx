@@ -37,7 +37,8 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
         </Rule>
         <Rule icon="🕕" title="Arbeitstag 6–20 Uhr">
           Mitarbeiter arbeiten nur zwischen <b>6:00 und 20:00 Uhr</b>. Nachts ruht die Arbeit –
-          angefangene Herrichtungen laufen am nächsten Morgen weiter.
+          angefangene Herrichtungen laufen am nächsten Morgen weiter. Die Nacht läuft automatisch
+          im <b>Schnellvorlauf (×16)</b>.
         </Rule>
         <Rule icon="🚚" title="Abholung durch den LKW">
           Der LKW kommt <b>täglich um 18:00</b> und holt fertige Paletten ab. Eine Bestellung

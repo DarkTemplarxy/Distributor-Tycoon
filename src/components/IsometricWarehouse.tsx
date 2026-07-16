@@ -980,7 +980,7 @@ function draw(
   // progresses — surface that so a stalled Herrichtung at night isn't confusing.
   const hr = hourOf(state.totalDays);
   const feierabend = hr < WORK_START_HOUR || hr >= WORK_END_HOUR;
-  const hud = `🏭 Regal ${shelfUsed(state)}/${shelfCapacity(state)}  ·  Wareneingang ${inboundUsed(state)}/${inboundCapacity(state)}  ·  Fertig ${ready.length}  ·  ${dayName(state.totalDays)} ${formatClock(state.totalDays)}${feierabend ? '  ·  😴 Feierabend' : ''}`;
+  const hud = `🏭 Regal ${shelfUsed(state)}/${shelfCapacity(state)}  ·  Wareneingang ${inboundUsed(state)}/${inboundCapacity(state)}  ·  Fertig ${ready.length}  ·  ${dayName(state.totalDays)} ${formatClock(state.totalDays)}${feierabend ? '  ·  😴 Feierabend · ⏩ ×16' : ''}`;
   ctx.font = `600 12px 'Segoe UI', sans-serif`;
   ctx.textAlign = 'left';
   const pad = 10;

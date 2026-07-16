@@ -34,6 +34,11 @@ export const STEP = {
 /** Fixed id of the pre-placed starter order that drives the first beats. */
 export const TUTORIAL_ORDER_ID = 'order_tut';
 
+/** Fixed ids of the two inquiries "the uncle left behind" for the growth beat:
+ * the first teaches ✓ Annehmen, the second teaches ⚖ Gegenangebot. The beat
+ * advances once neither is open any more. */
+export const TUTORIAL_INQUIRY_IDS = ['inq_tut_1', 'inq_tut_2'];
+
 /** Ids of the two customers the uncle hands over (created in init.ts from this
  * list). The growth beat detects "a NEW customer was won" as any customer whose
  * id is not in here — robust against cancellations and future scenario changes. */

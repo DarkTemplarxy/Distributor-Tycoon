@@ -59,6 +59,12 @@ export const TRUCK_DAY_FRACTION = TRUCK_HOUR / 24;
 export const WORK_START_HOUR = 6;
 export const WORK_END_HOUR = 20;
 
+/** During the night (WORK_END_HOUR → WORK_START_HOUR) the clock automatically
+ * fast-forwards at this fixed factor — nothing happens while everyone sleeps, so
+ * the player never has to sit through it. Replaces (not multiplies) the chosen
+ * speed for the night portion of each tick. */
+export const NIGHT_SPEED = 16;
+
 export const STARTING_CASH = 10000;
 export const STARTING_STARS = 3;
 
