@@ -14,7 +14,7 @@ import {
   type ProductDef,
 } from './constants';
 import type { Batch, Customer, Employee, GameState, Product, Supplier } from './types';
-import { randInt, uid } from './util';
+import { uid } from './util';
 
 /** Build a fresh Product from a catalog definition. Reused by the start scenario
  * and by the runtime "add to assortment" action, so both stay in sync. */
@@ -39,23 +39,24 @@ function makeProducts(): Product[] {
   // Only products unlocked at the start (fish) are in the assortment initially.
   return PRODUCT_DEFS.filter((def) => def.unlockWeek === 0).map((def) => {
     const batches: Batch[] = [];
-    // Give the player one starter palette of fish so the very first order can
-    // be fulfilled immediately and the mechanics reveal themselves.
+    // Give the player two starter palettes of fish (80 units) so the very first
+    // (now larger) orders can be fulfilled immediately from stock — an easier start.
     if (def.id === 'fisch') {
       batches.push({
         id: uid('batch'),
         productId: 'fisch',
-        quantity: 40,
+        quantity: 80,
         expiryDay: def.spoilageDays, // created on day 0
       });
     }
     return buildProduct(def, {
       batches,
       // Procurement starts fully MANUAL — automatic restocking only kicks in once
-      // the player hires an Einkäufer. Sensible min/target are pre-filled for then.
+      // the player hires an Einkäufer. Sensible min/target are pre-filled for then
+      // (fisch scaled to the doubled weekly demand).
       autoRestock:
         def.id === 'fisch'
-          ? { enabled: false, min: 45, target: 80 }
+          ? { enabled: false, min: 90, target: 160 }
           : { enabled: false, min: 40, target: 120 },
     });
   });
@@ -79,16 +80,19 @@ function makeCustomers(): Customer[] {
       ...base,
       id: 'cust_giuseppe',
       name: 'Pizza Giuseppe',
-      orderDayOfWeek: randInt(0, 5),
-      lines: [{ productId: 'fisch', price: 33.5, volume: 15 }],
+      // Fixed early weekday (Tue) — day 0/Mon never fires a day-start, so a Monday
+      // slot would slip the first order into week 2. Tue guarantees week 1.
+      orderDayOfWeek: 1,
+      lines: [{ productId: 'fisch', price: 33.5, volume: 30 }],
     },
     {
       ...base,
       id: 'cust_urban',
       name: 'Restaurant Urban',
       emoji: '🍽️',
-      orderDayOfWeek: randInt(0, 5),
-      lines: [{ productId: 'fisch', price: 33.5, volume: 16 }],
+      // Staggered a couple of days after Giuseppe, still safely inside week 1.
+      orderDayOfWeek: 3,
+      lines: [{ productId: 'fisch', price: 33.5, volume: 32 }],
     },
   ];
 }
