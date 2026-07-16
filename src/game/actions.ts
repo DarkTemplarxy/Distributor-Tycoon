@@ -5,6 +5,8 @@
 // ============================================================================
 
 import {
+  EXPRESS_PO_LEAD_DAYS,
+  EXPRESS_RESTOCK_SURCHARGE,
   getProductDef,
   HIRE_WEEKS_UPFRONT,
   ROLE_LABEL,
@@ -35,27 +37,6 @@ export interface ActionResult {
 }
 
 // --- Purchasing -------------------------------------------------------------
-
-export function createPurchaseOrder(
-  state: GameState,
-  items: { productId: ProductId; quantity: number }[],
-): ActionResult {
-  const valid = items.filter((i) => i.quantity > 0);
-  if (valid.length === 0) return { ok: false, message: 'Keine Menge angegeben.' };
-
-  let total = 0;
-  for (const item of valid) {
-    const sp = state.supplier.products.find((s) => s.productId === item.productId)!;
-    total += item.quantity * sp.price;
-  }
-  if (state.cash + availableCredit(state) < total) {
-    return { ok: false, message: `Nicht genug Kapital (${Math.round(total)}€ nötig).` };
-  }
-
-  createPurchaseOrderInternal(state, valid);
-  notify(state, `🛒 Bestellung aufgegeben (${Math.round(total)}€, Lieferung in 1 Woche).`, 'info');
-  return { ok: true };
-}
 
 /**
  * Place (or override) the current week's order — the [BESTELLEN] action of the
@@ -175,7 +156,10 @@ export function prepareOrder(state: GameState, orderId: string): ActionResult {
   return { ok: true };
 }
 
-/** Buy exactly the shortfall needed to fulfil an order. */
+/**
+ * Emergency express restock for one order's shortfall. Off the weekly Monday
+ * cycle, so it ships fast — but the purchase price carries a +20% surcharge.
+ */
 export function restockForOrder(state: GameState, orderId: string): ActionResult {
   const order = state.orders.find((o) => o.id === orderId);
   if (!order) return { ok: false, message: 'Auftrag nicht gefunden.' };
@@ -183,7 +167,24 @@ export function restockForOrder(state: GameState, orderId: string): ActionResult
   const have = product.batches.reduce((s, b) => s + b.quantity, 0);
   const shortfall = Math.max(0, order.quantity - have);
   if (shortfall === 0) return { ok: false, message: 'Genug Bestand vorhanden.' };
-  return createPurchaseOrder(state, [{ productId: order.productId, quantity: shortfall }]);
+
+  const sp = state.supplier.products.find((s) => s.productId === order.productId)!;
+  const surcharge = 1 + EXPRESS_RESTOCK_SURCHARGE;
+  const cost = shortfall * sp.price * surcharge;
+  if (state.cash + availableCredit(state) < cost) {
+    return { ok: false, message: `Express-Nachbestellung ${Math.round(cost)}€ nicht bezahlbar.` };
+  }
+
+  createPurchaseOrderInternal(state, [{ productId: order.productId, quantity: shortfall }], {
+    priceMultiplier: surcharge,
+    leadDays: EXPRESS_PO_LEAD_DAYS,
+  });
+  notify(
+    state,
+    `🚀 Express-Nachbestellung: ${shortfall}× ${product.name} (+${Math.round(EXPRESS_RESTOCK_SURCHARGE * 100)}% Aufschlag = ${Math.round(cost)}€, Lieferung in ${EXPRESS_PO_LEAD_DAYS} Tagen).`,
+    'warn',
+  );
+  return { ok: true };
 }
 
 // --- Employees --------------------------------------------------------------

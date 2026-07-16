@@ -502,14 +502,17 @@ function collectDuePayments(state: GameState): void {
 export function createPurchaseOrderInternal(
   state: GameState,
   items: { productId: ProductId; quantity: number }[],
+  opts?: { priceMultiplier?: number; leadDays?: number },
 ): PurchaseOrder | null {
+  const mult = opts?.priceMultiplier ?? 1;
   let total = 0;
   const poItems = items
     .filter((i) => i.quantity > 0)
     .map((i) => {
       const sp = state.supplier.products.find((s) => s.productId === i.productId)!;
-      total += i.quantity * sp.price;
-      return { productId: i.productId, quantity: i.quantity, pricePerUnit: sp.price };
+      const unit = sp.price * mult;
+      total += i.quantity * unit;
+      return { productId: i.productId, quantity: i.quantity, pricePerUnit: unit };
     });
   if (poItems.length === 0) return null;
 
@@ -519,8 +522,12 @@ export function createPurchaseOrderInternal(
     id: uid('po'),
     items: poItems,
     orderDay: state.totalDays,
-    // Next Monday: start of the week after the current one.
-    deliveryDay: (weekOf(state.totalDays) + 1) * DAYS_PER_WEEK,
+    // Express orders ship in a fixed few days; regular weekly orders arrive next
+    // Monday (start of the week after the current one).
+    deliveryDay:
+      opts?.leadDays != null
+        ? state.totalDays + opts.leadDays
+        : (weekOf(state.totalDays) + 1) * DAYS_PER_WEEK,
     totalCost: total,
     status: 'pending',
   };

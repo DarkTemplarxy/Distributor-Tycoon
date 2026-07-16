@@ -109,13 +109,14 @@ export function OrdersPanel() {
                 {shortCount > 0 && (
                   <button
                     className="btn small"
+                    title="Express-Nachbestellung außerhalb des Montags-Zyklus: schnelle Lieferung, aber +20% Einkaufspreis."
                     onClick={() =>
                       mutate((s) => {
                         for (const o of pending) restockForOrder(s, o.id);
                       })
                     }
                   >
-                    🛒 Nachbestellen ({shortCount})
+                    🚀 Express +20% ({shortCount})
                   </button>
                 )}
               </div>

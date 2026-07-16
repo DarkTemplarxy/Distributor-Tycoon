@@ -38,6 +38,12 @@ export const TRUCK_COST_PER_PALLET = 20;
  * and always arrive the following Monday. */
 export const PO_LEAD_DAYS = 7;
 
+/** Emergency "Fehlmenge nachbestellen": an off-cycle express order to cover a
+ * specific order's shortfall. It ships fast (in this many days) but the purchase
+ * price carries a surcharge — the price of not planning it into the weekly run. */
+export const EXPRESS_PO_LEAD_DAYS = 2;
+export const EXPRESS_RESTOCK_SURCHARGE = 0.2;
+
 /** Weekly procurement runs once a week; new customer inquiries arrive on Friday
  * (day-of-week 4: 0=Mon .. 6=Sun) so the player learns of demand before the
  * Monday order screen. */
