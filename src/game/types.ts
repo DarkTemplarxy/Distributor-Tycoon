@@ -298,6 +298,11 @@ export interface GameState {
   stats: GameStats;
   settings: { autoPrep: boolean };
 
+  /** Guided onboarding state. `active` runs the beat machine and gates the UI;
+   * `step` is the current beat (see STEP in tutorial.ts). Null once the tutorial
+   * is finished or skipped. Plain data so it serialises with the rest of state. */
+  tutorial: { active: boolean; step: number } | null;
+
   /** Transient UI cue: game-day the truck animation should play until. */
   truckAnimUntil: number;
 

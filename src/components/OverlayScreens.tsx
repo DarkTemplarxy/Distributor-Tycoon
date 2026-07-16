@@ -17,7 +17,7 @@ export function StartScreen({ onDismiss }: { onDismiss: () => void }) {
           <p>🛒 Kaufe Ware selbst ein (ein Einkäufer bestellt später automatisch nach).</p>
           <p>👷 Lass Mitarbeiter Paletten herrichten (läuft automatisch).</p>
           <p>🚚 Der Laster holt täglich um 18:00 fertige Paletten ab.</p>
-          <p>💰 Zahlung vom Kunden folgt 1 Woche nach Lieferung.</p>
+          <p>💵 Kleine Kunden zahlen bar bei Abholung – mittlere nach 1, große nach 2 Wochen.</p>
           <p>💸 Personal & Miete werden am Monatsende verrechnet.</p>
         </div>
         <button className="btn primary" style={{ fontSize: 15, padding: '10px 22px' }} onClick={onDismiss}>

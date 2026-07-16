@@ -35,7 +35,7 @@ import {
   MEDIUM_UNLOCK_REVENUE,
   MONTHLY_RENT,
   PALETTE_SIZE,
-  PAYMENT_DELAY_DAYS,
+  PAYMENT_DELAY_DAYS_BY_TYPE,
   PER_ARTICLE_PREP_FACTOR,
   PRODUCT_DEFS,
   SHELF_SLOTS,
@@ -75,6 +75,11 @@ import {
   uid,
   weekOf,
 } from './util';
+import {
+  STEP,
+  TUTORIAL_FIRST_PREP_DAYS,
+  TUTORIAL_ORDER_ID,
+} from './tutorial';
 
 // --- Notifications ----------------------------------------------------------
 
@@ -313,7 +318,12 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
   const bundleSize = state.orders.filter(
     (o) => o.customerId === order.customerId && o.status !== 'delivered',
   ).length;
-  const days = prepDaysFor(order.quantity, worker.skill, bundleSize);
+  let days = prepDaysFor(order.quantity, worker.skill, bundleSize);
+  // Tutorial BEAT 0: the very first Herrichtung is near-instant so the first
+  // reward comes fast — the palette visibly appears instead of a long wait.
+  if (state.tutorial?.active && state.tutorial.step <= STEP.HERRICHTEN) {
+    days = TUTORIAL_FIRST_PREP_DAYS;
+  }
   worker.task = { kind: 'prep', orderId: order.id, totalDays: days, remainingDays: days };
   return null;
 }
@@ -458,6 +468,7 @@ function truckPickup(state: GameState, week: number): void {
   const ready = state.palettes.filter((p) => p.status === 'ready');
   let loaded = 0;
 
+  const cashPaidOrderIds = new Set<string>();
   for (const palette of ready) {
     const order = state.orders.find((o) => o.id === palette.orderId);
     if (!order) continue;
@@ -468,20 +479,38 @@ function truckPickup(state: GameState, week: number): void {
     spend(state, state.truck.costPerPallet);
     state.weekAcc.logistics += state.truck.costPerPallet;
 
-    // Schedule the customer payment one week out.
-    state.scheduledPayments.push({
-      id: uid('pay'),
-      customerId: order.customerId,
-      orderId: order.id,
-      amount: order.quantity * order.price,
-      dueDay: state.totalDays + PAYMENT_DELAY_DAYS,
-      label: `Zahlung ${order.quantity}× für Auftrag`,
-    });
+    const cust = state.customers.find((c) => c.id === order.customerId);
+    const amount = order.quantity * order.price;
+    const delay = PAYMENT_DELAY_DAYS_BY_TYPE[cust?.type ?? 'small'];
+
+    if (delay <= 0) {
+      // Small customers pay CASH ON PICKUP: credit immediately, book the revenue
+      // now and close the order out (no scheduled payment to collect later).
+      state.cash += amount;
+      state.weekAcc.revenue += amount;
+      state.stats.totalRevenue += amount;
+      cashPaidOrderIds.add(order.id);
+      notify(state, `💵 ${cust?.name ?? 'Kunde'} zahlt bar bei Abholung: ${Math.round(amount)}€.`, 'success');
+      // First tutorial delivery → trigger the celebration beat.
+      if (state.tutorial?.active && state.tutorial.step === STEP.REWARD && order.id === TUTORIAL_ORDER_ID) {
+        state.tutorial.step = STEP.CELEBRATE;
+        state.paused = true;
+      }
+    } else {
+      // Medium/large pay on terms (1 / 2 weeks after delivery).
+      state.scheduledPayments.push({
+        id: uid('pay'),
+        customerId: order.customerId,
+        orderId: order.id,
+        amount,
+        dueDay: state.totalDays + delay,
+        label: `Zahlung ${order.quantity}× für Auftrag`,
+      });
+    }
 
     state.stats.deliveredOrders += 1;
     state.weekAcc.deliveredOrders += 1;
 
-    const cust = state.customers.find((c) => c.id === order.customerId);
     if (cust && !order.late) {
       cust.serviceRating = clamp(cust.serviceRating + 0.1, 1, 5);
       cust.loyalty = clamp(cust.loyalty + 3, 0, 100);
@@ -490,6 +519,10 @@ function truckPickup(state: GameState, week: number): void {
 
   // Remove loaded palettes from the warehouse.
   state.palettes = state.palettes.filter((p) => p.status !== 'ready');
+  // Cash-paid (small) orders are fully done — drop them so they don't linger.
+  if (cashPaidOrderIds.size > 0) {
+    state.orders = state.orders.filter((o) => !cashPaidOrderIds.has(o.id));
+  }
 
   if (loaded > 0) {
     notify(state, `🚚 Laster abgefahren – ${loaded} Palette(n) geladen (Kosten ${loaded * state.truck.costPerPallet}€).`, 'success');
@@ -1172,8 +1205,10 @@ function onDayStart(state: GameState, dayIndex: number): void {
   }
 
   // New customer & expansion inquiries arrive on Friday — the player sees the
-  // fresh demand before the Saturday order.
-  if (dow === INQUIRY_DAY_OF_WEEK) {
+  // fresh demand before the Saturday order. During the tutorial they are held
+  // back until the growth beat, so the one forced inquiry is the player's first.
+  const inquiriesUnlocked = !state.tutorial?.active || state.tutorial.step >= STEP.GROWTH;
+  if (dow === INQUIRY_DAY_OF_WEEK && inquiriesUnlocked) {
     const hasFreeCapacity = (['small', 'medium', 'large'] as CustomerType[]).some(
       (t) => freeCapacity(state, t) > 0,
     );
@@ -1184,9 +1219,103 @@ function onDayStart(state: GameState, dayIndex: number): void {
   // Weekly order window: Saturday, after this week's customer orders are in (so
   // the recommendation is built on demand the player has actually seen). Fires
   // at most once per week — currentWeekPoId is cleared at the Monday rollover, so
-  // if the player already ordered earlier this week we don't prompt again.
-  if (dow === ORDER_DAY_OF_WEEK && state.currentWeekPoId === null) {
+  // if the player already ordered earlier this week we don't prompt again. During
+  // the tutorial the prompt is held back until the ordering beat unlocks it.
+  const orderingUnlocked = !state.tutorial?.active || state.tutorial.step >= STEP.ORDER;
+  if (dow === ORDER_DAY_OF_WEEK && state.currentWeekPoId === null && orderingUnlocked) {
     processWeeklyOrder(state, week);
+  }
+}
+
+// --- Tutorial ---------------------------------------------------------------
+// Counts of the starting scenario, used to detect the player's first growth,
+// first new table and first new hire during the onboarding beats.
+const TUTORIAL_INITIAL_CUSTOMERS = 2;
+const TUTORIAL_INITIAL_TABLES = 2;
+const TUTORIAL_INITIAL_LAGER = 2;
+
+/** Create the one forced new-customer inquiry for the growth beat (BEAT 2): a
+ * small customer for a product we already sell, so accepting it can't be late. */
+function forceTutorialInquiry(state: GameState): void {
+  const week = weekOf(state.totalDays);
+  const product = getProduct(state, 'fisch');
+  const [minV, maxV] = CUSTOMER_VOLUME_RANGE.small;
+  const inquiry: Inquiry = {
+    id: uid('inq'),
+    name: uniqueCustomerName(state, 'small'),
+    emoji: CUSTOMER_EMOJI.small,
+    type: 'small',
+    preferredProduct: 'fisch',
+    suggestedVolume: randInt(minV, maxV),
+    targetPrice: Math.round(product.verkaufspreis * 2) / 2,
+    createdWeek: week,
+    expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
+    status: 'open',
+  };
+  state.inquiries.push(inquiry);
+  notify(state, `📨 Neuer Interessent: ${inquiry.name} möchte bei dir bestellen!`, 'info');
+}
+
+/** UI hook for the celebration overlay's "Weiter": move to the growth beat, turn
+ * on auto-prep for the rest of the game and drop in the first inquiry. */
+export function tutorialContinueFromCelebrate(state: GameState): void {
+  if (!state.tutorial) return;
+  state.tutorial.step = STEP.GROWTH;
+  state.settings.autoPrep = true;
+  forceTutorialInquiry(state);
+}
+
+/** Enter the ordering beat (BEAT 3): unlock the order screen and open it so the
+ * player confirms the recommended restock (stock is running low by now). */
+function enterTutorialOrder(state: GameState): void {
+  if (!state.tutorial) return;
+  state.tutorial.step = STEP.ORDER;
+  if (state.currentWeekPoId == null) {
+    state.pendingOrderWeek = weekOf(state.totalDays);
+  }
+}
+
+/** UI hook for the monthly-statement overlay's "Fertig": end the tutorial and
+ * free the whole UI. */
+export function finishTutorial(state: GameState): void {
+  state.tutorial = null;
+}
+
+/**
+ * Idempotent forward-only beat machine, run once per tick from advance(). Only
+ * the automatic transitions live here; the INTRO→HERRICHTEN, CELEBRATE→GROWTH and
+ * MONTH→end transitions are driven by explicit UI buttons (see TutorialLayer).
+ */
+export function advanceTutorial(state: GameState): void {
+  const t = state.tutorial;
+  if (!t || !t.active) return;
+
+  switch (t.step) {
+    case STEP.HERRICHTEN: {
+      // The player pressed Herrichten → the starter order left 'pending'.
+      const o = state.orders.find((ord) => ord.id === TUTORIAL_ORDER_ID);
+      if (!o || o.status !== 'pending') t.step = STEP.REWARD;
+      break;
+    }
+    case STEP.GROWTH: {
+      // A new customer was onboarded from the forced inquiry.
+      if (state.customers.length > TUTORIAL_INITIAL_CUSTOMERS) enterTutorialOrder(state);
+      break;
+    }
+    case STEP.ORDER: {
+      // A weekly order has been placed.
+      if (state.currentWeekPoId != null) t.step = STEP.CAPACITY;
+      break;
+    }
+    case STEP.CAPACITY: {
+      // A table was bought or someone hired, AND the first month has settled.
+      const boughtCapacity =
+        state.warehouse.tables.length > TUTORIAL_INITIAL_TABLES ||
+        state.employees.filter((e) => e.role === 'lager').length > TUTORIAL_INITIAL_LAGER;
+      if (boughtCapacity && state.reports.length >= WEEKS_PER_MONTH) t.step = STEP.MONTH;
+      break;
+    }
+    // REWARD→CELEBRATE is set in truckPickup; INTRO/CELEBRATE/MONTH wait on the UI.
   }
 }
 
@@ -1236,4 +1365,7 @@ export function advance(state: GameState, realDeltaMs: number): void {
     state.paused = true;
     notify(state, `💀 Insolvenz! Das Geschäft ist pleite. Spiel vorbei.`, 'error');
   }
+
+  // Advance the onboarding beat machine from the state this tick produced.
+  advanceTutorial(state);
 }

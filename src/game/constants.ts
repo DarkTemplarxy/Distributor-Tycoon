@@ -4,7 +4,7 @@
 
 import type { CustomerType, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 9;
+export const SAVE_VERSION = 10;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -76,8 +76,18 @@ export const ORDER_DAY_OF_WEEK = 5; // Saturday
 export const RECOMMENDATION_COVER_WEEKS = 1.5;
 export const RECOMMENDATION_BUFFER = 0.1;
 
-/** Delay between a delivery and the customer paying us, in days. */
-export const PAYMENT_DELAY_DAYS = 7;
+/**
+ * Delay between a delivery and the customer paying us, in days, by customer type.
+ * Small customers pay CASH ON PICKUP (0 = credited immediately when the truck
+ * loads their palette) — this removes the early-game wait and gives instant money.
+ * Medium/large pay on terms (1 / 2 weeks), so scaling up to them is a real
+ * liquidity decision (more revenue, but paid in advance).
+ */
+export const PAYMENT_DELAY_DAYS_BY_TYPE: Record<CustomerType, number> = {
+  small: 0,
+  medium: 7,
+  large: 14,
+};
 
 /** Weekly interest on outstanding bank credit. */
 export const CREDIT_INTEREST_RATE = 0.02;

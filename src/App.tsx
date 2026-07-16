@@ -9,6 +9,7 @@ import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
 import { buildShelf, buildTable, buildInboundSlot, expandHall } from './game/actions';
 import { Toasts } from './components/Toasts';
+import { TutorialLayer } from './components/TutorialLayer';
 import { GameOverScreen, StartScreen, YearCompleteScreen } from './components/OverlayScreens';
 import { InventoryModal } from './components/modals/InventoryModal';
 import { SortimentModal } from './components/modals/SortimentModal';
@@ -81,8 +82,14 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [togglePause]);
 
+  // The guided tutorial brings its own intro overlay, so the legacy StartScreen is
+  // only used when there is no active tutorial (skipped / finished at day 0).
   const showStart =
-    !startDismissed && state.totalDays === 0 && weekOf(state.totalDays) === 0 && !state.gameOver;
+    !startDismissed &&
+    !state.tutorial?.active &&
+    state.totalDays === 0 &&
+    weekOf(state.totalDays) === 0 &&
+    !state.gameOver;
 
   // Every Monday without an Einkäufer the simulation raises pendingOrderWeek. Open
   // the weekly order screen and pause the game until the player has dealt with it.
@@ -137,6 +144,7 @@ export function App() {
       <ActionBar onOpen={openModal} onBuild={enterBuild} />
 
       <Toasts />
+      <TutorialLayer />
 
       {modal === 'inventory' && <InventoryModal onClose={() => setModal(null)} />}
       {modal === 'sortiment' && <SortimentModal onClose={() => setModal(null)} />}

@@ -13,8 +13,9 @@ import {
   TRUCK_COST_PER_PALLET,
   type ProductDef,
 } from './constants';
-import type { Batch, Customer, Employee, GameState, Product, Supplier } from './types';
+import type { Batch, Customer, Employee, GameState, Order, Product, Supplier } from './types';
 import { uid } from './util';
+import { STEP, TUTORIAL_ORDER_ID } from './tutorial';
 
 /** Build a fresh Product from a catalog definition. Reused by the start scenario
  * and by the runtime "add to assortment" action, so both stay in sync. */
@@ -123,6 +124,25 @@ function makeWarehouse(): GameState['warehouse'] {
   return { tiles, shelves, tables, inboundSlots: 6, abholzone: 3, expansions: 0 };
 }
 
+/** The one order that is already open when the game starts — the tutorial's very
+ * first action (BEAT 0: press Herrichten). Small customer, covered by the 80
+ * starter fish, so it can be prepared and shipped immediately. */
+function makeStartingOrders(): Order[] {
+  return [
+    {
+      id: TUTORIAL_ORDER_ID,
+      customerId: 'cust_giuseppe',
+      productId: 'fisch',
+      quantity: 30,
+      price: 33.5,
+      createdDay: 0,
+      dueWeek: 1,
+      status: 'pending',
+      late: false,
+    },
+  ];
+}
+
 function makeSupplier(): Supplier {
   return {
     id: 'supp_seafood',
@@ -155,7 +175,7 @@ export function createInitialState(): GameState {
     supplier: makeSupplier(),
     truck: { costPerPallet: TRUCK_COST_PER_PALLET },
 
-    orders: [],
+    orders: makeStartingOrders(),
     palettes: [],
     purchaseOrders: [],
     scheduledPayments: [],
@@ -169,7 +189,7 @@ export function createInitialState(): GameState {
         day: 0,
         week: 0,
         message:
-          'Willkommen! Du hast das Geschäft vom Onkel übernommen: 2 Kunden, 1 Lieferant, 2 Lagermitarbeiter. Drücke ▶ zum Starten.',
+          'Willkommen! Du hast das Geschäft vom Onkel übernommen: 2 Kunden, 1 Lieferant, 2 Lagermitarbeiter. Folge seiner Anleitung.',
         type: 'info',
       },
     ],
@@ -202,7 +222,11 @@ export function createInitialState(): GameState {
       spoiledUnits: 0,
       spoilageLoss: 0,
     },
-    settings: { autoPrep: true },
+    // Auto-prep starts OFF so the tutorial's first beat teaches manual Herrichten;
+    // it is switched on once the first delivery is celebrated (see advanceTutorial).
+    settings: { autoPrep: false },
+
+    tutorial: { active: true, step: STEP.INTRO },
 
     truckAnimUntil: 0,
     gameOver: false,

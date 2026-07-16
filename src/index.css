@@ -822,3 +822,78 @@ label.fld {
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 560px) { .two-col { grid-template-columns: 1fr; } }
+
+/* --- Tutorial ------------------------------------------------------------ */
+
+/* Locked action buttons during the guided tutorial. */
+.action-btn.locked {
+  opacity: 0.4;
+  filter: grayscale(0.7);
+  cursor: not-allowed;
+}
+.action-btn.locked:hover {
+  border-color: var(--border);
+  background: var(--bg-elev);
+}
+.action-btn .lock {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 11px;
+}
+
+/* Coach card: a bottom-centre hint that points at the next action. */
+.coach-card {
+  position: fixed;
+  left: 50%;
+  bottom: 74px;
+  transform: translateX(-50%);
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(560px, 92vw);
+  padding: 12px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  animation: coachIn 0.28s ease;
+}
+.coach-card .coach-emoji { font-size: 26px; line-height: 1; }
+.coach-card .coach-text { font-size: 13px; line-height: 1.4; color: var(--text); }
+.coach-card .coach-text b { color: var(--accent); }
+@keyframes coachIn {
+  from { transform: translate(-50%, 14px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+/* Cash-in pop on the celebration overlay. */
+.cash-pop {
+  margin: 12px auto 4px;
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--good);
+  font-variant-numeric: tabular-nums;
+}
+.cash-pop span { font-size: 14px; font-weight: 600; color: var(--text-dim); }
+
+/* Confetti burst. */
+.confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.confetti span {
+  position: absolute;
+  top: -8%;
+  border-radius: 2px;
+  animation-name: confetti-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: 1;
+}
+@keyframes confetti-fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(108vh) rotate(720deg); opacity: 0.9; }
+}

@@ -1,5 +1,6 @@
 import { useGame } from '../state/GameProvider';
 import { catalogStatus, inventoryTotal, shelfStock } from '../game/simulation';
+import { isFeatureUnlocked, type Feature } from '../game/tutorial';
 import type { ModalId } from '../App';
 
 export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; onBuild: () => void }) {
@@ -25,27 +26,45 @@ export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; 
     { id: 'log', icon: '📜', label: 'Log' },
   ];
 
+  const buildUnlocked = isFeatureUnlocked(state.tutorial, 'build');
+
   return (
     <div className="actionbar">
-      <button className="action-btn" onClick={onBuild} title="Lager bauen & erweitern">
+      <button
+        className={`action-btn${buildUnlocked ? '' : ' locked'}`}
+        onClick={buildUnlocked ? onBuild : undefined}
+        disabled={!buildUnlocked}
+        title={buildUnlocked ? 'Lager bauen & erweitern' : 'Im Tutorial noch gesperrt'}
+      >
         <span className="ico">🏗️</span>
         <span>Bauen</span>
+        {!buildUnlocked && <span className="lock">🔒</span>}
       </button>
-      {buttons.map((b) => (
-        <button key={b.id} className="action-btn" onClick={() => onOpen(b.id)}>
-          <span className="ico">{b.icon}</span>
-          <span>{b.label}</span>
-          {b.id === 'procurement' && actionableOrders > 0 && (
-            <span className="dot info" title="Aufträge bereit zum Herrichten">
-              {actionableOrders}
-            </span>
-          )}
-          {b.badge ? (
-            <span className={`dot${b.badgeInfo ? ' info' : ''}`}>{b.badge}</span>
-          ) : null}
-          {b.warn && <span className="dot" title="Produkt ohne Bestand">!</span>}
-        </button>
-      ))}
+      {buttons.map((b) => {
+        const unlocked = isFeatureUnlocked(state.tutorial, b.id as Feature);
+        return (
+          <button
+            key={b.id}
+            className={`action-btn${unlocked ? '' : ' locked'}`}
+            onClick={unlocked ? () => onOpen(b.id) : undefined}
+            disabled={!unlocked}
+            title={unlocked ? undefined : 'Im Tutorial noch gesperrt'}
+          >
+            <span className="ico">{b.icon}</span>
+            <span>{b.label}</span>
+            {unlocked && b.id === 'procurement' && actionableOrders > 0 && (
+              <span className="dot info" title="Aufträge bereit zum Herrichten">
+                {actionableOrders}
+              </span>
+            )}
+            {unlocked && b.badge ? (
+              <span className={`dot${b.badgeInfo ? ' info' : ''}`}>{b.badge}</span>
+            ) : null}
+            {unlocked && b.warn && <span className="dot" title="Produkt ohne Bestand">!</span>}
+            {!unlocked && <span className="lock">🔒</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

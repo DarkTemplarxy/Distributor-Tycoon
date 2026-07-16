@@ -36,6 +36,7 @@ import {
 } from './simulation';
 import { buildProduct } from './init';
 import { clamp, uid, weekOf } from './util';
+import { STEP } from './tutorial';
 
 export interface ActionResult {
   ok: boolean;
@@ -290,7 +291,10 @@ export function counterOffer(state: GameState, inquiryId: string, price: number)
     return { ok: false, message: 'Keine KAM-Kapazität für diesen Kundentyp frei.' };
   }
   const offered = Math.max(1, Math.round(price * 100) / 100);
-  if (Math.random() < counterAcceptChance(inq.targetPrice, offered)) {
+  // During the tutorial's growth beat the customer deliberately says yes, so the
+  // player's first negotiation is a guaranteed success.
+  const tutorialForcesYes = state.tutorial?.active && state.tutorial.step === STEP.GROWTH;
+  if (tutorialForcesYes || Math.random() < counterAcceptChance(inq.targetPrice, offered)) {
     onboardInquiry(state, inq, offered);
     return { ok: true };
   }
