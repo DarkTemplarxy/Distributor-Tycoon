@@ -18,7 +18,7 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const [editing, setEditing] = useState(false);
 
   // Recommendations are computed once when the screen opens (the game is paused
-  // during the Monday prompt, so they stay stable).
+  // during the Saturday prompt, so they stay stable).
   const recs = useMemo(
     () => state.products.map((p) => ({ product: p, rec: orderRecommendation(state, p.id) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -41,7 +41,6 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const showSummary = !!currentPo && !editing;
 
   const startOverride = () => {
-    // Preset the sliders to what was actually ordered, then let the player edit.
     const next: Record<string, number> = {};
     for (const p of state.products) next[p.id] = 0;
     for (const it of currentPo!.items) next[it.productId] = it.quantity;
@@ -59,11 +58,11 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal title="Wocheneinkauf · Montag" icon="🛒" onClose={onClose} wide>
+    <Modal title="Wocheneinkauf · Samstag" icon="🛒" onClose={onClose} wide>
       <p className="hint">
-        Einmal pro Woche (jeden Montag) bestellst du beim Lieferanten <b>{state.supplier.name}</b>.
-        Die Empfehlung deckt ~2&nbsp;Wochen Bedarf (die Lieferung braucht eine Woche), abzüglich
-        Lager und zuzüglich der Menge, die diese Woche verfällt.
+        Jeden <b>Samstag</b> bestellst du für die kommende Woche – du hast bereits gesehen, was diese
+        Woche nachgefragt wurde. Die Empfehlung deckt gut eine Woche Bedarf abzüglich Lager. Lieferung
+        kommt <b>Montag</b>.
       </p>
 
       {showSummary ? (
@@ -96,7 +95,20 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
           <div className="rows">
             {recs.map(({ product, rec }) => {
               const q = qty[product.id] || 0;
+              const price = priceOf(product.id);
               const sliderMax = Math.max(100, rec.qty * 3, rec.stock + rec.qty);
+              // How long the stock lasts once this order lands (weeks of demand).
+              const afterStock = rec.stock + rec.incoming + q;
+              const coverage = rec.weekDemand > 0 ? afterStock / rec.weekDemand : Infinity;
+              const covCls =
+                rec.weekDemand <= 0
+                  ? 'pill'
+                  : coverage < 1
+                    ? 'pill bad'
+                    : coverage < 1.4
+                      ? 'pill warn'
+                      : 'pill good';
+              const covText = rec.weekDemand <= 0 ? '—' : `reicht ~${coverage.toFixed(1)} Wo`;
               return (
                 <div
                   key={product.id}
@@ -107,22 +119,22 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
                     <span style={{ fontSize: 22 }}>{product.emoji}</span>
                     <div className="grow">
                       <div className="title" style={{ color: PRODUCT_COLOR[product.id] }}>
-                        {product.name} <span className="sub">· EK {priceOf(product.id)}€/Stk</span>
+                        {product.name} <span className="sub">· EK {price}€/Stk</span>
                       </div>
                       <div
                         className="sub"
                         style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}
                       >
                         <span>📦 Lager {rec.stock}</span>
+                        <span>· 🛒 Nachfrage diese Woche {Math.round(rec.weekDemand)}</span>
                         {rec.expiring > 0 && (
-                          <span style={{ color: 'var(--warn)' }}>⏳ {rec.expiring} verfällt</span>
+                          <span style={{ color: 'var(--warn)' }}>· ⏳ {rec.expiring} verfällt</span>
                         )}
-                        <span>· Nachfrage letzte Wo {Math.round(rec.lastWeekDemand)}</span>
-                        <span className="pill good" title="Empfohlene Bestellmenge">
-                          Empfehlung {rec.qty}
-                        </span>
                       </div>
                     </div>
+                    <span className="pill good" style={{ fontWeight: 700 }} title="Empfohlene Bestellmenge">
+                      Empfehlung {rec.qty}
+                    </span>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -152,8 +164,11 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
                         ↺
                       </button>
                     )}
-                    <span style={{ width: 90, textAlign: 'right', color: 'var(--text-dim)' }}>
-                      {euro(q * priceOf(product.id))}
+                    <span className={covCls} style={{ minWidth: 92, textAlign: 'center' }} title="Reichweite nach Lieferung">
+                      {covText}
+                    </span>
+                    <span style={{ width: 82, textAlign: 'right', color: 'var(--text-dim)' }}>
+                      {euro(q * price)}
                     </span>
                   </div>
                 </div>

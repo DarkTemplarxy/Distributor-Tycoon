@@ -44,16 +44,20 @@ export const PO_LEAD_DAYS = 7;
 export const EXPRESS_PO_LEAD_DAYS = 2;
 export const EXPRESS_RESTOCK_SURCHARGE = 0.2;
 
-/** Weekly procurement runs once a week; new customer inquiries arrive on Friday
- * (day-of-week 4: 0=Mon .. 6=Sun) so the player learns of demand before the
- * Monday order screen. */
-export const INQUIRY_DAY_OF_WEEK = 4;
+/** Day-of-week (0=Mon .. 6=Sun) helpers for the weekly rhythm:
+ *  - new customer inquiries arrive on Friday, and
+ *  - the weekly order window is Saturday — by then the whole week's customer
+ *    orders are in, so the player plans with full knowledge of demand.
+ * The order (placed Saturday) still arrives the following Monday, ready for the
+ * new week. */
+export const INQUIRY_DAY_OF_WEEK = 4; // Friday
+export const ORDER_DAY_OF_WEEK = 5; // Saturday
 
-/** Order recommendation: how many weeks of demand the recommendation aims to
- * cover. Because a Monday order only arrives the NEXT Monday, one whole week is
- * consumed in transit — so covering ~2 weeks keeps the warehouse from running
- * dry. Plus a safety buffer on top. */
-export const RECOMMENDATION_COVER_WEEKS = 2.5;
+/** Order recommendation: how many weeks of demand to cover. The Saturday order
+ * arrives Monday and has to last until the next order's Monday delivery (~one
+ * week of selling), so ~1.5 weeks (plus a small buffer) keeps a healthy cushion
+ * without overstocking into spoilage. */
+export const RECOMMENDATION_COVER_WEEKS = 1.5;
 export const RECOMMENDATION_BUFFER = 0.1;
 
 /** Delay between a delivery and the customer paying us, in days. */

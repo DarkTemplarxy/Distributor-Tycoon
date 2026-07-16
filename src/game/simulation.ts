@@ -24,6 +24,7 @@ import {
   EXPANSION_MIN_LOYALTY,
   INQUIRY_CHANCE_PER_WEEK,
   INQUIRY_DAY_OF_WEEK,
+  ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
   KAM_CAPACITY,
@@ -555,42 +556,37 @@ export function expiringWithinDays(product: Product, currentDay: number, days: n
 
 export interface OrderRecommendation {
   qty: number;
-  avgDemand: number;
-  lastWeekDemand: number;
-  seasonal: number;
+  /** The demand the recommendation is built on: this week's actual customer
+   * orders (complete by Saturday), falling back to the last full week / the
+   * current subscriptions before there is history. */
+  weekDemand: number;
   stock: number;
   incoming: number;
   expiring: number;
 }
 
 /**
- * Weekly order recommendation for one product. Because a Monday order only
- * arrives the NEXT Monday, one whole week is consumed in transit — so the
- * recommendation aims to cover a couple of weeks of demand plus a safety buffer,
- * minus what is already available (on the shelf + already in transit), plus
- * whatever will spoil this week (that stock can't be counted on). Never negative.
+ * Weekly order recommendation for one product, shown on the Saturday order
+ * screen. By Saturday the whole week's customer orders are in, so the number is
+ * built directly on the demand the player just saw — no guesswork. It aims to
+ * cover ~1.5 weeks of that demand (the order arrives Monday and must last until
+ * the next Monday delivery), minus what's already available (shelf + in transit),
+ * plus whatever will spoil this week. Never negative.
  *
- *   qty = max(0, coverWeeks × avgDemand × seasonal × (1+buffer) − (stock + incoming) + expiring)
- *
- * Counting the in-transit order (incoming) keeps the number consistent whether
- * it is computed just before or just after the Monday delivery is booked, and
- * stops the same goods being ordered twice.
+ *   qty = max(0, coverWeeks × weekDemand × (1+buffer) − (stock + incoming) + expiring)
  */
 export function orderRecommendation(state: GameState, productId: ProductId): OrderRecommendation {
   const product = getProduct(state, productId);
   const stock = inventoryTotal(product);
   const incoming = incomingPO(state, productId);
+  const observed = state.demandThisWeek[productId] ?? 0;
   const log = state.demandLog[productId] ?? [];
-  const recent = log.slice(-2);
-  // Fall back to the current subscribed demand until there's real history.
-  const avgDemand =
-    recent.length > 0 ? recent.reduce((a, b) => a + b, 0) / recent.length : weeklyDemand(state, productId);
-  const lastWeekDemand = log.length > 0 ? log[log.length - 1] : weeklyDemand(state, productId);
-  const seasonal = seasonalMultiplier(productId, weekOf(state.totalDays));
+  const weekDemand =
+    observed > 0 ? observed : log.length > 0 ? log[log.length - 1] : weeklyDemand(state, productId);
   const expiring = expiringWithinDays(product, state.totalDays, DAYS_PER_WEEK);
-  const target = RECOMMENDATION_COVER_WEEKS * avgDemand * seasonal * (1 + RECOMMENDATION_BUFFER);
+  const target = RECOMMENDATION_COVER_WEEKS * weekDemand * (1 + RECOMMENDATION_BUFFER);
   const qty = Math.max(0, Math.round(target - stock - incoming + expiring));
-  return { qty, avgDemand, lastWeekDemand, seasonal, stock, incoming, expiring };
+  return { qty, weekDemand, stock, incoming, expiring };
 }
 
 /** Cancel & refund the current week's still-pending PO (used when the player
@@ -623,19 +619,16 @@ export function commitWeeklyOrder(
 }
 
 /**
- * Monday procurement step. Runs every week for every product in the assortment.
+ * Weekly procurement step, run on Saturday once this week's demand is fully in.
  * With an Einkäufer the recommended quantities are ordered automatically (capped
- * to what's affordable); without one, a prompt is raised for the player.
+ * to what's affordable); without one, a prompt is raised for the player. The
+ * "already ordered this week" reference (currentWeekPoId) is cleared at the
+ * Monday rollover, so this fires at most once per week.
  */
-function processWeeklyOrder(state: GameState, newWeek: number): void {
-  // New week: forget last week's PO reference (it is on its way / delivered — do
-  // NOT refund it).
-  state.currentWeekPoId = null;
-  state.pendingOrderWeek = null;
-
+function processWeeklyOrder(state: GameState, week: number): void {
   if (!hasEinkaeufer(state)) {
-    // Manual: raise the Monday order prompt for the player to handle.
-    state.pendingOrderWeek = newWeek;
+    // Manual: raise the Saturday order prompt for the player to handle.
+    state.pendingOrderWeek = week;
     return;
   }
 
@@ -981,14 +974,14 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   }
 
   // 6. Customer acquisition pipeline: expire stale inquiries here (weekly). NEW
-  // inquiries now arrive on Friday (see onDayStart), not at the Monday rollover.
+  // inquiries arrive Friday and the order window is Saturday (see onDayStart).
   expireInquiries(state);
 
-  // 6b. Weekly procurement decision every Monday (all years): with an Einkäufer
-  // the recommended order is placed automatically; otherwise a Monday order
-  // prompt is raised. At a year boundary the prompt waits behind the year-summary
-  // screen and opens once the player continues into the next year.
-  processWeeklyOrder(state, newWeek);
+  // 6b. Start of a fresh order-week: forget last week's purchase order (it is on
+  // its way / delivered — do NOT refund it) and clear any leftover prompt. The
+  // Saturday step then places exactly one order for the new week.
+  state.currentWeekPoId = null;
+  state.pendingOrderWeek = null;
 
   // 7. Weekly report notification.
   notify(
@@ -1035,13 +1028,21 @@ function onDayStart(state: GameState, dayIndex: number): void {
   }
 
   // New customer & expansion inquiries arrive on Friday — the player sees the
-  // fresh demand before deciding the Monday order.
+  // fresh demand before the Saturday order.
   if (dow === INQUIRY_DAY_OF_WEEK) {
     const hasFreeCapacity = (['small', 'medium', 'large'] as CustomerType[]).some(
       (t) => freeCapacity(state, t) > 0,
     );
     if (hasFreeCapacity) maybeGenerateInquiry(state);
     maybeGenerateExpansionInquiry(state);
+  }
+
+  // Weekly order window: Saturday, after this week's customer orders are in (so
+  // the recommendation is built on demand the player has actually seen). Fires
+  // at most once per week — currentWeekPoId is cleared at the Monday rollover, so
+  // if the player already ordered earlier this week we don't prompt again.
+  if (dow === ORDER_DAY_OF_WEEK && state.currentWeekPoId === null) {
+    processWeeklyOrder(state, week);
   }
 }
 
