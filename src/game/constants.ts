@@ -12,7 +12,7 @@ export const SAVE_KEY = 'distributor-tycoon-save-v1';
 export const SECONDS_PER_DAY_AT_1X = 20;
 
 /** Units that fit on a single palette. */
-export const PALETTE_SIZE = 40;
+export const PALETTE_SIZE = 80;
 
 /** A session lasts one in-game year = 12 months × 4 weeks = 48 weeks. */
 export const DAYS_PER_WEEK = 7;

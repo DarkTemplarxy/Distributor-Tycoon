@@ -8,6 +8,7 @@
 import { useEffect, useRef } from 'react';
 import { useGame } from '../state/GameProvider';
 import { inventoryTotal } from '../game/simulation';
+import { PALETTE_SIZE } from '../game/constants';
 import { dayName, formatClock, hourOf } from '../game/util';
 import type { GameState, ProductId } from '../game/types';
 
@@ -107,8 +108,8 @@ function shelfPallets(state: GameState): ShelfPallet[] {
     const urgency = ratio < 0.15 ? 'crit' : ratio < 0.35 ? 'warn' : 'ok';
     let rem = total;
     while (rem > 0) {
-      out.push({ productId: p.id, qty: Math.min(40, rem), urgency });
-      rem -= 40;
+      out.push({ productId: p.id, qty: Math.min(PALETTE_SIZE, rem), urgency });
+      rem -= PALETTE_SIZE;
     }
   }
   return out;
