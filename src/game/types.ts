@@ -300,8 +300,18 @@ export interface GameState {
 
   /** Guided onboarding state. `active` runs the beat machine and gates the UI;
    * `step` is the current beat (see STEP in tutorial.ts). Null once the tutorial
-   * is finished or skipped. Plain data so it serialises with the rest of state. */
-  tutorial: { active: boolean; step: number } | null;
+   * is finished or skipped. Plain data so it serialises with the rest of state.
+   * Optional fields (backward compatible within the save version):
+   *  - celebrateAmount: the cash actually paid for the first delivery (drives the
+   *    celebration count-up instead of a hardcoded number),
+   *  - dismissedCoach: steps whose coach card was dismissed — persisted so a
+   *    dismissed hint does not reappear after save/load. */
+  tutorial: {
+    active: boolean;
+    step: number;
+    celebrateAmount?: number;
+    dismissedCoach?: number[];
+  } | null;
 
   /** Transient UI cue: game-day the truck animation should play until. */
   truckAnimUntil: number;

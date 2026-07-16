@@ -1,32 +1,8 @@
 import { useGame } from '../state/GameProvider';
 import { euro, weekOf, yearOf } from '../game/util';
 
-/** Shown at the very start (fresh game, still paused, no time elapsed). */
-export function StartScreen({ onDismiss }: { onDismiss: () => void }) {
-  return (
-    <div className="overlay-screen">
-      <div className="overlay-card">
-        <div className="big-emoji">🏭</div>
-        <h1>Distributor Tycoon</h1>
-        <p style={{ maxWidth: 440, margin: '10px auto' }}>
-          Szenario <b>„Der Onkel"</b>: Du übernimmst einen kleinen Lebensmittel-Großhandel – 2 Kunden,
-          1 Lieferant, 2 Lagermitarbeiter, 10.000€ Startkapital. Bringe das Geschäft durch 12 Monate.
-        </p>
-        <div style={{ textAlign: 'left', maxWidth: 440, margin: '14px auto', fontSize: 13, color: 'var(--text-dim)' }}>
-          <p>🧾 Kunden bestellen wöchentlich – halte die Lieferfristen ein.</p>
-          <p>🛒 Kaufe Ware selbst ein (ein Einkäufer bestellt später automatisch nach).</p>
-          <p>👷 Lass Mitarbeiter Paletten herrichten (läuft automatisch).</p>
-          <p>🚚 Der Laster holt täglich um 18:00 fertige Paletten ab.</p>
-          <p>💵 Kleine Kunden zahlen bar bei Abholung – mittlere nach 1, große nach 2 Wochen.</p>
-          <p>💸 Personal & Miete werden am Monatsende verrechnet.</p>
-        </div>
-        <button className="btn primary" style={{ fontSize: 15, padding: '10px 22px' }} onClick={onDismiss}>
-          ▶ Los geht's
-        </button>
-      </div>
-    </div>
-  );
-}
+// The former StartScreen was replaced by the tutorial's intro overlay
+// (TutorialLayer) — every fresh game now begins with the guided onboarding.
 
 export function YearCompleteScreen({ onRestart }: { onRestart: () => void }) {
   const { state, continueYear } = useGame();

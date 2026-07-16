@@ -4,9 +4,10 @@ import { finishTutorial, tutorialContinueFromCelebrate } from '../game/simulatio
 import { STEP } from '../game/tutorial';
 import { euro } from '../game/util';
 
-// The starter order that pays the first cash reward (see makeStartingOrders in
-// init.ts: 30 × 33,50 €).
-const STARTER_REWARD = 30 * 33.5;
+// Fallback for saves from before celebrateAmount was recorded (the starter
+// order in init.ts: 30 × 33,50 €). Normally the real paid amount is stored on
+// the tutorial state by truckPickup when the celebration triggers.
+const STARTER_REWARD_FALLBACK = 30 * 33.5;
 
 /** A short-lived burst of falling confetti pieces (pure CSS animation). */
 function Confetti() {
@@ -104,7 +105,6 @@ const COACH: Record<number, { emoji: string; text: ReactNode }> = {
 
 export function TutorialLayer() {
   const { state, mutate, setPaused } = useGame();
-  const [dismissed, setDismissed] = useState<number | null>(null);
   const t = state.tutorial;
   if (!t || !t.active) return null;
   const step = t.step;
@@ -164,11 +164,12 @@ export function TutorialLayer() {
             Geld."
           </p>
           <div className="cash-pop">
-            <CountUp to={STARTER_REWARD} /> <span>bar erhalten</span>
+            <CountUp to={t.celebrateAmount ?? STARTER_REWARD_FALLBACK} /> <span>bar erhalten</span>
           </div>
           <p className="hint" style={{ maxWidth: 420, margin: '10px auto' }}>
             💡 Kleine Kunden zahlen <b>sofort bar</b> bei Abholung – so wächst deine Kasse mit
-            jeder Lieferung.
+            jeder Lieferung. Größere Kunden zahlen später auf Rechnung: mittlere nach{' '}
+            <b>1 Woche</b>, große nach <b>2 Wochen</b>.
           </p>
           <button className="btn primary" style={{ fontSize: 15, padding: '10px 22px' }} onClick={next}>
             Weiter ▶
@@ -221,12 +222,31 @@ export function TutorialLayer() {
 
   // ---- Coach cards for the interactive beats ----
   const coach = COACH[step];
-  if (coach && dismissed !== step) {
+  const dismissed = t.dismissedCoach?.includes(step) ?? false;
+  // While the weekly order screen is auto-opened, the modal itself is the guide —
+  // a coach card underneath it would be a second simultaneous hint.
+  if (step === STEP.ORDER && state.pendingOrderWeek != null) return null;
+  // The capacity hint only appears when prep is ACTUALLY congested (spec: the
+  // purchase must solve a problem the player currently feels, not a scripted one).
+  if (step === STEP.CAPACITY) {
+    const prepping = state.employees.filter((e) => e.task?.kind === 'prep').length;
+    const freeTables = state.warehouse.tables.length - prepping;
+    const idleLager = state.employees.filter((e) => e.role === 'lager' && !e.task).length;
+    const waiting = state.orders.filter((o) => o.status === 'pending').length;
+    const congested = waiting > 0 && (freeTables <= 0 || idleLager <= 0);
+    if (!congested) return null;
+  }
+  if (coach && !dismissed) {
+    const dismiss = () =>
+      mutate((s) => {
+        const tt = s.tutorial;
+        if (tt && !(tt.dismissedCoach ??= []).includes(step)) tt.dismissedCoach.push(step);
+      });
     return (
       <div className="coach-card">
         <span className="coach-emoji">{coach.emoji}</span>
         <div className="coach-text">{coach.text}</div>
-        <button className="btn ghost small" onClick={() => setDismissed(step)}>
+        <button className="btn ghost small" onClick={dismiss}>
           Verstanden
         </button>
       </div>

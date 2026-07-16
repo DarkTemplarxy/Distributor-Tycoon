@@ -15,7 +15,7 @@ import {
 } from './constants';
 import type { Batch, Customer, Employee, GameState, Order, Product, Supplier } from './types';
 import { uid } from './util';
-import { STEP, TUTORIAL_ORDER_ID } from './tutorial';
+import { STARTING_CUSTOMER_IDS, STEP, TUTORIAL_ORDER_ID } from './tutorial';
 
 /** Build a fresh Product from a catalog definition. Reused by the start scenario
  * and by the runtime "add to assortment" action, so both stay in sync. */
@@ -80,19 +80,23 @@ function makeCustomers(): Customer[] {
   return [
     {
       ...base,
-      id: 'cust_giuseppe',
+      id: STARTING_CUSTOMER_IDS[0],
       name: 'Pizza Giuseppe',
-      // Fixed early weekday (Tue) — day 0/Mon never fires a day-start, so a Monday
-      // slot would slip the first order into week 2. Tue guarantees week 1.
+      // Giuseppe's week-0 order IS the pre-placed tutorial starter order, so his
+      // regular subscription only kicks in from week 1 — otherwise week-0 demand
+      // (starter 30 + Giuseppe ~27 + Urban ~27) would exceed the 80 starter fish
+      // and Urban could go short during the guided phase.
       orderDayOfWeek: 1,
+      nextOrderWeek: 1,
       lines: [{ productId: 'fisch', price: 33.5, volume: 30 }],
     },
     {
       ...base,
-      id: 'cust_urban',
+      id: STARTING_CUSTOMER_IDS[1],
       name: 'Restaurant Urban',
       emoji: '🍽️',
-      // Staggered a couple of days after Giuseppe, still safely inside week 1.
+      // Thursday, week 0 — day 0/Mon never fires a day-start, so an early fixed
+      // weekday guarantees an organic order inside the very first week.
       orderDayOfWeek: 3,
       lines: [{ productId: 'fisch', price: 33.5, volume: 32 }],
     },
@@ -131,7 +135,7 @@ function makeStartingOrders(): Order[] {
   return [
     {
       id: TUTORIAL_ORDER_ID,
-      customerId: 'cust_giuseppe',
+      customerId: STARTING_CUSTOMER_IDS[0],
       productId: 'fisch',
       quantity: 30,
       price: 33.5,

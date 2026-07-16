@@ -17,6 +17,7 @@ import {
 import type { GameState, Speed } from '../game/types';
 import { advance } from '../game/simulation';
 import { createInitialState } from '../game/init';
+import { tutorialPausesGame } from '../game/tutorial';
 import { deleteSave, load, save } from '../game/save/saveManager';
 
 interface GameContextValue {
@@ -96,7 +97,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const setSpeed = useCallback(
     (speed: Speed) => mutate((s) => {
       s.speed = speed;
-      s.paused = false;
+      // Speed buttons also unpause — but never behind a tutorial story overlay,
+      // where the sim running unseen could invalidate the guided sequence.
+      if (!tutorialPausesGame(s.tutorial)) s.paused = false;
     }),
     [mutate],
   );
@@ -104,6 +107,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const togglePause = useCallback(
     () => mutate((s) => {
       if (s.gameOver || s.yearComplete) return;
+      // Tutorial story overlays (intro/celebration/month) own the pause state;
+      // Space or the pause button must not restart the clock behind them.
+      if (tutorialPausesGame(s.tutorial)) return;
       s.paused = !s.paused;
     }),
     [mutate],

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useGame } from './state/GameProvider';
-import { weekOf } from './game/util';
 import { TopBar } from './components/TopBar';
 import { Modal } from './components/Modal';
 import { IsometricWarehouse, type BuildTool } from './components/IsometricWarehouse';
@@ -10,7 +9,7 @@ import { ActionBar } from './components/ActionBar';
 import { buildShelf, buildTable, buildInboundSlot, expandHall } from './game/actions';
 import { Toasts } from './components/Toasts';
 import { TutorialLayer } from './components/TutorialLayer';
-import { GameOverScreen, StartScreen, YearCompleteScreen } from './components/OverlayScreens';
+import { GameOverScreen, YearCompleteScreen } from './components/OverlayScreens';
 import { InventoryModal } from './components/modals/InventoryModal';
 import { SortimentModal } from './components/modals/SortimentModal';
 import { ProcurementModal } from './components/modals/ProcurementModal';
@@ -38,7 +37,6 @@ export type ModalId =
 export function App() {
   const { state, mutate, togglePause, setPaused, newGame } = useGame();
   const [modal, setModal] = useState<ModalId>(null);
-  const [startDismissed, setStartDismissed] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   // True while the auto-opened Monday order screen is up, so closing it resumes
   // the game (a manually-opened Einkauf screen must not touch the pause state).
@@ -65,7 +63,6 @@ export function App() {
     newGame();
     setRestartOpen(false);
     setModal(null);
-    setStartDismissed(false);
   };
 
   // Spacebar toggles pause (unless typing in an input).
@@ -82,24 +79,17 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [togglePause]);
 
-  // The guided tutorial brings its own intro overlay, so the legacy StartScreen is
-  // only used when there is no active tutorial (skipped / finished at day 0).
-  const showStart =
-    !startDismissed &&
-    !state.tutorial?.active &&
-    state.totalDays === 0 &&
-    weekOf(state.totalDays) === 0 &&
-    !state.gameOver;
-
-  // Every Monday without an Einkäufer the simulation raises pendingOrderWeek. Open
-  // the weekly order screen and pause the game until the player has dealt with it.
+  // Whenever the simulation raises pendingOrderWeek (Saturday without Einkäufer,
+  // or the tutorial's ordering beat), open the weekly order screen and pause the
+  // game until the player has dealt with it. Fresh games always start in the
+  // tutorial intro, so no prompt can precede the player's first interaction.
   useEffect(() => {
-    if (state.pendingOrderWeek != null && !showStart && !state.gameOver && !state.yearComplete) {
+    if (state.pendingOrderWeek != null && !state.gameOver && !state.yearComplete) {
       setModal('procurement');
       setPaused(true);
       setOrderPromptActive(true);
     }
-  }, [state.pendingOrderWeek, showStart, state.gameOver, state.yearComplete, setPaused]);
+  }, [state.pendingOrderWeek, state.gameOver, state.yearComplete, setPaused]);
 
   // Closing the weekly order screen: clear any pending prompt (a skipped week) and
   // resume the clock only if it was the auto-opened Monday prompt.
@@ -157,14 +147,6 @@ export function App() {
       {modal === 'reports' && <ReportsModal onClose={() => setModal(null)} />}
       {modal === 'log' && <LogModal onClose={() => setModal(null)} />}
 
-      {showStart && (
-        <StartScreen
-          onDismiss={() => {
-            setStartDismissed(true);
-            setPaused(false);
-          }}
-        />
-      )}
       {state.yearComplete && <YearCompleteScreen onRestart={() => setRestartOpen(true)} />}
       {state.gameOver && <GameOverScreen />}
 

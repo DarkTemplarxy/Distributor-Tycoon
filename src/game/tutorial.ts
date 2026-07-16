@@ -34,6 +34,11 @@ export const STEP = {
 /** Fixed id of the pre-placed starter order that drives the first beats. */
 export const TUTORIAL_ORDER_ID = 'order_tut';
 
+/** Ids of the two customers the uncle hands over (created in init.ts from this
+ * list). The growth beat detects "a NEW customer was won" as any customer whose
+ * id is not in here — robust against cancellations and future scenario changes. */
+export const STARTING_CUSTOMER_IDS: string[] = ['cust_giuseppe', 'cust_urban'];
+
 /** Near-instant first Herrichtung (in game-days) so the first reward comes fast
  * — the palette visibly appears instead of the player waiting on a bar. */
 export const TUTORIAL_FIRST_PREP_DAYS = 0.12;
@@ -72,4 +77,19 @@ export function isFeatureUnlocked(tutorial: TutorialState, feature: Feature): bo
   const from = UNLOCK_STEP[feature];
   if (from === undefined) return false; // opens only when the tutorial ends
   return tutorial.step >= from;
+}
+
+/**
+ * Steps whose overlay REQUIRES the game to stay paused. While one of these is
+ * showing, user-facing pause/speed controls must not restart the clock — the
+ * simulation running behind a story overlay can rack up late deliveries the
+ * player never saw (and, before the first delivery, even kill the starter order).
+ */
+export function tutorialPausesGame(tutorial: TutorialState): boolean {
+  if (!tutorial || !tutorial.active) return false;
+  return (
+    tutorial.step === STEP.INTRO ||
+    tutorial.step === STEP.CELEBRATE ||
+    tutorial.step === STEP.MONTH
+  );
 }

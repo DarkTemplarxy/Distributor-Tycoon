@@ -1,5 +1,6 @@
 import { useGame } from '../state/GameProvider';
 import { inboundStock, shelfStock } from '../game/simulation';
+import { isFeatureUnlocked } from '../game/tutorial';
 import { prepareOrder, restockForOrder } from '../game/actions';
 import { weekOf } from '../game/util';
 import type { Order } from '../game/types';
@@ -111,7 +112,9 @@ export function OrdersPanel() {
                 >
                   👷 Herrichten ({fulfillable.length})
                 </button>
-                {shortCount > 0 && (
+                {/* Express restock is a purchasing action — hidden until the
+                    tutorial's ordering beat introduces buying (gating parity). */}
+                {shortCount > 0 && isFeatureUnlocked(state.tutorial, 'procurement') && (
                   <button
                     className="btn small"
                     title="Express-Nachbestellung außerhalb des Montags-Zyklus: schnelle Lieferung, aber +20% Einkaufspreis."

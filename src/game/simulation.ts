@@ -76,6 +76,7 @@ import {
   weekOf,
 } from './util';
 import {
+  STARTING_CUSTOMER_IDS,
   STEP,
   TUTORIAL_FIRST_PREP_DAYS,
   TUTORIAL_ORDER_ID,
@@ -203,6 +204,13 @@ export function spend(state: GameState, amount: number): void {
     if (draw > 0) {
       state.bankCredit += draw;
       state.cash += draw;
+      // Make the silent overdraft visible — especially while the finance screen
+      // is still locked during the tutorial, interest must not accrue unseen.
+      notify(
+        state,
+        `🏦 Kredit automatisch gezogen: ${Math.round(draw)}€ (Zins ${(CREDIT_INTEREST_RATE * 100).toFixed(0)}%/Woche).`,
+        'warn',
+      );
     }
   }
 }
@@ -319,9 +327,10 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
     (o) => o.customerId === order.customerId && o.status !== 'delivered',
   ).length;
   let days = prepDaysFor(order.quantity, worker.skill, bundleSize);
-  // Tutorial BEAT 0: the very first Herrichtung is near-instant so the first
-  // reward comes fast — the palette visibly appears instead of a long wait.
-  if (state.tutorial?.active && state.tutorial.step <= STEP.HERRICHTEN) {
+  // Tutorial BEAT 0: the very first Herrichtung (the starter order only) is
+  // near-instant so the first reward comes fast — the palette visibly appears
+  // instead of a long wait. Other orders prepared early keep normal timing.
+  if (state.tutorial?.active && state.tutorial.step <= STEP.HERRICHTEN && order.id === TUTORIAL_ORDER_ID) {
     days = TUTORIAL_FIRST_PREP_DAYS;
   }
   worker.task = { kind: 'prep', orderId: order.id, totalDays: days, remainingDays: days };
@@ -336,6 +345,12 @@ function completePreparation(state: GameState, orderId: string): void {
   if (palette) palette.status = 'ready';
   const cust = state.customers.find((c) => c.id === order.customerId);
   notify(state, `📦 Palette fertig: ${order.quantity}× für ${cust?.name ?? 'Kunde'} – wartet auf den Laster.`, 'success');
+
+  // Tutorial first delivery: the truck comes AS SOON AS the palette is ready
+  // instead of waiting for the 18:00 schedule — the reward must not sit around.
+  if (state.tutorial?.active && state.tutorial.step <= STEP.REWARD && orderId === TUTORIAL_ORDER_ID) {
+    truckPickup(state, weekOf(state.totalDays));
+  }
 }
 
 function updateEmployees(state: GameState, deltaDays: number): void {
@@ -481,7 +496,9 @@ function truckPickup(state: GameState, week: number): void {
 
     const cust = state.customers.find((c) => c.id === order.customerId);
     const amount = order.quantity * order.price;
-    const delay = PAYMENT_DELAY_DAYS_BY_TYPE[cust?.type ?? 'small'];
+    // Defensive default 'medium' (payment on terms): if the customer somehow can't
+    // be found, err on the ledger side rather than handing out instant cash.
+    const delay = PAYMENT_DELAY_DAYS_BY_TYPE[cust?.type ?? 'medium'];
 
     if (delay <= 0) {
       // Small customers pay CASH ON PICKUP: credit immediately, book the revenue
@@ -491,9 +508,12 @@ function truckPickup(state: GameState, week: number): void {
       state.stats.totalRevenue += amount;
       cashPaidOrderIds.add(order.id);
       notify(state, `💵 ${cust?.name ?? 'Kunde'} zahlt bar bei Abholung: ${Math.round(amount)}€.`, 'success');
-      // First tutorial delivery → trigger the celebration beat.
-      if (state.tutorial?.active && state.tutorial.step === STEP.REWARD && order.id === TUTORIAL_ORDER_ID) {
+      // First tutorial delivery → trigger the celebration beat. `<= REWARD` (not
+      // `===`) also catches the same-tick race where prep completion and pickup
+      // land in one advance() before the step machine ever showed REWARD.
+      if (state.tutorial?.active && state.tutorial.step <= STEP.REWARD && order.id === TUTORIAL_ORDER_ID) {
         state.tutorial.step = STEP.CELEBRATE;
+        state.tutorial.celebrateAmount = amount;
         state.paused = true;
       }
     } else {
@@ -569,14 +589,17 @@ function releaseCustomerOrders(state: GameState, customerId: string): void {
     (o) => o.customerId === customerId && o.status !== 'delivered',
   );
   for (const order of openOrders) {
-    // Return goods that were already picked back to the shelf.
+    // Return goods that were already picked back to the shelf. The original
+    // batch expiries are gone after picking, so give the returned units HALF the
+    // shelf life as a conservative middle ground — a full fresh expiry would
+    // "rejuvenate" old stock every time a customer cancels.
     if (order.status === 'preparing' || order.status === 'ready') {
       const product = getProduct(state, order.productId);
       product.batches.push({
         id: uid('batch'),
         productId: order.productId,
         quantity: order.quantity,
-        expiryDay: state.totalDays + product.spoilageDays,
+        expiryDay: state.totalDays + Math.round(product.spoilageDays / 2),
         location: 'shelf',
       });
     }
@@ -1228,15 +1251,13 @@ function onDayStart(state: GameState, dayIndex: number): void {
 }
 
 // --- Tutorial ---------------------------------------------------------------
-// Counts of the starting scenario, used to detect the player's first growth,
-// first new table and first new hire during the onboarding beats.
-const TUTORIAL_INITIAL_CUSTOMERS = 2;
-const TUTORIAL_INITIAL_TABLES = 2;
-const TUTORIAL_INITIAL_LAGER = 2;
 
 /** Create the one forced new-customer inquiry for the growth beat (BEAT 2): a
- * small customer for a product we already sell, so accepting it can't be late. */
+ * small customer for a product we already sell, so accepting it can't be late.
+ * No-op if an open new-customer inquiry already exists (avoids duplicates when
+ * the recovery path re-enters the growth beat). */
 function forceTutorialInquiry(state: GameState): void {
+  if (state.inquiries.some((i) => i.status === 'open' && !i.existingCustomerId)) return;
   const week = weekOf(state.totalDays);
   const product = getProduct(state, 'fisch');
   const [minV, maxV] = CUSTOMER_VOLUME_RANGE.small;
@@ -1256,21 +1277,40 @@ function forceTutorialInquiry(state: GameState): void {
   notify(state, `📨 Neuer Interessent: ${inquiry.name} möchte bei dir bestellen!`, 'info');
 }
 
-/** UI hook for the celebration overlay's "Weiter": move to the growth beat, turn
- * on auto-prep for the rest of the game and drop in the first inquiry. */
-export function tutorialContinueFromCelebrate(state: GameState): void {
+/** Move to the growth beat: auto-prep on for the rest of the game and the first
+ * inquiry dropped in. Shared by the celebration's "Weiter" and the recovery path. */
+function tutorialEnterGrowth(state: GameState): void {
   if (!state.tutorial) return;
   state.tutorial.step = STEP.GROWTH;
   state.settings.autoPrep = true;
   forceTutorialInquiry(state);
 }
 
-/** Enter the ordering beat (BEAT 3): unlock the order screen and open it so the
- * player confirms the recommended restock (stock is running low by now). */
+/** UI hook for the celebration overlay's "Weiter". */
+export function tutorialContinueFromCelebrate(state: GameState): void {
+  tutorialEnterGrowth(state);
+}
+
+/** Recovery: the starter order vanished (e.g. the customer cancelled and
+ * releaseCustomerOrders dropped it) while the early beats still waited on it.
+ * Without this the machine would sit in HERRICHTEN/REWARD forever with the whole
+ * UI locked — skip the celebration and carry on with the growth beat instead. */
+function tutorialRecoverToGrowth(state: GameState): void {
+  if (!state.tutorial) return;
+  notify(state, `⚠️ Der erste Auftrag ist entfallen – weiter geht's mit einem neuen Interessenten!`, 'warn');
+  tutorialEnterGrowth(state);
+}
+
+/** Enter the ordering beat (BEAT 3). Per spec the order screen opens when stock
+ * is actually short — with a freshly won third customer that is virtually always
+ * the case; if not, the regular Saturday window (now unlocked) takes over. */
 function enterTutorialOrder(state: GameState): void {
   if (!state.tutorial) return;
   state.tutorial.step = STEP.ORDER;
-  if (state.currentWeekPoId == null) {
+  const stockShort = state.products.some(
+    (p) => weeklyDemand(state, p.id) > 0 && inventoryTotal(p) < weeklyDemand(state, p.id),
+  );
+  if (stockShort && state.currentWeekPoId == null) {
     state.pendingOrderWeek = weekOf(state.totalDays);
   }
 }
@@ -1292,27 +1332,47 @@ export function advanceTutorial(state: GameState): void {
 
   switch (t.step) {
     case STEP.HERRICHTEN: {
-      // The player pressed Herrichten → the starter order left 'pending'.
       const o = state.orders.find((ord) => ord.id === TUTORIAL_ORDER_ID);
-      if (!o || o.status !== 'pending') t.step = STEP.REWARD;
+      // Order gone without a cash payment (payment would have jumped straight to
+      // CELEBRATE inside truckPickup) → it was cancelled away; recover.
+      if (!o) tutorialRecoverToGrowth(state);
+      // The player pressed Herrichten → the starter order left 'pending'.
+      else if (o.status !== 'pending') t.step = STEP.REWARD;
+      break;
+    }
+    case STEP.REWARD: {
+      // Waiting for the truck to pay the starter order (handled in truckPickup).
+      // If the order vanished unpaid, nothing can ever complete this beat — recover.
+      const o = state.orders.find((ord) => ord.id === TUTORIAL_ORDER_ID);
+      if (!o) tutorialRecoverToGrowth(state);
       break;
     }
     case STEP.GROWTH: {
-      // A new customer was onboarded from the forced inquiry.
-      if (state.customers.length > TUTORIAL_INITIAL_CUSTOMERS) enterTutorialOrder(state);
+      // A brand-new customer (not one of the uncle's two) was onboarded.
+      if (state.customers.some((c) => !STARTING_CUSTOMER_IDS.includes(c.id))) {
+        enterTutorialOrder(state);
+      }
       break;
     }
     case STEP.ORDER: {
-      // A weekly order has been placed.
-      if (state.currentWeekPoId != null) t.step = STEP.CAPACITY;
+      // Advance once this week's order window is dealt with: an order was placed,
+      // or the raised prompt was deliberately closed/skipped (the Monday rollover
+      // clearing pendingOrderWeek doubles as a time-based fallback). Ordering
+      // stays unlocked either way — the Saturday window continues normally.
+      if (state.currentWeekPoId != null || state.pendingOrderWeek == null) {
+        t.step = STEP.CAPACITY;
+      }
       break;
     }
     case STEP.CAPACITY: {
-      // A table was bought or someone hired, AND the first month has settled.
-      const boughtCapacity =
-        state.warehouse.tables.length > TUTORIAL_INITIAL_TABLES ||
-        state.employees.filter((e) => e.role === 'lager').length > TUTORIAL_INITIAL_LAGER;
-      if (boughtCapacity && state.reports.length >= WEEKS_PER_MONTH) t.step = STEP.MONTH;
+      // Beat 5 is TIME-based per spec: the first monthly statement appears once
+      // the first 4 weeks have settled. Buying a table / hiring is the beat's
+      // suggestion (coach card shows only under real congestion), not a gate —
+      // otherwise a frugal player would keep most of the UI locked forever.
+      if (state.reports.length >= WEEKS_PER_MONTH) {
+        t.step = STEP.MONTH;
+        state.paused = true; // story overlay — don't let the sim run behind it
+      }
       break;
     }
     // REWARD→CELEBRATE is set in truckPickup; INTRO/CELEBRATE/MONTH wait on the UI.
