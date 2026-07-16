@@ -1,7 +1,8 @@
 // ============================================================================
 // Distributor Tycoon - Core type definitions
-// All state is stored as plain, JSON-serialisable objects so the whole game
-// can be saved to / loaded from localStorage without any custom (de)serialiser.
+// All state is stored as plain, JSON-serialisable objects (no class instances,
+// methods, Maps, Sets or Dates) so the whole game can be persisted via the
+// saveManager with a single stringify/parse — no custom (de)serialiser.
 // ============================================================================
 
 export type Speed = 0.5 | 1 | 2 | 4;

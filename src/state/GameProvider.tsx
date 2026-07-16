@@ -17,7 +17,7 @@ import {
 import type { GameState, Speed } from '../game/types';
 import { advance } from '../game/simulation';
 import { createInitialState } from '../game/init';
-import { clearSave, loadOrCreate, saveGame } from '../game/storage';
+import { deleteSave, load, save } from '../game/save/saveManager';
 
 interface GameContextValue {
   state: GameState;
@@ -37,7 +37,7 @@ const RENDER_INTERVAL_MS = 90; // ~11 fps UI updates
 const AUTOSAVE_INTERVAL_MS = 4000;
 
 export function GameProvider({ children }: { children: ReactNode }) {
-  const stateRef = useRef<GameState>(loadOrCreate());
+  const stateRef = useRef<GameState>(load() ?? createInitialState());
   const [, forceRender] = useState(0);
   const render = useCallback(() => forceRender((n) => n + 1), []);
 
@@ -68,7 +68,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       }
       if (now - lastSaveRef.current >= AUTOSAVE_INTERVAL_MS) {
         lastSaveRef.current = now;
-        saveGame(st);
+        save(st);
       }
     }, TICK_MS);
     return () => clearInterval(id);
@@ -76,7 +76,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   // Save on tab hide / unload so nothing is lost.
   useEffect(() => {
-    const handler = () => saveGame(stateRef.current);
+    const handler = () => save(stateRef.current);
     window.addEventListener('beforeunload', handler);
     document.addEventListener('visibilitychange', handler);
     return () => {
@@ -114,9 +114,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }), [mutate]);
 
   const newGame = useCallback(() => {
-    clearSave();
+    deleteSave();
     stateRef.current = createInitialState();
-    saveGame(stateRef.current);
+    save(stateRef.current);
     render();
   }, [render]);
 
@@ -127,7 +127,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     });
   }, [mutate]);
 
-  const saveNow = useCallback(() => saveGame(stateRef.current), []);
+  const saveNow = useCallback(() => save(stateRef.current), []);
 
   // A FRESH value object is created on every render on purpose. The render pump
   // (forceRender) re-renders this provider ~11x/sec; because this object's
