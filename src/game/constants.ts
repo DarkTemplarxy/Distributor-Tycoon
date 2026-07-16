@@ -4,7 +4,7 @@
 
 import type { CustomerType, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -34,8 +34,21 @@ export const STARTING_STARS = 3;
 /** Truck logistics cost per palette (early game). */
 export const TRUCK_COST_PER_PALLET = 20;
 
-/** Supplier lead time for purchase orders, in days. */
+/** Supplier lead time for purchase orders, in days. Orders are placed on Monday
+ * and always arrive the following Monday. */
 export const PO_LEAD_DAYS = 7;
+
+/** Weekly procurement runs once a week; new customer inquiries arrive on Friday
+ * (day-of-week 4: 0=Mon .. 6=Sun) so the player learns of demand before the
+ * Monday order screen. */
+export const INQUIRY_DAY_OF_WEEK = 4;
+
+/** Order recommendation: how many weeks of demand the recommendation aims to
+ * cover. Because a Monday order only arrives the NEXT Monday, one whole week is
+ * consumed in transit — so covering ~2 weeks keeps the warehouse from running
+ * dry. Plus a safety buffer on top. */
+export const RECOMMENDATION_COVER_WEEKS = 2.5;
+export const RECOMMENDATION_BUFFER = 0.1;
 
 /** Delay between a delivery and the customer paying us, in days. */
 export const PAYMENT_DELAY_DAYS = 7;

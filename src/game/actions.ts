@@ -16,6 +16,7 @@ import type { GameState, ProductId, Role } from './types';
 import {
   acceptInquiry as onboardInquiry,
   availableCredit,
+  commitWeeklyOrder,
   counterAcceptChance,
   createPurchaseOrderInternal,
   freeCapacity,
@@ -24,7 +25,6 @@ import {
   notify,
   spend,
   tryPrepareOrder,
-  weeklyDemand,
 } from './simulation';
 import { buildProduct } from './init';
 import { clamp, uid, weekOf } from './util';
@@ -54,6 +54,45 @@ export function createPurchaseOrder(
 
   createPurchaseOrderInternal(state, valid);
   notify(state, `🛒 Bestellung aufgegeben (${Math.round(total)}€, Lieferung in 1 Woche).`, 'info');
+  return { ok: true };
+}
+
+/**
+ * Place (or override) the current week's order — the [BESTELLEN] action of the
+ * Monday order screen. Sends all products in one shot; any order already placed
+ * this week is refunded and replaced, so this doubles as the [ÜBERSCHREIBEN]
+ * action. Ordering nothing is allowed and simply clears the week's prompt.
+ */
+export function placeWeeklyOrder(
+  state: GameState,
+  items: { productId: ProductId; quantity: number }[],
+): ActionResult {
+  const valid = items.filter((i) => i.quantity > 0);
+  let total = 0;
+  for (const item of valid) {
+    const sp = state.supplier.products.find((s) => s.productId === item.productId)!;
+    total += item.quantity * sp.price;
+  }
+  // commitWeeklyOrder refunds this week's existing order first, so that amount is
+  // available again toward the new one.
+  const current = state.purchaseOrders.find(
+    (p) => p.id === state.currentWeekPoId && p.status === 'pending',
+  );
+  const refundable = current ? current.totalCost : 0;
+  if (state.cash + availableCredit(state) + refundable < total) {
+    return { ok: false, message: `Nicht genug Kapital (${Math.round(total)}€ nötig).` };
+  }
+
+  const po = commitWeeklyOrder(state, valid);
+  if (po) {
+    notify(
+      state,
+      `🛒 Wochenbestellung aufgegeben (${Math.round(po.totalCost)}€) – Lieferung nächsten Montag.`,
+      'info',
+    );
+  } else {
+    notify(state, `➖ Diese Woche nichts bestellt.`, 'info');
+  }
   return { ok: true };
 }
 
@@ -168,16 +207,16 @@ export function hireEmployee(state: GameState, role: Role): ActionResult {
   });
   notify(state, `🧑‍💼 ${name} eingestellt (${salary}€/Woche, ${upfront}€ Vorkasse).`, 'success');
 
-  // A newly hired Einkäufer takes over procurement: enable demand-based
-  // auto-restock for every product in the assortment.
+  // A newly hired Einkäufer takes over the weekly Monday order: from now on the
+  // recommended quantities are ordered automatically (the player can still
+  // override). No more manual Monday prompt.
   if (role === 'einkaeufer') {
-    for (const product of state.products) {
-      const d = weeklyDemand(state, product.id);
-      product.autoRestock = d > 0
-        ? { enabled: true, min: Math.ceil(d * 1.2), target: Math.ceil(d * 2.2) }
-        : { enabled: true, min: 0, target: 0 };
-    }
-    notify(state, `📦 ${name} übernimmt ab jetzt die automatische Nachbestellung.`, 'info');
+    state.pendingOrderWeek = null;
+    notify(
+      state,
+      `📦 ${name} übernimmt ab jetzt die wöchentliche Bestellung (jeden Montag automatisch).`,
+      'info',
+    );
   }
   return { ok: true };
 }

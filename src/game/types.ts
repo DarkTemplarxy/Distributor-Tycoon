@@ -257,6 +257,20 @@ export interface GameState {
   /** Weekly profit history used to compute the credit limit. */
   profitHistory: number[];
 
+  /** Weekly ordering (procurement runs once a week, on Monday). When set, a
+   * manual Monday order is awaiting the player (no Einkäufer) — the UI opens the
+   * order screen and pauses until it's handled. Null when nothing is pending. */
+  pendingOrderWeek: number | null;
+  /** Id of the purchase order placed for the current week (auto by the Einkäufer
+   * or manually), so it can be shown as "already ordered" and overridden. */
+  currentWeekPoId: string | null;
+  /** Units demanded per product during the currently-running week (accumulates
+   * as customer orders come in). Rolled into demandLog at the weekly rollover. */
+  demandThisWeek: Partial<Record<ProductId, number>>;
+  /** Per-product history of weekly demanded units (most recent last), used by the
+   * order recommendation ("average of the last 2 weeks"). */
+  demandLog: Partial<Record<ProductId, number[]>>;
+
   stats: GameStats;
   settings: { autoPrep: boolean };
 

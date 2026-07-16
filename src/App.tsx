@@ -33,10 +33,13 @@ export type ModalId =
   | null;
 
 export function App() {
-  const { state, togglePause, setPaused, newGame } = useGame();
+  const { state, mutate, togglePause, setPaused, newGame } = useGame();
   const [modal, setModal] = useState<ModalId>(null);
   const [startDismissed, setStartDismissed] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
+  // True while the auto-opened Monday order screen is up, so closing it resumes
+  // the game (a manually-opened Einkauf screen must not touch the pause state).
+  const [orderPromptActive, setOrderPromptActive] = useState(false);
 
   const doRestart = () => {
     newGame();
@@ -62,6 +65,27 @@ export function App() {
   const showStart =
     !startDismissed && state.totalDays === 0 && weekOf(state.totalDays) === 0 && !state.gameOver;
 
+  // Every Monday without an Einkäufer the simulation raises pendingOrderWeek. Open
+  // the weekly order screen and pause the game until the player has dealt with it.
+  useEffect(() => {
+    if (state.pendingOrderWeek != null && !showStart && !state.gameOver && !state.yearComplete) {
+      setModal('procurement');
+      setPaused(true);
+      setOrderPromptActive(true);
+    }
+  }, [state.pendingOrderWeek, showStart, state.gameOver, state.yearComplete, setPaused]);
+
+  // Closing the weekly order screen: clear any pending prompt (a skipped week) and
+  // resume the clock only if it was the auto-opened Monday prompt.
+  const closeProcurement = () => {
+    setModal(null);
+    if (state.pendingOrderWeek != null) mutate((s) => { s.pendingOrderWeek = null; });
+    if (orderPromptActive) {
+      setPaused(false);
+      setOrderPromptActive(false);
+    }
+  };
+
   return (
     <div className="app">
       <TopBar onRestart={() => setRestartOpen(true)} />
@@ -81,7 +105,7 @@ export function App() {
 
       {modal === 'inventory' && <InventoryModal onClose={() => setModal(null)} />}
       {modal === 'sortiment' && <SortimentModal onClose={() => setModal(null)} />}
-      {modal === 'procurement' && <ProcurementModal onClose={() => setModal(null)} />}
+      {modal === 'procurement' && <ProcurementModal onClose={closeProcurement} />}
       {modal === 'pricing' && <PricingModal onClose={() => setModal(null)} />}
       {modal === 'customers' && <CustomersModal onClose={() => setModal(null)} />}
       {modal === 'inquiries' && <InquiriesModal onClose={() => setModal(null)} />}

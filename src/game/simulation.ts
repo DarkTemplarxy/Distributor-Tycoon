@@ -23,6 +23,7 @@ import {
   EXPANSION_INQUIRY_CHANCE_PER_WEEK,
   EXPANSION_MIN_LOYALTY,
   INQUIRY_CHANCE_PER_WEEK,
+  INQUIRY_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
   KAM_CAPACITY,
@@ -33,6 +34,8 @@ import {
   PAYMENT_DELAY_DAYS,
   PER_ARTICLE_PREP_FACTOR,
   PRODUCT_DEFS,
+  RECOMMENDATION_BUFFER,
+  RECOMMENDATION_COVER_WEEKS,
   SEASONAL_TREND,
   SECONDS_PER_DAY_AT_1X,
   SUPPLIER_INCREASE_CHANCE,
@@ -54,6 +57,7 @@ import type {
   Order,
   Product,
   ProductId,
+  PurchaseOrder,
 } from './types';
 import {
   clamp,
@@ -303,6 +307,8 @@ function generateCustomerOrder(state: GameState, customer: Customer, line: Custo
   const discountUplift = 1 + demandUpliftFromDiscount(customer.activeDiscount);
   const jitter = randRange(0.9, 1.1);
   const qty = Math.max(1, Math.round(line.volume * seasonal * discountUplift * jitter));
+  // Track actual demanded units this week (feeds the order recommendation).
+  state.demandThisWeek[line.productId] = (state.demandThisWeek[line.productId] ?? 0) + qty;
   const price = line.price * (1 - customer.activeDiscount);
   const dueWeek = week + customer.deliveryLeadWeeks;
 
@@ -490,31 +496,13 @@ function collectDuePayments(state: GameState): void {
 
 // --- Auto restock -----------------------------------------------------------
 
-function runAutoRestock(state: GameState): void {
-  // Automatic restocking is the Einkäufer's job — until one is hired, procurement
-  // is fully manual.
-  if (!hasEinkaeufer(state)) return;
-  for (const product of state.products) {
-    const rule = product.autoRestock;
-    if (!rule.enabled) continue;
-    const projected = inventoryTotal(product) + incomingPO(state, product.id);
-    if (projected >= rule.min) continue;
-    const qty = Math.max(0, rule.target - projected);
-    if (qty <= 0) continue;
-    const supplierProduct = state.supplier.products.find((sp) => sp.productId === product.id);
-    if (!supplierProduct) continue;
-    const cost = qty * supplierProduct.price;
-    if (state.cash + availableCredit(state) < cost) continue; // can't afford, skip quietly
-    createPurchaseOrderInternal(state, [{ productId: product.id, quantity: qty }]);
-    notify(state, `🔄 Auto-Nachbestellung: ${qty}× ${product.name}.`, 'info');
-  }
-}
-
-/** Shared PO creation used by both the player action and auto-restock. */
+/** Shared PO creation used by the weekly order flow (manual and the Einkäufer's
+ * automatic order). Delivery always lands on the NEXT Monday, regardless of the
+ * exact moment the order is placed. Returns the created PO, or null if empty. */
 export function createPurchaseOrderInternal(
   state: GameState,
   items: { productId: ProductId; quantity: number }[],
-): boolean {
+): PurchaseOrder | null {
   let total = 0;
   const poItems = items
     .filter((i) => i.quantity > 0)
@@ -523,19 +511,151 @@ export function createPurchaseOrderInternal(
       total += i.quantity * sp.price;
       return { productId: i.productId, quantity: i.quantity, pricePerUnit: sp.price };
     });
-  if (poItems.length === 0) return false;
+  if (poItems.length === 0) return null;
 
   spend(state, total);
   state.weekAcc.purchases += total;
-  state.purchaseOrders.push({
+  const po: PurchaseOrder = {
     id: uid('po'),
     items: poItems,
     orderDay: state.totalDays,
-    deliveryDay: state.totalDays + 7,
+    // Next Monday: start of the week after the current one.
+    deliveryDay: (weekOf(state.totalDays) + 1) * DAYS_PER_WEEK,
     totalCost: total,
     status: 'pending',
-  });
-  return true;
+  };
+  state.purchaseOrders.push(po);
+  return po;
+}
+
+/** Reverse of spend(): pay down outstanding credit first, then return cash. */
+function refund(state: GameState, amount: number): void {
+  let remaining = amount;
+  if (state.bankCredit > 0) {
+    const pay = Math.min(remaining, state.bankCredit);
+    state.bankCredit -= pay;
+    remaining -= pay;
+  }
+  state.cash += remaining;
+}
+
+/** Units in stock that will spoil within the next `days` game-days. */
+export function expiringWithinDays(product: Product, currentDay: number, days: number): number {
+  return product.batches
+    .filter((b) => b.expiryDay <= currentDay + days)
+    .reduce((s, b) => s + b.quantity, 0);
+}
+
+export interface OrderRecommendation {
+  qty: number;
+  avgDemand: number;
+  lastWeekDemand: number;
+  seasonal: number;
+  stock: number;
+  incoming: number;
+  expiring: number;
+}
+
+/**
+ * Weekly order recommendation for one product. Because a Monday order only
+ * arrives the NEXT Monday, one whole week is consumed in transit — so the
+ * recommendation aims to cover a couple of weeks of demand plus a safety buffer,
+ * minus what is already available (on the shelf + already in transit), plus
+ * whatever will spoil this week (that stock can't be counted on). Never negative.
+ *
+ *   qty = max(0, coverWeeks × avgDemand × seasonal × (1+buffer) − (stock + incoming) + expiring)
+ *
+ * Counting the in-transit order (incoming) keeps the number consistent whether
+ * it is computed just before or just after the Monday delivery is booked, and
+ * stops the same goods being ordered twice.
+ */
+export function orderRecommendation(state: GameState, productId: ProductId): OrderRecommendation {
+  const product = getProduct(state, productId);
+  const stock = inventoryTotal(product);
+  const incoming = incomingPO(state, productId);
+  const log = state.demandLog[productId] ?? [];
+  const recent = log.slice(-2);
+  // Fall back to the current subscribed demand until there's real history.
+  const avgDemand =
+    recent.length > 0 ? recent.reduce((a, b) => a + b, 0) / recent.length : weeklyDemand(state, productId);
+  const lastWeekDemand = log.length > 0 ? log[log.length - 1] : weeklyDemand(state, productId);
+  const seasonal = seasonalMultiplier(productId, weekOf(state.totalDays));
+  const expiring = expiringWithinDays(product, state.totalDays, DAYS_PER_WEEK);
+  const target = RECOMMENDATION_COVER_WEEKS * avgDemand * seasonal * (1 + RECOMMENDATION_BUFFER);
+  const qty = Math.max(0, Math.round(target - stock - incoming + expiring));
+  return { qty, avgDemand, lastWeekDemand, seasonal, stock, incoming, expiring };
+}
+
+/** Cancel & refund the current week's still-pending PO (used when the player
+ * overrides the Einkäufer / re-submits the weekly order). */
+function refundCurrentWeekPo(state: GameState): void {
+  const id = state.currentWeekPoId;
+  if (!id) return;
+  const idx = state.purchaseOrders.findIndex((p) => p.id === id && p.status === 'pending');
+  if (idx >= 0) {
+    const po = state.purchaseOrders[idx];
+    refund(state, po.totalCost);
+    state.weekAcc.purchases -= po.totalCost;
+    state.purchaseOrders.splice(idx, 1);
+  }
+  state.currentWeekPoId = null;
+}
+
+/** Place (or replace) the current week's purchase order in one shot. Any order
+ * already placed this week is cancelled & refunded first, so this is idempotent
+ * within a week and safe for the [ÜBERSCHREIBEN] override. */
+export function commitWeeklyOrder(
+  state: GameState,
+  items: { productId: ProductId; quantity: number }[],
+): PurchaseOrder | null {
+  refundCurrentWeekPo(state);
+  const po = createPurchaseOrderInternal(state, items);
+  state.currentWeekPoId = po ? po.id : null;
+  state.pendingOrderWeek = null;
+  return po;
+}
+
+/**
+ * Monday procurement step. Runs every week for every product in the assortment.
+ * With an Einkäufer the recommended quantities are ordered automatically (capped
+ * to what's affordable); without one, a prompt is raised for the player.
+ */
+function processWeeklyOrder(state: GameState, newWeek: number): void {
+  // New week: forget last week's PO reference (it is on its way / delivered — do
+  // NOT refund it).
+  state.currentWeekPoId = null;
+  state.pendingOrderWeek = null;
+
+  if (!hasEinkaeufer(state)) {
+    // Manual: raise the Monday order prompt for the player to handle.
+    state.pendingOrderWeek = newWeek;
+    return;
+  }
+
+  // Automatic: the Einkäufer orders the recommended amounts, trimmed to budget.
+  let budget = state.cash + availableCredit(state);
+  const items: { productId: ProductId; quantity: number }[] = [];
+  for (const product of state.products) {
+    const rec = orderRecommendation(state, product.id);
+    if (rec.qty <= 0) continue;
+    const sp = state.supplier.products.find((s) => s.productId === product.id);
+    if (!sp) continue;
+    const affordable = Math.min(rec.qty, Math.floor(budget / sp.price));
+    if (affordable <= 0) continue;
+    items.push({ productId: product.id, quantity: affordable });
+    budget -= affordable * sp.price;
+  }
+  const po = commitWeeklyOrder(state, items);
+  if (po) {
+    const summary = po.items
+      .map((i) => `${i.quantity}× ${getProduct(state, i.productId).name}`)
+      .join(', ');
+    notify(
+      state,
+      `✓ Einkäufer bestellt automatisch: ${summary} (${Math.round(po.totalCost)}€) – Lieferung nächsten Montag.`,
+      'success',
+    );
+  }
 }
 
 // --- Inquiries --------------------------------------------------------------
@@ -826,6 +946,16 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     lateOrders: 0,
   };
 
+  // 4b. Roll the ended week's per-product demand into the log (keep the last 4
+  // weeks) and reset the running counter — feeds the order recommendation.
+  for (const product of state.products) {
+    const log = state.demandLog[product.id] ?? [];
+    log.push(state.demandThisWeek[product.id] ?? 0);
+    if (log.length > 4) log.shift();
+    state.demandLog[product.id] = log;
+  }
+  state.demandThisWeek = {};
+
   // 5. Quarterly triggers (start of a new quarter/season, not week 0).
   if (newWeek % WEEKS_PER_QUARTER === 0 && newWeek > 0 && newWeek < WEEKS_PER_YEAR) {
     applyQuarterlyEvents(state);
@@ -842,13 +972,14 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     }
   }
 
-  // 6. Customer acquisition pipeline.
+  // 6. Customer acquisition pipeline: expire stale inquiries here (weekly). NEW
+  // inquiries now arrive on Friday (see onDayStart), not at the Monday rollover.
   expireInquiries(state);
-  const hasFreeCapacity = (['small', 'medium', 'large'] as CustomerType[]).some(
-    (t) => freeCapacity(state, t) > 0,
-  );
-  if (hasFreeCapacity) maybeGenerateInquiry(state);
-  maybeGenerateExpansionInquiry(state);
+
+  // 6b. Weekly procurement decision: with an Einkäufer the recommended order is
+  // placed automatically; otherwise a Monday order prompt is raised. Skipped in
+  // the final week (the year is over).
+  if (newWeek < WEEKS_PER_YEAR) processWeeklyOrder(state, newWeek);
 
   // 7. Weekly report notification.
   notify(
@@ -892,7 +1023,15 @@ function onDayStart(state: GameState, dayIndex: number): void {
     }
   }
 
-  runAutoRestock(state);
+  // New customer & expansion inquiries arrive on Friday — the player sees the
+  // fresh demand before deciding the Monday order.
+  if (dow === INQUIRY_DAY_OF_WEEK) {
+    const hasFreeCapacity = (['small', 'medium', 'large'] as CustomerType[]).some(
+      (t) => freeCapacity(state, t) > 0,
+    );
+    if (hasFreeCapacity) maybeGenerateInquiry(state);
+    maybeGenerateExpansionInquiry(state);
+  }
 }
 
 // --- Main advance -----------------------------------------------------------

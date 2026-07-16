@@ -172,6 +172,14 @@ export function createInitialState(): GameState {
     },
     profitHistory: [],
 
+    // Seed a week-0 order prompt so the player primes the supply pipeline right
+    // away (order arrives week 1 Monday); without it the first restock wouldn't
+    // arrive until week 2 and week 1 would start short.
+    pendingOrderWeek: 0,
+    currentWeekPoId: null,
+    demandThisWeek: {},
+    demandLog: {},
+
     stats: {
       totalRevenue: 0,
       totalProfit: 0,

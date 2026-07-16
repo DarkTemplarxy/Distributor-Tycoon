@@ -1,204 +1,186 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import {
-  availableCredit,
-  hasEinkaeufer,
-  incomingPO,
-  inventoryTotal,
-  weeklyDemand,
-} from '../../game/simulation';
-import { createPurchaseOrder, setAutoRestock, type ActionResult } from '../../game/actions';
+import { availableCredit, hasEinkaeufer, orderRecommendation } from '../../game/simulation';
+import { placeWeeklyOrder, type ActionResult } from '../../game/actions';
 import { euro } from '../../game/util';
 import { PRODUCT_COLOR } from '../shared';
 
 export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
-  const [qty, setQty] = useState<Record<string, number>>({});
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const total = state.supplier.products.reduce((sum, sp) => sum + (qty[sp.productId] || 0) * sp.price, 0);
-  const budget = state.cash + availableCredit(state);
   const einkaeufer = hasEinkaeufer(state);
-  const pendingPOs = state.purchaseOrders.filter((po) => po.status === 'pending');
+
+  // This week's already-placed order (auto by the Einkäufer or a manual order the
+  // player made earlier this week). Present => show a summary + override.
+  const currentPo = state.purchaseOrders.find(
+    (p) => p.id === state.currentWeekPoId && p.status === 'pending',
+  );
+  const [editing, setEditing] = useState(false);
+
+  // Recommendations are computed once when the screen opens (the game is paused
+  // during the Monday prompt, so they stay stable).
+  const recs = useMemo(
+    () => state.products.map((p) => ({ product: p, rec: orderRecommendation(state, p.id) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const [qty, setQty] = useState<Record<string, number>>(() => {
+    const init: Record<string, number> = {};
+    for (const { product, rec } of recs) init[product.id] = rec.qty;
+    return init;
+  });
 
   const setQ = (id: string, v: number) => setQty((s) => ({ ...s, [id]: Math.max(0, Math.round(v)) }));
 
-  const order = () => {
-    const items = state.supplier.products.map((sp) => ({
-      productId: sp.productId,
-      quantity: qty[sp.productId] || 0,
-    }));
+  const priceOf = (id: string) => state.supplier.products.find((sp) => sp.productId === id)?.price ?? 0;
+  const total = state.products.reduce((sum, p) => sum + (qty[p.id] || 0) * priceOf(p.id), 0);
+  const refundable = currentPo ? currentPo.totalCost : 0;
+  const budget = state.cash + availableCredit(state) + refundable;
+
+  const showSummary = !!currentPo && !editing;
+
+  const startOverride = () => {
+    // Preset the sliders to what was actually ordered, then let the player edit.
+    const next: Record<string, number> = {};
+    for (const p of state.products) next[p.id] = 0;
+    for (const it of currentPo!.items) next[it.productId] = it.quantity;
+    setQty(next);
+    setEditing(true);
+  };
+
+  const submit = () => {
+    const items = state.products.map((p) => ({ productId: p.id, quantity: qty[p.id] || 0 }));
     let result: ActionResult = { ok: false };
     mutate((s) => {
-      result = createPurchaseOrder(s, items);
+      result = placeWeeklyOrder(s, items);
     });
-    if (result.ok) {
-      setQty({});
-      setMsg('✅ Bestellung aufgegeben – Lieferung in 1 Woche.');
-    } else {
-      setMsg('⚠️ ' + (result.message ?? 'Fehler'));
-    }
+    if (result.ok) onClose();
   };
 
   return (
-    <Modal title="Einkauf · Beschaffung" icon="🛒" onClose={onClose} wide>
+    <Modal title="Wocheneinkauf · Montag" icon="🛒" onClose={onClose} wide>
       <p className="hint">
-        Lieferant <b>{state.supplier.name}</b> · Lieferzeit 1 Woche · Zahlung sofort. Plane pro
-        Produkt anhand von <b>Bedarf</b> und <b>Lagerstand</b>. Bezahlbar bis {euro(budget)} (inkl.
-        Kredit).
+        Einmal pro Woche (jeden Montag) bestellst du beim Lieferanten <b>{state.supplier.name}</b>.
+        Die Empfehlung deckt ~2&nbsp;Wochen Bedarf (die Lieferung braucht eine Woche), abzüglich
+        Lager und zuzüglich der Menge, die diese Woche verfällt.
       </p>
 
-      <div className="rows">
-        {state.supplier.products.map((sp) => {
-          const product = state.products.find((p) => p.id === sp.productId)!;
-          const stock = inventoryTotal(product);
-          const incoming = incomingPO(state, sp.productId);
-          const demand = weeklyDemand(state, sp.productId);
-          const coverage = demand > 0 ? (stock + incoming) / demand : Infinity;
-          const covCls = demand === 0 ? 'pill' : coverage < 1 ? 'pill bad' : coverage < 2 ? 'pill warn' : 'pill good';
-          const covText = demand === 0 ? '—' : `${coverage.toFixed(1)} Wo`;
-          const q = qty[sp.productId] || 0;
-          const cover = (weeks: number) => setQ(sp.productId, Math.max(0, demand * weeks - stock - incoming));
-
-          return (
-            <div key={sp.productId} className="row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 22 }}>{product.emoji}</span>
-                <div className="grow">
-                  <div className="title" style={{ color: PRODUCT_COLOR[sp.productId] }}>
-                    {product.name} <span className="sub">· EK {sp.price}€/Stk</span>
-                  </div>
-                  <div className="sub" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span>📦 Lager {stock}</span>
-                    {incoming > 0 && <span>· 🚚 {incoming} unterwegs</span>}
-                    <span>· Bedarf {demand}/Wo</span>
-                    <span className={covCls} title="Reichweite (Lager + unterwegs)">Reichweite {covText}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <button className="btn small" disabled={demand <= 0} onClick={() => cover(2)}>
-                  Bedarf 2 Wo
-                </button>
-                <button className="btn small ghost" disabled={demand <= 0} onClick={() => cover(4)}>
-                  4 Wo
-                </button>
-                <button className="btn small ghost" onClick={() => setQ(sp.productId, q + 40)}>
-                  +40
-                </button>
-                <input
-                  className="num-input"
-                  type="number"
-                  min={0}
-                  step={10}
-                  value={q}
-                  onChange={(e) => setQ(sp.productId, Number(e.target.value))}
-                />
-                <span style={{ marginLeft: 'auto', color: 'var(--text-dim)' }}>{euro(q * sp.price)}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14, justifyContent: 'flex-end' }}>
-        {msg && <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>{msg}</span>}
-        <div style={{ fontWeight: 700, fontSize: 16 }}>Gesamt: {euro(total)}</div>
-        <button className="btn primary" disabled={total <= 0 || total > budget} onClick={order}>
-          Bestellen
-        </button>
-      </div>
-
-      {pendingPOs.length > 0 && (
-        <>
-          <h3 style={{ marginTop: 20 }}>🚚 Nächste Lieferungen</h3>
-          <div className="rows">
-            {pendingPOs
-              .slice()
-              .sort((a, b) => a.deliveryDay - b.deliveryDay)
-              .map((po) => (
-                <div key={po.id} className="row" style={{ padding: '8px 10px' }}>
-                  <div className="grow">
-                    <div className="title" style={{ fontSize: 13 }}>
-                      {po.items.map((i) => {
-                        const p = state.products.find((pr) => pr.id === i.productId);
-                        return `${i.quantity}× ${p?.name ?? i.productId}`;
-                      }).join(', ')}
-                    </div>
-                    <div className="sub">in {Math.max(0, po.deliveryDay - state.totalDays).toFixed(1)} Tagen</div>
-                  </div>
-                  <span className="pill">−{euro(po.totalCost)}</span>
-                </div>
-              ))}
-          </div>
-        </>
-      )}
-
-      <h3 style={{ marginTop: 22 }}>🔄 Automatische Nachbestellung</h3>
-      {!einkaeufer ? (
-        <div className="row" style={{ borderColor: 'var(--warn)' }}>
-          <span style={{ fontSize: 20 }}>🔒</span>
+      {showSummary ? (
+        // ---- Order already placed this week (auto or manual) ----
+        <div className="row" style={{ borderColor: 'var(--good)', alignItems: 'flex-start' }}>
+          <span style={{ fontSize: 22 }}>✓</span>
           <div className="grow">
-            <div className="title" style={{ fontSize: 14 }}>Noch manuell</div>
-            <div className="sub">
-              Stelle im <b>Personal</b>-Menü einen <b>Einkäufer</b> ein – dann übernimmt er die
-              Nachbestellung automatisch (bedarfsbasiert). Bis dahin bestellst du hier selbst.
+            <div className="title" style={{ fontSize: 14 }}>
+              {einkaeufer ? 'Einkäufer hat automatisch bestellt' : 'Diese Woche bereits bestellt'}
             </div>
+            <div className="sub" style={{ marginTop: 4 }}>
+              {currentPo!.items.map((it) => {
+                const p = state.products.find((pr) => pr.id === it.productId);
+                return (
+                  <span key={it.productId} style={{ marginRight: 10 }}>
+                    {p?.emoji} {it.quantity}× {p?.name ?? it.productId}
+                  </span>
+                );
+              })}
+            </div>
+            <div className="sub" style={{ marginTop: 2 }}>Gesamt {euro(currentPo!.totalCost)}</div>
           </div>
+          <button className="btn small" onClick={startOverride}>
+            ÜBERSCHREIBEN
+          </button>
         </div>
       ) : (
+        // ---- Order editor: one preset slider per product ----
         <>
-          <p className="hint">
-            Dein Einkäufer bestellt automatisch nach: fällt der Bestand (inkl. unterwegs) unter{' '}
-            <i>Min</i>, wird bis <i>Ziel</i> aufgefüllt.
-          </p>
           <div className="rows">
-            {state.products.map((product) => {
-              const rule = product.autoRestock;
+            {recs.map(({ product, rec }) => {
+              const q = qty[product.id] || 0;
+              const sliderMax = Math.max(100, rec.qty * 3, rec.stock + rec.qty);
               return (
-                <div key={product.id} className="row">
-                  <span style={{ fontSize: 20 }}>{product.emoji}</span>
-                  <div className="grow">
-                    <div className="title" style={{ fontSize: 13 }}>{product.name}</div>
+                <div
+                  key={product.id}
+                  className="row"
+                  style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 22 }}>{product.emoji}</span>
+                    <div className="grow">
+                      <div className="title" style={{ color: PRODUCT_COLOR[product.id] }}>
+                        {product.name} <span className="sub">· EK {priceOf(product.id)}€/Stk</span>
+                      </div>
+                      <div
+                        className="sub"
+                        style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}
+                      >
+                        <span>📦 Lager {rec.stock}</span>
+                        {rec.expiring > 0 && (
+                          <span style={{ color: 'var(--warn)' }}>⏳ {rec.expiring} verfällt</span>
+                        )}
+                        <span>· Nachfrage letzte Wo {Math.round(rec.lastWeekDemand)}</span>
+                        <span className="pill good" title="Empfohlene Bestellmenge">
+                          Empfehlung {rec.qty}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <label className="fld">
-                    Min
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input
+                      type="range"
+                      min={0}
+                      max={sliderMax}
+                      step={5}
+                      value={Math.min(q, sliderMax)}
+                      onChange={(e) => setQ(product.id, Number(e.target.value))}
+                      style={{ flex: 1 }}
+                    />
                     <input
                       className="num-input"
-                      style={{ width: 66 }}
                       type="number"
                       min={0}
-                      value={rule.min}
-                      onChange={(e) => mutate((s) => setAutoRestock(s, product.id, { ...rule, min: Number(e.target.value) }))}
+                      step={5}
+                      value={q}
+                      onChange={(e) => setQ(product.id, Number(e.target.value))}
                     />
-                  </label>
-                  <label className="fld">
-                    Ziel
-                    <input
-                      className="num-input"
-                      style={{ width: 66 }}
-                      type="number"
-                      min={0}
-                      value={rule.target}
-                      onChange={(e) => mutate((s) => setAutoRestock(s, product.id, { ...rule, target: Number(e.target.value) }))}
-                    />
-                  </label>
-                  <label className="toggle">
-                    <input
-                      type="checkbox"
-                      checked={rule.enabled}
-                      onChange={(e) => mutate((s) => setAutoRestock(s, product.id, { ...rule, enabled: e.target.checked }))}
-                    />
-                    {rule.enabled ? 'Aktiv' : 'Aus'}
-                  </label>
+                    {rec.qty !== q && (
+                      <button
+                        className="btn small ghost"
+                        title="Auf Empfehlung zurücksetzen"
+                        onClick={() => setQ(product.id, rec.qty)}
+                      >
+                        ↺
+                      </button>
+                    )}
+                    <span style={{ width: 90, textAlign: 'right', color: 'var(--text-dim)' }}>
+                      {euro(q * priceOf(product.id))}
+                    </span>
+                  </div>
                 </div>
               );
             })}
           </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              marginTop: 14,
+              justifyContent: 'flex-end',
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 16 }}>Gesamt: {euro(total)}</div>
+            <button className="btn primary" disabled={total > budget} onClick={submit}>
+              BESTELLEN
+            </button>
+          </div>
         </>
       )}
+
+      <p className="hint" style={{ marginTop: 14, fontStyle: 'italic' }}>
+        Lieferung nächsten Montag
+      </p>
     </Modal>
   );
 }
