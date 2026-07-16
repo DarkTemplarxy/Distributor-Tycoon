@@ -60,9 +60,9 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Wocheneinkauf · Samstag" icon="🛒" onClose={onClose} wide>
       <p className="hint">
-        Jeden <b>Samstag</b> bestellst du für die kommende Woche – du hast bereits gesehen, was diese
-        Woche nachgefragt wurde. Die Empfehlung deckt gut eine Woche Bedarf abzüglich Lager. Lieferung
-        kommt <b>Montag</b>.
+        Jeden <b>Samstag</b> bestellst du für die kommende Woche. Die Empfehlung nutzt die
+        aktuelle Nachfrage deiner Kunden (nächste Woche) und deckt gut eine Woche Bedarf abzüglich
+        Lager. Lieferung kommt <b>Montag</b>.
       </p>
 
       {showSummary ? (
@@ -126,7 +126,7 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
                         style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}
                       >
                         <span>📦 Lager {rec.stock}</span>
-                        <span>· 🛒 Nachfrage diese Woche {Math.round(rec.weekDemand)}</span>
+                        <span>· 🛒 Nachfrage nächste Woche {Math.round(rec.weekDemand)}</span>
                         {rec.expiring > 0 && (
                           <span style={{ color: 'var(--warn)' }}>· ⏳ {rec.expiring} verfällt</span>
                         )}

@@ -29,9 +29,6 @@ export function hallExpansionPrice(expansions: number): number {
   return HALL_EXPANSION_BASE * (1 + Math.floor(expansions / 10));
 }
 
-/** Base time (game-days) to put one full palette away from the inbound zone onto
- * a shelf, at skill 100 (scaled by skill like preparation). */
-export const BASE_PUTAWAY_DAYS_PER_PALETTE = 0.5;
 
 /** A session lasts one in-game year = 12 months × 4 weeks = 48 weeks. */
 export const DAYS_PER_WEEK = 7;
@@ -91,11 +88,19 @@ export const CREDIT_LIMIT_FLOOR = 4000;
 /** Deep-insolvency threshold: below this net cash the game is over. */
 export const BANKRUPTCY_CASH = -6000;
 
-/** Base preparation time (in game-days) for one full palette at skill 100. */
-export const BASE_PREP_DAYS_PER_PALETTE = 0.9;
+/**
+ * Handling times, quantity-linear, measured at the SKILL_SPEED_BASELINE skill:
+ *  - preparing an order for pickup: 0.3 h per unit (40 units = 12 h, 20 = 6 h),
+ *  - putting delivered goods away onto a shelf: 0.15 h per unit (40 = 6 h, 20 = 3 h).
+ * Skill scales this: every point above the baseline is 1 % faster (5 pts = 5 %).
+ */
+export const PREP_HOURS_PER_UNIT = 0.3;
+export const PUTAWAY_HOURS_PER_UNIT = 0.15;
+export const SKILL_SPEED_BASELINE = 50;
+export const SKILL_SPEED_PER_POINT = 0.01;
 
 /** Extra prep time per additional article in the same customer order: a bundle of
- * N articles takes each palette (1 + (N-1) * this) longer to prepare. */
+ * N articles takes (1 + (N-1) * this) longer to prepare. */
 export const PER_ARTICLE_PREP_FACTOR = 0.2;
 
 /** Cost of a single training session. */

@@ -11,8 +11,10 @@
 import {
   BANKRUPTCY_CASH,
   BASE_CUSTOMER_CAPACITY,
-  BASE_PREP_DAYS_PER_PALETTE,
-  BASE_PUTAWAY_DAYS_PER_PALETTE,
+  PREP_HOURS_PER_UNIT,
+  PUTAWAY_HOURS_PER_UNIT,
+  SKILL_SPEED_BASELINE,
+  SKILL_SPEED_PER_POINT,
   CREDIT_INTEREST_RATE,
   CREDIT_LIMIT_FLOOR,
   CUSTOMER_EMOJI,
@@ -261,10 +263,17 @@ export function serviceStarsRecompute(state: GameState): void {
 
 // --- Order preparation ------------------------------------------------------
 
+/** Skill speed multiplier: every point above the baseline is 1 % faster. Skill
+ * 50 → ×1.0, skill 100 → ×0.5, below 50 → slower. Clamped so it can't hit ≤0. */
+function skillSpeedFactor(skill: number): number {
+  return clamp(1 - SKILL_SPEED_PER_POINT * (skill - SKILL_SPEED_BASELINE), 0.3, 2);
+}
+
+/** Game-days to prepare an order of `quantity` units at `skill`. Quantity-linear
+ * (0.3 h/unit at the baseline skill), longer for multi-article customer bundles. */
 function prepDaysFor(quantity: number, skill: number, bundleSize = 1): number {
-  const palettes = quantity / PALETTE_SIZE;
   const bundleFactor = 1 + Math.max(0, bundleSize - 1) * PER_ARTICLE_PREP_FACTOR;
-  return palettes * BASE_PREP_DAYS_PER_PALETTE * (100 / Math.max(1, skill)) * bundleFactor;
+  return ((quantity * PREP_HOURS_PER_UNIT) / 24) * skillSpeedFactor(skill) * bundleFactor;
 }
 
 /** Workers currently preparing (each occupies one prep table). */
@@ -367,7 +376,7 @@ function assignPutaway(state: GameState, product: Product): boolean {
   }
   product.batches = product.batches.filter((b) => b.quantity > 0);
 
-  const days = (qty / PALETTE_SIZE) * BASE_PUTAWAY_DAYS_PER_PALETTE * (100 / Math.max(1, worker.skill));
+  const days = ((qty * PUTAWAY_HOURS_PER_UNIT) / 24) * skillSpeedFactor(worker.skill);
   worker.task = {
     kind: 'putaway',
     productId: product.id,
@@ -692,9 +701,8 @@ export function expiringWithinDays(product: Product, currentDay: number, days: n
 
 export interface OrderRecommendation {
   qty: number;
-  /** The demand the recommendation is built on: this week's actual customer
-   * orders (complete by Saturday), falling back to the last full week / the
-   * current subscriptions before there is history. */
+  /** Next week's demand = the current customers' subscribed volumes for this
+   * product (the numbers shown in the customer view). */
   weekDemand: number;
   stock: number;
   incoming: number;
@@ -703,8 +711,8 @@ export interface OrderRecommendation {
 
 /**
  * Weekly order recommendation for one product, shown on the Saturday order
- * screen. By Saturday the whole week's customer orders are in, so the number is
- * built directly on the demand the player just saw — no guesswork. It aims to
+ * screen. Built on next week's demand — the current customers' subscribed
+ * volumes — so newly won customers/expansions count immediately. It aims to
  * cover ~1.5 weeks of that demand (the order arrives Monday and must last until
  * the next Monday delivery), minus what's already available (shelf + in transit),
  * plus whatever will spoil this week. Never negative.
@@ -715,10 +723,10 @@ export function orderRecommendation(state: GameState, productId: ProductId): Ord
   const product = getProduct(state, productId);
   const stock = inventoryTotal(product);
   const incoming = incomingPO(state, productId);
-  const observed = state.demandThisWeek[productId] ?? 0;
-  const log = state.demandLog[productId] ?? [];
-  const weekDemand =
-    observed > 0 ? observed : log.length > 0 ? log[log.length - 1] : weeklyDemand(state, productId);
+  // Next week's demand = what the current customers are subscribed to order (the
+  // volumes shown in the customer view), so a just-accepted customer / expansion
+  // feeds into the recommendation immediately.
+  const weekDemand = weeklyDemand(state, productId);
   const expiring = expiringWithinDays(product, state.totalDays, DAYS_PER_WEEK);
   const target = RECOMMENDATION_COVER_WEEKS * weekDemand * (1 + RECOMMENDATION_BUFFER);
   const qty = Math.max(0, Math.round(target - stock - incoming + expiring));
