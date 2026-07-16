@@ -44,6 +44,12 @@ export const MONTHLY_RENT = 600;
 export const TRUCK_HOUR = 18;
 export const TRUCK_DAY_FRACTION = TRUCK_HOUR / 24;
 
+/** Working day: warehouse staff only make progress on tasks (Herrichten/Einlagern)
+ * between these hours. Outside the window (nights) work rests. The 18:00 truck
+ * sits inside the window, so pickups are unaffected. */
+export const WORK_START_HOUR = 6;
+export const WORK_END_HOUR = 20;
+
 export const STARTING_CASH = 10000;
 export const STARTING_STARS = 3;
 

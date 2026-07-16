@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGame } from './state/GameProvider';
+import { STEP } from './game/tutorial';
 import { TopBar } from './components/TopBar';
 import { Modal } from './components/Modal';
 import { IsometricWarehouse, type BuildTool } from './components/IsometricWarehouse';
@@ -20,6 +21,7 @@ import { EmployeesModal } from './components/modals/EmployeesModal';
 import { FinanceModal } from './components/modals/FinanceModal';
 import { ReportsModal } from './components/modals/ReportsModal';
 import { LogModal } from './components/modals/LogModal';
+import { HelpModal } from './components/modals/HelpModal';
 
 export type ModalId =
   | 'inventory'
@@ -32,6 +34,7 @@ export type ModalId =
   | 'finance'
   | 'reports'
   | 'log'
+  | 'help'
   | null;
 
 export function App() {
@@ -79,6 +82,16 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [togglePause]);
 
+  // When the tutorial finishes by COMPLETION (last step MONTH → null), pop the
+  // help screen once as the closing recap. A skip (from INTRO) does not. The
+  // step is mutated in place, so we track the primitive, not the object.
+  const prevTutStepRef = useRef<number | null>(state.tutorial?.active ? state.tutorial.step : null);
+  useEffect(() => {
+    const now = state.tutorial?.active ? state.tutorial.step : null;
+    if (prevTutStepRef.current === STEP.MONTH && now === null) setModal('help');
+    prevTutStepRef.current = now;
+  }, [state.tutorial?.active, state.tutorial?.step]);
+
   // Whenever the simulation raises pendingOrderWeek (Saturday without Einkäufer,
   // or the tutorial's ordering beat), open the weekly order screen and pause the
   // game until the player has dealt with it. Fresh games always start in the
@@ -104,7 +117,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar onRestart={() => setRestartOpen(true)} />
+      <TopBar onRestart={() => setRestartOpen(true)} onHelp={() => openModal('help')} />
 
       <div className="main">
         <div className="col-left" style={{ position: 'relative' }}>
@@ -146,6 +159,7 @@ export function App() {
       {modal === 'finance' && <FinanceModal onClose={() => setModal(null)} />}
       {modal === 'reports' && <ReportsModal onClose={() => setModal(null)} />}
       {modal === 'log' && <LogModal onClose={() => setModal(null)} />}
+      {modal === 'help' && <HelpModal onClose={() => setModal(null)} />}
 
       {state.yearComplete && <YearCompleteScreen onRestart={() => setRestartOpen(true)} />}
       {state.gameOver && <GameOverScreen />}

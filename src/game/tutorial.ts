@@ -79,6 +79,12 @@ export function isFeatureUnlocked(tutorial: TutorialState, feature: Feature): bo
   return tutorial.step >= from;
 }
 
+/** True when the tutorial is active and currently on the given beat. Used by UI
+ * components to glow the button that triggers the next step. */
+export function tutorialOnStep(tutorial: TutorialState, step: number): boolean {
+  return !!tutorial && tutorial.active && tutorial.step === step;
+}
+
 /**
  * Steps whose overlay REQUIRES the game to stay paused. While one of these is
  * showing, user-facing pause/speed controls must not restart the clock — the

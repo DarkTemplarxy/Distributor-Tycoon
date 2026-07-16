@@ -3,6 +3,7 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { availableCredit, hasEinkaeufer, orderRecommendation } from '../../game/simulation';
 import { placeWeeklyOrder, type ActionResult } from '../../game/actions';
+import { STEP, tutorialOnStep } from '../../game/tutorial';
 import { euro } from '../../game/util';
 import { PRODUCT_COLOR } from '../shared';
 
@@ -186,7 +187,13 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
             }}
           >
             <div style={{ fontWeight: 700, fontSize: 16 }}>Gesamt: {euro(total)}</div>
-            <button className="btn primary" disabled={total > budget} onClick={submit}>
+            <button
+              className={`btn primary${
+                total <= budget && tutorialOnStep(state.tutorial, STEP.ORDER) ? ' tut-glow' : ''
+              }`}
+              disabled={total > budget}
+              onClick={submit}
+            >
               BESTELLEN
             </button>
           </div>

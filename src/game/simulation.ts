@@ -49,6 +49,8 @@ import {
   WEEKS_PER_MONTH,
   WEEKS_PER_QUARTER,
   WEEKS_PER_YEAR,
+  WORK_END_HOUR,
+  WORK_START_HOUR,
   demandUpliftFromDiscount,
   type ProductDef,
 } from './constants';
@@ -344,13 +346,11 @@ function completePreparation(state: GameState, orderId: string): void {
   const palette = state.palettes.find((p) => p.id === order.paletteId);
   if (palette) palette.status = 'ready';
   const cust = state.customers.find((c) => c.id === order.customerId);
-  notify(state, `📦 Palette fertig: ${order.quantity}× für ${cust?.name ?? 'Kunde'} – wartet auf den Laster.`, 'success');
-
-  // Tutorial first delivery: the truck comes AS SOON AS the palette is ready
-  // instead of waiting for the 18:00 schedule — the reward must not sit around.
-  if (state.tutorial?.active && state.tutorial.step <= STEP.REWARD && orderId === TUTORIAL_ORDER_ID) {
-    truckPickup(state, weekOf(state.totalDays));
-  }
+  notify(
+    state,
+    `📦 Palette fertig: ${order.quantity}× für ${cust?.name ?? 'Kunde'} – der LKW holt sie um 18:00 ab.`,
+    'success',
+  );
 }
 
 function updateEmployees(state: GameState, deltaDays: number): void {
@@ -479,15 +479,44 @@ function generateCustomerOrder(state: GameState, customer: Customer, line: Custo
 
 // --- Monday truck pickup ----------------------------------------------------
 
+/** All lines a customer ordered together share this key, so a multi-article
+ * order is only ever shipped once every one of its lines is ready. */
+function orderGroupKey(customerId: string, createdDay: number): string {
+  return `${customerId}|${createdDay}`;
+}
+
 function truckPickup(state: GameState, week: number): void {
-  const ready = state.palettes.filter((p) => p.status === 'ready');
+  // A customer's whole order (all its lines from one ordering event) must go on
+  // the truck together — collect the open orders per group and only ship a group
+  // once every one of its orders is 'ready'.
+  const openByGroup = new Map<string, Order[]>();
+  for (const o of state.orders) {
+    if (o.status === 'delivered') continue;
+    const k = orderGroupKey(o.customerId, o.createdDay);
+    const arr = openByGroup.get(k);
+    if (arr) arr.push(o);
+    else openByGroup.set(k, [o]);
+  }
+  const groupReady = (o: Order): boolean => {
+    const arr = openByGroup.get(orderGroupKey(o.customerId, o.createdDay)) ?? [];
+    return arr.length > 0 && arr.every((x) => x.status === 'ready');
+  };
+
+  // Load only ready palettes whose entire order group is ready.
+  const loadable = state.palettes.filter((p) => {
+    if (p.status !== 'ready') return false;
+    const order = state.orders.find((o) => o.id === p.orderId);
+    return !!order && groupReady(order);
+  });
+  const loadedPaletteIds = new Set<string>();
   let loaded = 0;
 
   const cashPaidOrderIds = new Set<string>();
-  for (const palette of ready) {
+  for (const palette of loadable) {
     const order = state.orders.find((o) => o.id === palette.orderId);
     if (!order) continue;
     order.status = 'delivered';
+    loadedPaletteIds.add(palette.id);
     loaded += 1;
 
     // Logistics cost per palette.
@@ -537,8 +566,11 @@ function truckPickup(state: GameState, week: number): void {
     }
   }
 
-  // Remove loaded palettes from the warehouse.
-  state.palettes = state.palettes.filter((p) => p.status !== 'ready');
+  // Remove only the palettes actually loaded (a ready palette whose order group
+  // isn't complete stays behind and waits for its siblings).
+  if (loadedPaletteIds.size > 0) {
+    state.palettes = state.palettes.filter((p) => !loadedPaletteIds.has(p.id));
+  }
   // Cash-paid (small) orders are fully done — drop them so they don't linger.
   if (cashPaidOrderIds.size > 0) {
     state.orders = state.orders.filter((o) => !cashPaidOrderIds.has(o.id));
@@ -1381,6 +1413,28 @@ export function advanceTutorial(state: GameState): void {
 
 // --- Main advance -----------------------------------------------------------
 
+/**
+ * How much of the interval [prev, next] (in game-days) falls inside the daily
+ * working window [WORK_START_HOUR, WORK_END_HOUR). Worker task progress is scaled
+ * by this so nothing gets done at night. Iterates day-by-day (the capped delta is
+ * far below one day, so this loops at most twice).
+ */
+function workingDelta(prev: number, next: number): number {
+  const wStart = WORK_START_HOUR / 24;
+  const wEnd = WORK_END_HOUR / 24;
+  let total = 0;
+  let a = prev;
+  while (a < next) {
+    const day = Math.floor(a);
+    const dayEnd = Math.min(next, day + 1);
+    const lo = Math.max(a, day + wStart);
+    const hi = Math.min(dayEnd, day + wEnd);
+    if (hi > lo) total += hi - lo;
+    a = dayEnd;
+  }
+  return total;
+}
+
 export function advance(state: GameState, realDeltaMs: number): void {
   if (state.paused || state.gameOver || state.yearComplete) return;
 
@@ -1413,8 +1467,9 @@ export function advance(state: GameState, realDeltaMs: number): void {
     }
   }
 
-  // Continuous & idempotent updates.
-  updateEmployees(state, deltaDays);
+  // Continuous & idempotent updates. Worker task progress only counts working
+  // hours (6–20); the rest of the interval is "Feierabend" and nothing advances.
+  updateEmployees(state, workingDelta(prev, next));
   autoAssignWork(state);
   receiveDuePurchaseOrders(state);
   collectDuePayments(state);

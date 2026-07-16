@@ -6,7 +6,7 @@ import { Stars } from './shared';
 
 const SPEEDS: Speed[] = [0.5, 1, 2, 4];
 
-export function TopBar({ onRestart }: { onRestart: () => void }) {
+export function TopBar({ onRestart, onHelp }: { onRestart: () => void; onHelp: () => void }) {
   const { state, setSpeed, togglePause, saveNow, mutate } = useGame();
   const week = weekOf(state.totalDays);
   const q = quarterOf(week);
@@ -97,6 +97,9 @@ export function TopBar({ onRestart }: { onRestart: () => void }) {
       </div>
 
       <div className="speed-control">
+        <button onClick={onHelp} title="Hilfe & Spielregeln">
+          ❔
+        </button>
         <button onClick={handleSave} title="Jetzt speichern">
           💾
         </button>

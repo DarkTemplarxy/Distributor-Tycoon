@@ -8,7 +8,7 @@
 import { useEffect, useRef } from 'react';
 import { useGame } from '../state/GameProvider';
 import { inboundStock, shelfStock, shelfCapacity, shelfUsed, inboundUsed, inboundCapacity } from '../game/simulation';
-import { PALETTE_SIZE, SHELF_SLOTS } from '../game/constants';
+import { PALETTE_SIZE, SHELF_SLOTS, WORK_END_HOUR, WORK_START_HOUR } from '../game/constants';
 import { dayName, formatClock, hourOf } from '../game/util';
 import type { GameState, ProductId } from '../game/types';
 
@@ -777,8 +777,11 @@ function draw(
     }
   }
 
-  // HUD.
-  const hud = `🏭 Regal ${shelfUsed(state)}/${shelfCapacity(state)}  ·  Wareneingang ${inboundUsed(state)}/${inboundCapacity(state)}  ·  Fertig ${ready.length}  ·  ${dayName(state.totalDays)} ${formatClock(state.totalDays)}`;
+  // HUD. Outside working hours (6–20) staff are on "Feierabend" and no task
+  // progresses — surface that so a stalled Herrichtung at night isn't confusing.
+  const hr = hourOf(state.totalDays);
+  const feierabend = hr < WORK_START_HOUR || hr >= WORK_END_HOUR;
+  const hud = `🏭 Regal ${shelfUsed(state)}/${shelfCapacity(state)}  ·  Wareneingang ${inboundUsed(state)}/${inboundCapacity(state)}  ·  Fertig ${ready.length}  ·  ${dayName(state.totalDays)} ${formatClock(state.totalDays)}${feierabend ? '  ·  😴 Feierabend' : ''}`;
   ctx.font = `600 12px 'Segoe UI', sans-serif`;
   ctx.textAlign = 'left';
   const pad = 10;

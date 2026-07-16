@@ -3,6 +3,7 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { counterAcceptChance, freeCapacity } from '../../game/simulation';
 import { acceptInquiry, counterOffer, dismissInquiry } from '../../game/actions';
+import { STEP, tutorialOnStep } from '../../game/tutorial';
 import type { CustomerType } from '../../game/types';
 import { PRODUCT_COLOR } from '../shared';
 
@@ -76,7 +77,9 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
 
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
                 <button
-                  className="btn good small"
+                  className={`btn good small${
+                    !noCapacity && tutorialOnStep(state.tutorial, STEP.GROWTH) ? ' tut-glow' : ''
+                  }`}
                   disabled={noCapacity}
                   title={noCapacity ? 'Keine KAM-Kapazität frei' : undefined}
                   onClick={() => mutate((s) => acceptInquiry(s, inq.id))}

@@ -69,8 +69,17 @@ const COACH: Record<number, { emoji: string; text: ReactNode }> = {
     emoji: '🫱',
     text: (
       <>
-        Dein erster Auftrag wartet! Drücke rechts bei <b>Pizza Giuseppe</b> auf{' '}
-        <b>👷 Herrichten</b> – deine Mitarbeiter machen die Palette fertig.
+        Dein erster Auftrag wartet! Drücke rechts bei <b>Pizza Giuseppe</b> auf den leuchtenden{' '}
+        <b>👷 Herrichten</b>-Button – deine Mitarbeiter machen die Palette fertig.
+      </>
+    ),
+  },
+  [STEP.REWARD]: {
+    emoji: '📦',
+    text: (
+      <>
+        Deine Mitarbeiter arbeiten von <b>6–20 Uhr</b>. Ist die Palette fertig, holt sie der{' '}
+        <b>LKW täglich um 18:00</b> ab. ⏩ Beschleunige die Zeit und warte auf den LKW.
       </>
     ),
   },
@@ -93,11 +102,11 @@ const COACH: Record<number, { emoji: string; text: ReactNode }> = {
     ),
   },
   [STEP.CAPACITY]: {
-    emoji: '📦',
+    emoji: '📊',
     text: (
       <>
-        Die Aufträge stauen sich beim Herrichten. Kauf über <b>🏗️ Bauen</b> einen
-        Vorbereitungstisch oder stell über <b>Personal</b> jemanden ein.
+        Dein erster Monat läuft – gleich kommt die Abrechnung. Dein Lager kannst du{' '}
+        <b>jederzeit</b> über <b>🏗️ Bauen</b> oder <b>Personal</b> ausbauen (kein Muss).
       </>
     ),
   },
@@ -226,16 +235,6 @@ export function TutorialLayer() {
   // While the weekly order screen is auto-opened, the modal itself is the guide —
   // a coach card underneath it would be a second simultaneous hint.
   if (step === STEP.ORDER && state.pendingOrderWeek != null) return null;
-  // The capacity hint only appears when prep is ACTUALLY congested (spec: the
-  // purchase must solve a problem the player currently feels, not a scripted one).
-  if (step === STEP.CAPACITY) {
-    const prepping = state.employees.filter((e) => e.task?.kind === 'prep').length;
-    const freeTables = state.warehouse.tables.length - prepping;
-    const idleLager = state.employees.filter((e) => e.role === 'lager' && !e.task).length;
-    const waiting = state.orders.filter((o) => o.status === 'pending').length;
-    const congested = waiting > 0 && (freeTables <= 0 || idleLager <= 0);
-    if (!congested) return null;
-  }
   if (coach && !dismissed) {
     const dismiss = () =>
       mutate((s) => {

@@ -1,6 +1,6 @@
 import { useGame } from '../state/GameProvider';
 import { inboundStock, shelfStock } from '../game/simulation';
-import { isFeatureUnlocked } from '../game/tutorial';
+import { isFeatureUnlocked, STEP, tutorialOnStep } from '../game/tutorial';
 import { prepareOrder, restockForOrder } from '../game/actions';
 import { weekOf } from '../game/util';
 import type { Order } from '../game/types';
@@ -102,7 +102,9 @@ export function OrdersPanel() {
             {pending.length > 0 && (
               <div className="o-actions">
                 <button
-                  className="btn small primary"
+                  className={`btn small primary${
+                    tutorialOnStep(state.tutorial, STEP.HERRICHTEN) && fulfillable.length > 0 ? ' tut-glow' : ''
+                  }`}
                   disabled={fulfillable.length === 0}
                   onClick={() =>
                     mutate((s) => {
