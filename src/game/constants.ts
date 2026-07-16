@@ -118,9 +118,9 @@ export const CUSTOMER_VOLATILITY: Record<CustomerType, number> = {
 };
 
 export const CUSTOMER_VOLUME_RANGE: Record<CustomerType, [number, number]> = {
-  small: [14, 20],
-  medium: [30, 60],
-  large: [100, 200],
+  small: [30, 40],
+  medium: [175, 250],
+  large: [800, 1000],
 };
 
 /** Discount → demand uplift curve (progressive). Fractions. */
