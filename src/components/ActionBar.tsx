@@ -1,5 +1,5 @@
 import { useGame } from '../state/GameProvider';
-import { catalogStatus, inventoryTotal, isInAssortment, shelfStock } from '../game/simulation';
+import { catalogStatus, hasMarginPressure, inventoryTotal, isInAssortment, shelfStock } from '../game/simulation';
 import {
   isFeatureUnlocked,
   STEP,
@@ -44,12 +44,13 @@ export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; 
   ).length;
   const lowStock = state.products.some((p) => inventoryTotal(p) <= 0);
   const addableProducts = catalogStatus(state).filter((e) => e.status === 'addable').length;
+  const marginPressure = hasMarginPressure(state);
 
-  const buttons: { id: ModalId; icon: string; label: string; badge?: number; badgeInfo?: boolean; warn?: boolean }[] = [
-    { id: 'inventory', icon: '📦', label: 'Inventar', warn: lowStock },
+  const buttons: { id: ModalId; icon: string; label: string; badge?: number; badgeInfo?: boolean; warn?: boolean; warnTitle?: string }[] = [
+    { id: 'inventory', icon: '📦', label: 'Inventar', warn: lowStock, warnTitle: 'Produkt ohne Bestand' },
     { id: 'sortiment', icon: '🧺', label: 'Sortiment', badge: addableProducts, badgeInfo: true },
     { id: 'procurement', icon: '🛒', label: 'Einkauf' },
-    { id: 'pricing', icon: '🏷️', label: 'Preise' },
+    { id: 'pricing', icon: '🏷️', label: 'Preise', warn: marginPressure, warnTitle: 'Marge unter Zielmarge – Preise anpassen' },
     { id: 'customers', icon: '🤝', label: 'Kunden' },
     { id: 'inquiries', icon: '📨', label: 'Anfragen', badge: openInquiries, badgeInfo: true },
     { id: 'employees', icon: '🧑‍💼', label: 'Personal' },
@@ -94,7 +95,7 @@ export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; 
             {unlocked && b.badge ? (
               <span className={`dot${b.badgeInfo ? ' info' : ''}`}>{b.badge}</span>
             ) : null}
-            {unlocked && b.warn && <span className="dot" title="Produkt ohne Bestand">!</span>}
+            {unlocked && b.warn && <span className="dot" title={b.warnTitle ?? 'Achtung'}>!</span>}
             {!unlocked && <span className="lock">🔒</span>}
           </button>
         );

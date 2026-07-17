@@ -267,6 +267,45 @@ export function setDiscount(state: GameState, customerId: string, discount: numb
   cust.activeDiscount = clamp(discount, 0, 0.2);
 }
 
+/**
+ * Change the agreed price on one of a customer's product lines. Raising it (to
+ * defend a margin the supplier has eroded) costs loyalty, scaled by how steep the
+ * hike is and dampened by the customer's satisfaction (service stars): a happy
+ * customer swallows more. Uses only the existing loyalty lever — no new mechanic.
+ * Small hikes (< 2 %) and price cuts are free.
+ */
+export function setCustomerLinePrice(
+  state: GameState,
+  customerId: string,
+  productId: ProductId,
+  newPrice: number,
+): ActionResult {
+  const cust = state.customers.find((c) => c.id === customerId);
+  if (!cust) return { ok: false, message: 'Kunde nicht gefunden.' };
+  const line = cust.lines.find((l) => l.productId === productId);
+  if (!line) return { ok: false, message: 'Produktlinie nicht gefunden.' };
+
+  const oldPrice = line.price;
+  const price = Math.max(0, Math.round(newPrice * 100) / 100);
+  line.price = price;
+
+  const increase = oldPrice > 0 ? price / oldPrice - 1 : 0;
+  if (increase > 0.02) {
+    // Stars above 3 dampen the hit, below 3 amplify it; clamp to a sane band.
+    const starDamp = clamp(1 - (cust.serviceRating - 3) * 0.15, 0.4, 1.3);
+    const penalty = clamp(increase * 120 * starDamp, 0, 40);
+    if (penalty >= 1) {
+      cust.loyalty = clamp(cust.loyalty - penalty, 0, 100);
+      notify(
+        state,
+        `⚠️ ${cust.name} akzeptiert den höheren Preis (+${Math.round(increase * 100)}%) widerwillig – Loyalität −${Math.round(penalty)}%.`,
+        'warn',
+      );
+    }
+  }
+  return { ok: true };
+}
+
 // --- Inquiries --------------------------------------------------------------
 
 /** Accept an inquiry directly: the product is unlocked for the customer

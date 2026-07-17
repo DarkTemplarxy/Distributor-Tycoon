@@ -9,8 +9,10 @@ export function PricingModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Preise & Margen" icon="🏷️" onClose={onClose} wide>
       <p className="hint">
-        Setze deinen Verkaufspreis pro Produktgruppe. Die effektive Marge = (VK − EK) / VK. Über die
-        Zielmarge kannst du den Preis automatisch berechnen lassen.
+        Setze deinen Verkaufspreis pro Produktgruppe. Die effektive Marge = (VK − EK) / VK.{' '}
+        <b>Grün</b> = Zielmarge erreicht, <b>gelb</b> = knapp darunter, <b>rot</b> = deutlich
+        darunter. Steigt der EK durch den Lieferanten, hilft <b>Auto-Preis</b>, die Zielmarge
+        wieder herzustellen.
       </p>
       <div className="rows">
         {state.products.map((product) => {
@@ -20,7 +22,10 @@ export function PricingModal({ onClose }: { onClose: () => void }) {
           const markup = product.einkaufspreis > 0
             ? ((product.verkaufspreis - product.einkaufspreis) / product.einkaufspreis) * 100
             : 0;
-          const marginCls = margin < 15 ? 'bad' : margin < 28 ? 'warn' : 'good';
+          // Colour relative to THIS product's target margin, so an eroding margin
+          // is flagged even when it's still nominally healthy.
+          const marginCls =
+            margin >= product.zielmarge ? 'good' : margin >= product.zielmarge * 0.8 ? 'warn' : 'bad';
           return (
             <div key={product.id} className="row" style={{ flexWrap: 'wrap' }}>
               <span style={{ fontSize: 22 }}>{product.emoji}</span>
@@ -60,9 +65,9 @@ export function PricingModal({ onClose }: { onClose: () => void }) {
                 Auto-Preis
               </button>
 
-              <div style={{ textAlign: 'right', minWidth: 120 }}>
+              <div style={{ textAlign: 'right', minWidth: 130 }}>
                 <span className={`pill ${marginCls}`}>Marge {margin.toFixed(1)}%</span>
-                <div className="sub">Aufschlag {markup.toFixed(0)}%</div>
+                <div className="sub">Ziel {product.zielmarge}% · Aufschlag {markup.toFixed(0)}%</div>
               </div>
             </div>
           );

@@ -160,6 +160,20 @@ export function isInAssortment(state: GameState, id: ProductId): boolean {
   return state.products.some((p) => p.id === id);
 }
 
+/** Current actual margin of a product in percent: (VK − EK) / VK. Falls as the
+ * supplier raises the purchase price against a fixed sales price. */
+export function currentMargin(product: Product): number {
+  return product.verkaufspreis > 0
+    ? ((product.verkaufspreis - product.einkaufspreis) / product.verkaufspreis) * 100
+    : 0;
+}
+
+/** True when any product in the assortment has slipped below its target margin —
+ * drives the "adjust prices" cue on the pricing button. */
+export function hasMarginPressure(state: GameState): boolean {
+  return state.products.some((p) => currentMargin(p) < p.zielmarge);
+}
+
 export type CatalogEntryStatus = 'active' | 'addable' | 'locked';
 
 export interface CatalogEntry {
@@ -1124,7 +1138,10 @@ function applyQuarterlyEvents(state: GameState): void {
     notify(state, `${dir} ${cust.name}: Bedarf ${beforeTotal} → ${afterTotal}/Woche.`, 'info');
   }
 
-  // 2. Supplier price increase (Einkäufer can soften it).
+  // 2. Supplier price increase — the game's built-in antagonist. Staged as a
+  // clear event: EK rises → margin falls → the player must react (raise VK). The
+  // Einkäufer's negotiation is made visible, and the resulting margin drop is
+  // spelled out with a nudge toward the pricing screen.
   if (Math.random() < SUPPLIER_INCREASE_CHANCE) {
     const sp = pick(state.supplier.products);
     const product = getProduct(state, sp.productId);
@@ -1135,16 +1152,22 @@ function applyQuarterlyEvents(state: GameState): void {
     const oldPrice = sp.price;
     sp.price = Math.round(oldPrice * (1 + effective) * 100) / 100;
     product.einkaufspreis = sp.price;
+
+    const vk = product.verkaufspreis;
+    const marginAt = (ek: number) => (vk > 0 ? ((vk - ek) / vk) * 100 : 0);
+    const marginNote =
+      vk > 0 ? ` Marge fällt von ${marginAt(oldPrice).toFixed(0)}% auf ${marginAt(sp.price).toFixed(0)}%.` : '';
     if (skill > 0) {
+      const wouldBe = Math.round(oldPrice * (1 + pct) * 100) / 100;
       notify(
         state,
-        `📈 ${product.name}: Lieferant wollte +${(pct * 100).toFixed(0)}%. Einkäufer verhandelt auf +${(effective * 100).toFixed(1)}% (${oldPrice}€ → ${sp.price}€).`,
+        `📈 Lieferant erhöht ${product.name} um ${(pct * 100).toFixed(0)}% (ohne Verhandlung €${wouldBe.toFixed(2)}). Dein Einkäufer holt es auf +${(effective * 100).toFixed(1)}% runter: EK €${oldPrice.toFixed(2)} → €${sp.price.toFixed(2)}.${marginNote} → Preise anpassen.`,
         'warn',
       );
     } else {
       notify(
         state,
-        `📈 Preiserhöhung ${product.name}: ${oldPrice}€ → ${sp.price}€ (+${(effective * 100).toFixed(0)}%). Ein Einkäufer könnte verhandeln.`,
+        `📈 Lieferant erhöht ${product.name} um ${(effective * 100).toFixed(0)}%: EK €${oldPrice.toFixed(2)} → €${sp.price.toFixed(2)}.${marginNote} Ein Einkäufer könnte verhandeln. → Preise anpassen.`,
         'warn',
       );
     }
