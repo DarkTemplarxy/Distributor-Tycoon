@@ -204,6 +204,8 @@ export interface WeeklyReport {
   rent: number;
   logistics: number;
   spoilageLoss: number;
+  /** Units that spoiled this week (the loss above is these × purchase price). */
+  spoiledUnits: number;
   interest: number;
   profit: number;
   cashEnd: number;
@@ -221,9 +223,26 @@ export interface WeekAccumulator {
   rent: number;
   logistics: number;
   spoilageLoss: number;
+  spoiledUnits: number;
   interest: number;
   deliveredOrders: number;
   lateOrders: number;
+}
+
+/** A completed year's headline figures — pure data, stored as the comparison
+ * base for the next year's balance sheet ("beat yourself"). */
+export interface YearStats {
+  /** Display year number (1, 2, …) that just ended. */
+  year: number;
+  revenue: number;
+  profit: number;
+  cashEnd: number;
+  customersEnd: number;
+  deliveredOrders: number;
+  lateOrders: number;
+  spoiledUnits: number;
+  spoilageLoss: number;
+  milestonesAchieved: number;
 }
 
 export interface GameStats {
@@ -294,6 +313,9 @@ export interface GameState {
   weekAcc: WeekAccumulator;
   /** Weekly profit history used to compute the credit limit. */
   profitHistory: number[];
+  /** The previous completed year's figures — comparison base for the year-end
+   * balance sheet. Null until the first year is done. */
+  lastYearStats: YearStats | null;
 
   /** Weekly ordering (procurement runs once a week, on Monday). When set, a
    * manual Monday order is awaiting the player (no Einkäufer) — the UI opens the

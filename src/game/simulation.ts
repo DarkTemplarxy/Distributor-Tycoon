@@ -66,6 +66,7 @@ import type {
   Product,
   ProductId,
   PurchaseOrder,
+  YearStats,
 } from './types';
 import {
   clamp,
@@ -76,6 +77,7 @@ import {
   randRange,
   uid,
   weekOf,
+  yearOf,
 } from './util';
 import {
   STEP,
@@ -287,6 +289,29 @@ export function serviceStarsRecompute(state: GameState): void {
   const active = state.customers.filter((c) => c.active);
   if (active.length === 0) return;
   state.serviceStars = active.reduce((s, c) => s + c.serviceRating, 0) / active.length;
+}
+
+/**
+ * Headline figures for a completed year, summed from its weekly reports (year 0
+ * = weeks 0-47, year 1 = 48-95, …). Point-in-time figures (cash, customers,
+ * milestones) are read from the state as it stands at the year boundary. Shared
+ * by the year-end balance sheet and continueYear (which stores it as next year's
+ * comparison base). */
+export function computeYearStats(state: GameState, completedYearIndex: number): YearStats {
+  const yr = state.reports.filter((r) => yearOf(r.week) === completedYearIndex);
+  const sum = (f: (r: (typeof yr)[number]) => number) => yr.reduce((s, r) => s + f(r), 0);
+  return {
+    year: completedYearIndex + 1,
+    revenue: sum((r) => r.revenue),
+    profit: sum((r) => r.profit),
+    cashEnd: yr.length > 0 ? yr[yr.length - 1].cashEnd : state.cash,
+    customersEnd: state.customers.filter((c) => c.active).length,
+    deliveredOrders: sum((r) => r.deliveredOrders),
+    lateOrders: sum((r) => r.lateOrders),
+    spoiledUnits: sum((r) => r.spoiledUnits),
+    spoilageLoss: sum((r) => r.spoilageLoss),
+    milestonesAchieved: state.milestones.filter((m) => m.achievedWeek != null).length,
+  };
 }
 
 // --- Order preparation ------------------------------------------------------
@@ -675,6 +700,7 @@ function updateSpoilage(state: GameState, dayIndex: number): void {
       const loss = spoiledUnits * product.einkaufspreis;
       state.stats.spoiledUnits += spoiledUnits;
       state.stats.spoilageLoss += loss;
+      state.weekAcc.spoiledUnits += spoiledUnits;
       state.weekAcc.spoilageLoss += loss;
       product.batches = product.batches.filter((b) => b.quantity > 0);
       notify(state, `🗑️ ${spoiledUnits}× ${product.name} verdorben (Verlust ${Math.round(loss)}€).`, 'error');
@@ -1168,6 +1194,7 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     rent: acc.rent,
     logistics: acc.logistics,
     spoilageLoss: acc.spoilageLoss,
+    spoiledUnits: acc.spoiledUnits,
     interest: acc.interest,
     profit,
     cashEnd: state.cash,
@@ -1191,6 +1218,7 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     rent: 0,
     logistics: 0,
     spoilageLoss: 0,
+    spoiledUnits: 0,
     interest: 0,
     deliveredOrders: 0,
     lateOrders: 0,

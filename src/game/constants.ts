@@ -4,7 +4,7 @@
 
 import type { CustomerType, GameState, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time

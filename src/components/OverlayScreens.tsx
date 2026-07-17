@@ -1,60 +1,140 @@
 import { useGame } from '../state/GameProvider';
+import { computeYearStats } from '../game/simulation';
+import { MILESTONE_DEFS } from '../game/constants';
 import { euro, weekOf, yearOf } from '../game/util';
+import type { CustomerType } from '../game/types';
 
 // The former StartScreen was replaced by the tutorial's intro overlay
 // (TutorialLayer) — every fresh game now begins with the guided onboarding.
 
+/** The uncle's verdict — 4 tiers by milestones reached (gated on a profitable
+ * year for the higher ones). No game over, only an honest, warm appraisal. */
+function uncleVerdict(profit: number, milestones: number): { emoji: string; text: string } {
+  if (profit < 0 || milestones < 3) {
+    return {
+      emoji: '🤗',
+      text: 'Das erste Jahr ist das schwerste, Junge. Lass den Kopf nicht hängen – du hast eine Menge gelernt, und der Laden läuft noch.',
+    };
+  }
+  if (milestones < 6) {
+    return {
+      emoji: '🙂',
+      text: 'Solide gemacht! Der Laden steht auf eigenen Beinen. Nächstes Jahr legst du eine Schippe drauf.',
+    };
+  }
+  if (milestones < 9) {
+    return {
+      emoji: '😄',
+      text: 'Richtig stark. Ich hätte nicht gedacht, dass das kleine Geschäft so wachsen kann.',
+    };
+  }
+  return {
+    emoji: '🥹',
+    text: 'Du hast aus meinem kleinen Laden was Großes gemacht. Ich bin unendlich stolz auf dich.',
+  };
+}
+
 export function YearCompleteScreen({ onRestart }: { onRestart: () => void }) {
   const { state, continueYear } = useGame();
 
-  // Figures for the year that just ended (not cumulative), summed from its
-  // weekly reports. At the boundary week 48/96/… the completed year is the one
-  // before the current year index.
+  // At the boundary week 48/96/… the year that just ended is the one before the
+  // current year index; compute its figures from the weekly reports.
   const yearNumber = yearOf(weekOf(state.totalDays)); // 1, 2, …
-  const yearReports = state.reports.filter((r) => yearOf(r.week) === yearNumber - 1);
-  const yrRevenue = yearReports.reduce((s, r) => s + r.revenue, 0);
-  const yrProfit = yearReports.reduce((s, r) => s + r.profit, 0);
-  const yrDelivered = yearReports.reduce((s, r) => s + r.deliveredOrders, 0);
-  const yrLate = yearReports.reduce((s, r) => s + r.lateOrders, 0);
+  const yr = computeYearStats(state, yearNumber - 1);
+  const prev = state.lastYearStats; // previous year, comparison base (null in year 1)
+
+  const activeByType = (t: CustomerType) =>
+    state.customers.filter((c) => c.active && c.type === t).length;
+  const small = activeByType('small');
+  const medium = activeByType('medium');
+  const large = activeByType('large');
+  const expansions = state.warehouse.expansions + state.warehouse.officeExpansions;
+  const verdict = uncleVerdict(yr.profit, yr.milestonesAchieved);
+
+  const delta = (now: number, before: number) => {
+    if (now === before) return '';
+    const up = now > before;
+    return ` ${up ? '▲' : '▼'}`;
+  };
 
   return (
     <div className="overlay-screen">
-      <div className="overlay-card">
+      <div className="overlay-card" style={{ maxWidth: 560 }}>
         <div className="big-emoji">🏁</div>
-        <h1>Jahr {yearNumber} geschafft!</h1>
-        <p>12 Monate gemeistert. Dein Jahresabschluss:</p>
+        <h1>Jahresbilanz · Jahr {yearNumber}</h1>
+        <p style={{ maxWidth: 480, margin: '8px auto', fontStyle: 'italic' }}>
+          {verdict.emoji} „{verdict.text}"
+        </p>
+
         <div className="report-grid" style={{ textAlign: 'left' }}>
           <div className="stat-box">
-            <div className="k">Endkapital</div>
-            <div className="v" style={{ color: state.cash >= 0 ? 'var(--cash)' : 'var(--bad)' }}>{euro(state.cash)}</div>
+            <div className="k">Jahresumsatz</div>
+            <div className="v">{euro(yr.revenue)}</div>
           </div>
           <div className="stat-box">
             <div className="k">Jahresgewinn</div>
-            <div className="v" style={{ color: yrProfit >= 0 ? 'var(--good)' : 'var(--bad)' }}>{euro(yrProfit)}</div>
+            <div className="v" style={{ color: yr.profit >= 0 ? 'var(--good)' : 'var(--bad)' }}>
+              {euro(yr.profit)}
+            </div>
           </div>
           <div className="stat-box">
-            <div className="k">Jahresumsatz</div>
-            <div className="v">{euro(yrRevenue)}</div>
+            <div className="k">Endkapital (Start €10.000)</div>
+            <div className="v" style={{ color: yr.cashEnd >= 0 ? 'var(--cash)' : 'var(--bad)' }}>
+              {euro(yr.cashEnd)}
+            </div>
+          </div>
+          <div className="stat-box">
+            <div className="k">Kunden (Start 2)</div>
+            <div className="v">
+              {yr.customersEnd}
+              <span className="sub" style={{ marginLeft: 6 }}>
+                {small}k · {medium}m · {large}g
+              </span>
+            </div>
           </div>
           <div className="stat-box">
             <div className="k">Aufträge geliefert</div>
             <div className="v">
-              {yrDelivered}
-              {yrLate > 0 && <span style={{ color: 'var(--bad)', fontSize: 13 }}> · {yrLate} spät</span>}
+              {yr.deliveredOrders}
+              {yr.lateOrders > 0 && (
+                <span style={{ color: 'var(--bad)', fontSize: 13 }}> · {yr.lateOrders} spät</span>
+              )}
             </div>
           </div>
           <div className="stat-box">
-            <div className="k">Kunden aktiv</div>
-            <div className="v">{state.customers.filter((c) => c.active).length}</div>
+            <div className="k">Verdorbene Ware</div>
+            <div className="v" style={{ color: yr.spoiledUnits > 0 ? 'var(--warn)' : undefined }}>
+              {yr.spoiledUnits}
+              <span className="sub" style={{ marginLeft: 6 }}>{euro(yr.spoilageLoss)}</span>
+            </div>
           </div>
           <div className="stat-box">
-            <div className="k">Gewinn gesamt</div>
-            <div className="v" style={{ color: state.stats.totalProfit >= 0 ? 'var(--good)' : 'var(--bad)' }}>
-              {euro(state.stats.totalProfit)}
+            <div className="k">Team & Ausbau</div>
+            <div className="v">
+              {state.employees.length} MA
+              <span className="sub" style={{ marginLeft: 6 }}>{expansions} Erweiterungen</span>
+            </div>
+          </div>
+          <div className="stat-box">
+            <div className="k">Meilensteine</div>
+            <div className="v">
+              {yr.milestonesAchieved}
+              <span className="sub">/{MILESTONE_DEFS.length}</span>
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 8 }}>
+
+        {prev && (
+          <p className="hint" style={{ marginTop: 10 }}>
+            Vorjahr (Jahr {prev.year}): Umsatz {euro(prev.revenue)}{delta(yr.revenue, prev.revenue)} ·
+            Gewinn {euro(prev.profit)}{delta(yr.profit, prev.profit)}
+          </p>
+        )}
+        <p className="hint" style={{ marginTop: prev ? 2 : 10 }}>
+          👴 „Mal sehen, ob du dich nächstes Jahr selbst schlägst."
+        </p>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 10 }}>
           <button className="btn primary" onClick={continueYear}>
             ▶ Jahr {yearNumber + 1} weiterspielen
           </button>

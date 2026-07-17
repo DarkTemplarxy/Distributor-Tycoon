@@ -15,10 +15,11 @@ import {
   type ReactNode,
 } from 'react';
 import type { GameState, Speed } from '../game/types';
-import { advance } from '../game/simulation';
+import { advance, computeYearStats } from '../game/simulation';
 import { createInitialState } from '../game/init';
 import { tutorialPausesGame } from '../game/tutorial';
 import { deleteSave, load, save } from '../game/save/saveManager';
+import { weekOf, yearOf } from '../game/util';
 
 interface GameContextValue {
   state: GameState;
@@ -128,6 +129,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const continueYear = useCallback(() => {
     mutate((s) => {
+      // Remember the year that just ended as next year's comparison base ("beat
+      // yourself"). Done here (not at the boundary) so the balance screen still
+      // compares against the PREVIOUS year while it's shown.
+      const completedYearIndex = yearOf(weekOf(s.totalDays)) - 1;
+      s.lastYearStats = computeYearStats(s, completedYearIndex);
       s.yearComplete = false;
       s.paused = true;
     });

@@ -217,11 +217,13 @@ export function createInitialState(): GameState {
       rent: 0,
       logistics: 0,
       spoilageLoss: 0,
+      spoiledUnits: 0,
       interest: 0,
       deliveredOrders: 0,
       lateOrders: 0,
     },
     profitHistory: [],
+    lastYearStats: null,
 
     // The first order window opens on the first Saturday (once the player has
     // seen the opening week's demand); the 80 starting fish cover until then.
