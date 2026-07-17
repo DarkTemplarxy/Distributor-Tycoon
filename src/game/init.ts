@@ -6,6 +6,7 @@ import {
   CREDIT_LIMIT_FLOOR,
   CUSTOMER_LEAD_WEEKS,
   CUSTOMER_VOLATILITY,
+  MILESTONE_DEFS,
   PRODUCT_DEFS,
   SAVE_VERSION,
   STARTING_CASH,
@@ -237,6 +238,7 @@ export function createInitialState(): GameState {
       spoiledUnits: 0,
       spoilageLoss: 0,
     },
+    milestones: MILESTONE_DEFS.map((d) => ({ id: d.id, achievedWeek: null })),
     // Auto-prep starts OFF so the tutorial's first beat teaches manual Herrichten;
     // it is switched on once the first delivery is celebrated (see advanceTutorial).
     settings: { autoPrep: false },

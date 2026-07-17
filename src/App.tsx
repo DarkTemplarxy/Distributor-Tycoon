@@ -10,6 +10,7 @@ import { ActionBar } from './components/ActionBar';
 import { buildShelf, buildTable, buildInboundSlot, buildDesk, expandHall, expandOffice } from './game/actions';
 import { Toasts } from './components/Toasts';
 import { TutorialLayer } from './components/TutorialLayer';
+import { MilestoneLayer } from './components/MilestoneLayer';
 import { GameOverScreen, YearCompleteScreen } from './components/OverlayScreens';
 import { InventoryModal } from './components/modals/InventoryModal';
 import { SortimentModal } from './components/modals/SortimentModal';
@@ -21,6 +22,7 @@ import { EmployeesModal } from './components/modals/EmployeesModal';
 import { FinanceModal } from './components/modals/FinanceModal';
 import { ReportsModal } from './components/modals/ReportsModal';
 import { LogModal } from './components/modals/LogModal';
+import { NotebookModal } from './components/modals/NotebookModal';
 import { HelpModal } from './components/modals/HelpModal';
 
 export type ModalId =
@@ -34,6 +36,7 @@ export type ModalId =
   | 'finance'
   | 'reports'
   | 'log'
+  | 'notebook'
   | 'help'
   | null;
 
@@ -46,6 +49,9 @@ export function App() {
   const [orderPromptActive, setOrderPromptActive] = useState(false);
   const [buildMode, setBuildMode] = useState(false);
   const [buildTool, setBuildTool] = useState<BuildTool | null>(null);
+  // One-time "uncle left you his notebook" intro, shown when the tutorial ends
+  // (before the help recap, never stacked on top of it).
+  const [notebookIntro, setNotebookIntro] = useState(false);
 
   // Opening a modal leaves build mode; entering build mode closes any modal.
   const openModal = (id: ModalId) => {
@@ -82,13 +88,13 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [togglePause]);
 
-  // When the tutorial finishes by COMPLETION (last step MONTH → null), pop the
-  // help screen once as the closing recap. A skip (from INTRO) does not. The
-  // step is mutated in place, so we track the primitive, not the object.
+  // When the tutorial finishes by COMPLETION (last step MONTH → null), introduce
+  // the uncle's notebook once; its button then opens the help recap. A skip (from
+  // INTRO) does neither. The step is mutated in place, so we track the primitive.
   const prevTutStepRef = useRef<number | null>(state.tutorial?.active ? state.tutorial.step : null);
   useEffect(() => {
     const now = state.tutorial?.active ? state.tutorial.step : null;
-    if (prevTutStepRef.current === STEP.MONTH && now === null) setModal('help');
+    if (prevTutStepRef.current === STEP.MONTH && now === null) setNotebookIntro(true);
     prevTutStepRef.current = now;
   }, [state.tutorial?.active, state.tutorial?.step]);
 
@@ -153,6 +159,7 @@ export function App() {
 
       <Toasts />
       <TutorialLayer />
+      <MilestoneLayer />
 
       {modal === 'inventory' && <InventoryModal onClose={() => setModal(null)} />}
       {modal === 'sortiment' && <SortimentModal onClose={() => setModal(null)} />}
@@ -164,10 +171,35 @@ export function App() {
       {modal === 'finance' && <FinanceModal onClose={() => setModal(null)} />}
       {modal === 'reports' && <ReportsModal onClose={() => setModal(null)} />}
       {modal === 'log' && <LogModal onClose={() => setModal(null)} />}
+      {modal === 'notebook' && <NotebookModal onClose={() => setModal(null)} />}
       {modal === 'help' && <HelpModal onClose={() => setModal(null)} />}
 
       {state.yearComplete && <YearCompleteScreen onRestart={() => setRestartOpen(true)} />}
       {state.gameOver && <GameOverScreen />}
+
+      {notebookIntro && (
+        <div className="overlay-screen">
+          <div className="overlay-card">
+            <div className="big-emoji">📓</div>
+            <h1>Onkels Notizbuch</h1>
+            <p style={{ maxWidth: 460, margin: '10px auto' }}>
+              „Er hat dir auch sein Notizbuch dagelassen. Darin ein paar Ziele, die er sich immer
+              vorgenommen hatte – nicht alle hat er geschafft. Von jetzt an findest du sie unten
+              unter <b>📓 Notizbuch</b>. Immer eins nach dem anderen."
+            </p>
+            <button
+              className="btn primary"
+              style={{ fontSize: 15, padding: '10px 22px', marginTop: 6 }}
+              onClick={() => {
+                setNotebookIntro(false);
+                setModal('help');
+              }}
+            >
+              Alles klar ▶
+            </button>
+          </div>
+        </div>
+      )}
 
       {restartOpen && (
         <Modal title="Neues Spiel starten?" icon="🔄" onClose={() => setRestartOpen(false)}>

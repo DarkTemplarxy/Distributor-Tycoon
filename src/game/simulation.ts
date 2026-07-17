@@ -33,6 +33,7 @@ import {
   KAM_CAPACITY,
   LARGE_UNLOCK_REVENUE,
   MEDIUM_UNLOCK_REVENUE,
+  MILESTONE_DEFS,
   MONTHLY_RENT,
   NIGHT_SPEED,
   PALETTE_SIZE,
@@ -1389,9 +1390,47 @@ function enterTutorialOrder(state: GameState): void {
 }
 
 /** UI hook for the monthly-statement overlay's "Fertig": end the tutorial and
- * free the whole UI. */
+ * free the whole UI. Milestone checks only run once the tutorial is over, so we
+ * reconcile here: goals silently met DURING the tutorial (e.g. the first
+ * delivery) are marked done without a celebration, and show up already ticked
+ * when the notebook is introduced. */
 export function finishTutorial(state: GameState): void {
   state.tutorial = null;
+  reconcileMilestones(state);
+}
+
+// --- Milestones ("Onkels Notizbuch") ----------------------------------------
+
+/** Mark every already-satisfied milestone as achieved WITHOUT a celebration —
+ * called once when the tutorial ends. Anything the player accomplished during the
+ * guided phase enters the notebook pre-ticked (no retroactive confetti). */
+export function reconcileMilestones(state: GameState): void {
+  const week = weekOf(state.totalDays);
+  for (const def of MILESTONE_DEFS) {
+    const progress = state.milestones.find((m) => m.id === def.id);
+    if (!progress || progress.achievedWeek !== null) continue;
+    if (def.check(state)) progress.achievedWeek = week;
+  }
+}
+
+/** Check milestone conditions and fire newly-achieved ones: record the week,
+ * notify, queue the celebration overlay and pause. Runs every tick but only once
+ * the tutorial has ended (no milestone pop-ups during onboarding). Cheap and
+ * idempotent — an achieved milestone is skipped forever after. */
+export function checkMilestones(state: GameState): void {
+  if (state.tutorial) return; // tutorial still running — checks are held back
+  const week = weekOf(state.totalDays);
+  for (const def of MILESTONE_DEFS) {
+    const progress = state.milestones.find((m) => m.id === def.id);
+    if (!progress || progress.achievedWeek !== null) continue;
+    if (!def.check(state)) continue;
+    progress.achievedWeek = week;
+    notify(state, `📓 Meilenstein erreicht: ${def.title}!`, 'success');
+    // Queue the celebration; the UI (MilestoneLayer) shows it and owns the pause.
+    // Deliberately NOT paused here — a sim-driven pause would wedge any headless
+    // run (or hidden tab) that doesn't drain the queue.
+    (state.celebrateMilestones ??= []).push(def.id);
+  }
 }
 
 /**
@@ -1605,4 +1644,7 @@ export function advance(state: GameState, realDeltaMs: number): void {
 
   // Advance the onboarding beat machine from the state this tick produced.
   advanceTutorial(state);
+
+  // Check "Onkels Notizbuch" milestones (no-op while the tutorial runs).
+  checkMilestones(state);
 }

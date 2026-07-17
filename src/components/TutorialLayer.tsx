@@ -9,8 +9,9 @@ import { euro } from '../game/util';
 // the tutorial state by truckPickup when the celebration triggers.
 const STARTER_REWARD_FALLBACK = 30 * 33.5;
 
-/** A short-lived burst of falling confetti pieces (pure CSS animation). */
-function Confetti() {
+/** A short-lived burst of falling confetti pieces (pure CSS animation). Shared
+ * with the milestone celebration overlay. */
+export function Confetti() {
   const colors = ['#ffd166', '#06d6a0', '#ef476f', '#118ab2', '#f78c6b', '#c4f1be'];
   const pieces = useMemo(
     () =>

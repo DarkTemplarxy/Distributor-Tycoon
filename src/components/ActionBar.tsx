@@ -55,6 +55,7 @@ export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; 
     { id: 'employees', icon: '🧑‍💼', label: 'Personal' },
     { id: 'finance', icon: '🏦', label: 'Finanzen' },
     { id: 'reports', icon: '📊', label: 'Reports' },
+    { id: 'notebook', icon: '📓', label: 'Notizbuch' },
     { id: 'log', icon: '📜', label: 'Log' },
   ];
 

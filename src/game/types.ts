@@ -235,6 +235,14 @@ export interface GameStats {
   spoilageLoss: number;
 }
 
+/** Per-milestone progress — pure serialisable data. The title/description/
+ * condition/uncle-comment live as constants (MILESTONE_DEFS), matched by `id`, so
+ * the texts can change without breaking saves. `achievedWeek` is null until met. */
+export interface MilestoneProgress {
+  id: string;
+  achievedWeek: number | null;
+}
+
 export interface GameState {
   version: number;
   /** Continuous elapsed game time in days (day 0.0 = Monday 00:00, week 0). */
@@ -302,6 +310,12 @@ export interface GameState {
   demandLog: Partial<Record<ProductId, number[]>>;
 
   stats: GameStats;
+  /** Progress on "Onkels Notizbuch" milestones (see MILESTONE_DEFS). Checks run
+   * once the tutorial has ended. */
+  milestones: MilestoneProgress[];
+  /** Ids of just-achieved milestones queued for the celebration overlay. The UI
+   * shows them one at a time and clears each as it's dismissed. */
+  celebrateMilestones?: string[];
   settings: { autoPrep: boolean };
 
   /** Guided onboarding state. `active` runs the beat machine and gates the UI;

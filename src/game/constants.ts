@@ -2,9 +2,9 @@
 // Tunable game constants. Everything the designer might want to tweak lives here.
 // ============================================================================
 
-import type { CustomerType, ProductId, Role } from './types';
+import type { CustomerType, GameState, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -292,3 +292,129 @@ export const INQUIRY_EXPIRY_WEEKS = 3;
 /** Quarterly supplier price increase settings. */
 export const SUPPLIER_INCREASE_CHANCE = 0.6;
 export const SUPPLIER_INCREASE_RANGE: [number, number] = [0.03, 0.1];
+
+// ============================================================================
+// Milestones — "Onkels Notizbuch". Definitions (title, description, condition,
+// uncle comment) live here as constants, matched to the per-save progress by id
+// (GameState.milestones), so the texts can be tweaked without breaking saves.
+// Ascending order — always 1-2 within reach. Conditions are cheap reads on data
+// the game already tracks (stats/reports/customers/products/employees/warehouse)
+// — no new tracking. Checks run only once the tutorial has ended.
+// ============================================================================
+
+export interface MilestoneDef {
+  id: string;
+  emoji: string;
+  title: string;
+  /** Short "how to get it" line for the notebook list. */
+  description: string;
+  /** The uncle's note shown on the celebration when it's achieved. */
+  uncleComment: string;
+  /** True once the goal is met — a pure read on existing state. */
+  check: (state: GameState) => boolean;
+}
+
+const activeCustomers = (s: GameState) => s.customers.filter((c) => c.active).length;
+
+export const MILESTONE_DEFS: MilestoneDef[] = [
+  {
+    id: 'first_delivery',
+    emoji: '📦',
+    title: 'Erste eigene Lieferung',
+    description: 'Liefere deinen ersten Auftrag aus.',
+    uncleComment: 'Die erste Lieferung ist raus – genau so hab ich damals auch angefangen. Fühlt sich gut an, oder?',
+    check: (s) => s.stats.deliveredOrders >= 1,
+  },
+  {
+    id: 'three_customers',
+    emoji: '🤝',
+    title: '3 Kunden gleichzeitig',
+    description: 'Habe 3 aktive Kunden gleichzeitig.',
+    uncleComment: 'Drei Kunden! Da hast du schon einen mehr, als ich in meinem ersten Jahr hatte.',
+    check: (s) => activeCustomers(s) >= 3,
+  },
+  {
+    id: 'first_profit_week',
+    emoji: '📈',
+    title: 'Erste Woche mit Gewinn',
+    description: 'Schließe eine Woche mit Gewinn ab.',
+    uncleComment: 'Schwarze Zahlen. Merk dir dieses Gefühl – dafür machst du das alles.',
+    check: (s) => s.reports.some((r) => r.profit > 0),
+  },
+  {
+    id: 'five_customers',
+    emoji: '🤝',
+    title: '5 Kunden gleichzeitig',
+    description: 'Habe 5 aktive Kunden gleichzeitig.',
+    uncleComment: 'Fünf Kunden gleichzeitig. Das Telefon steht nicht mehr still, was?',
+    check: (s) => activeCustomers(s) >= 5,
+  },
+  {
+    id: 'second_product',
+    emoji: '🧺',
+    title: 'Zweites Produkt gelistet',
+    description: 'Nimm ein zweites Produkt ins Sortiment auf.',
+    uncleComment: 'Ein zweites Produkt im Regal. So wächst ein Sortiment – Schritt für Schritt.',
+    check: (s) => s.products.length >= 2,
+  },
+  {
+    id: 'revenue_5k',
+    emoji: '💶',
+    title: '€5.000 Umsatz in einer Woche',
+    description: 'Erreiche 5.000 € Umsatz in einer Woche.',
+    uncleComment: '5.000 € in einer Woche. Damit hätte ich früher einen ganzen Monat lang die Miete bezahlt.',
+    check: (s) => s.reports.some((r) => r.revenue >= 5000),
+  },
+  {
+    id: 'first_hire',
+    emoji: '🧑‍💼',
+    title: 'Erster zusätzlicher Mitarbeiter',
+    description: 'Stelle deinen ersten zusätzlichen Mitarbeiter ein.',
+    uncleComment: 'Dein erster eigener Mitarbeiter. Jetzt trägst du Verantwortung für jemanden – das ehrt dich.',
+    check: (s) => s.employees.length >= 3,
+  },
+  {
+    id: 'first_hall_expansion',
+    emoji: '🏗️',
+    title: 'Erste Hallen-Erweiterung',
+    description: 'Baue deine erste Hallen-Erweiterung.',
+    uncleComment: 'Die Halle wird größer. Ich weiß noch, wie eng es bei mir immer war.',
+    check: (s) => s.warehouse.expansions >= 1,
+  },
+  {
+    id: 'all_products',
+    emoji: '🧺',
+    title: 'Alle drei Produkte',
+    description: 'Habe alle drei Produkte im Sortiment.',
+    uncleComment: 'Alle drei Produktgruppen. Ein richtiger Vollsortimenter – das hab ich nie geschafft.',
+    check: (s) => s.products.length >= 3,
+  },
+  {
+    id: 'first_medium',
+    emoji: '🏨',
+    title: 'Erster mittlerer Kunde',
+    description: 'Gewinne deinen ersten mittleren Kunden.',
+    uncleComment: 'Ein mittlerer Kunde! Über die Kleinen bin ich nie hinausgekommen. Du schon.',
+    check: (s) => s.customers.some((c) => c.active && c.type === 'medium'),
+  },
+  {
+    id: 'revenue_40k',
+    emoji: '💰',
+    title: '€40.000 Umsatz in einer Woche',
+    description: 'Erreiche 40.000 € Umsatz in einer Woche.',
+    uncleComment: '40.000 € in einer einzigen Woche. Junge, ich bin sprachlos.',
+    check: (s) => s.reports.some((r) => r.revenue >= 40000),
+  },
+  {
+    id: 'first_large',
+    emoji: '🏬',
+    title: 'Erster großer Kunde',
+    description: 'Gewinne deinen ersten großen Kunden (Supermarkt).',
+    uncleComment: 'Ein Supermarkt. Junge, das hätte ich nie für möglich gehalten. Ich bin so stolz auf dich.',
+    check: (s) => s.customers.some((c) => c.active && c.type === 'large'),
+  },
+];
+
+export function getMilestoneDef(id: string): MilestoneDef | undefined {
+  return MILESTONE_DEFS.find((m) => m.id === id);
+}
