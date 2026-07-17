@@ -317,8 +317,10 @@ export interface GameState {
     step: number;
     celebrateAmount?: number;
     dismissedCoach?: number[];
-    /** One-shot marker: the meat beat already opened the order window once
-     * (closing it without ordering must not reopen it in a loop). */
+    /** Marker: the ORDER beat's Saturday order window was raised at least once
+     * (closing it unhandled then counts as "dealt with" — no reopen loop). */
+    orderPromptSeen?: boolean;
+    /** Same marker for the meat lesson's Saturday order window. */
     meatOrderPrompted?: boolean;
   } | null;
 

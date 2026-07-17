@@ -1223,7 +1223,7 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   }
 
   // 6. Customer acquisition pipeline: expire stale inquiries here (weekly). NEW
-  // inquiries arrive Friday and the order window is Saturday (see onDayStart).
+  // inquiries arrive Thursday and the order window is Saturday (see onDayStart).
   expireInquiries(state);
 
   // 6b. Start of a fresh order-week: forget last week's purchase order (it is on
@@ -1276,7 +1276,7 @@ function onDayStart(state: GameState, dayIndex: number): void {
     }
   }
 
-  // New customer & expansion inquiries arrive on Friday — the player sees the
+  // New customer & expansion inquiries arrive on Thursday — the player sees the
   // fresh demand before the Saturday order. During the tutorial they are held
   // back until the growth lesson is DONE, so the uncle's two inquiries stay the
   // only open ones while the accept/counter guidance runs.
@@ -1355,14 +1355,14 @@ function forceMeatInquiry(state: GameState): void {
   notify(state, `📨 Ein Fleisch-Interessent hat angefragt – dein erster 🥩-Kunde wartet!`, 'info');
 }
 
-/** Move to the growth beat: auto-prep on for the rest of the game and the uncle's
- * two inquiries dropped in. Shared by the celebration's "Weiter" and the recovery
- * path. */
+/** Move to the growth beat: auto-prep on for the rest of the game. The uncle's
+ * two inquiries do NOT appear yet — they arrive on the weekly inquiry day
+ * (Thursday), so the tutorial follows the game's natural rhythm. Shared by the
+ * celebration's "Weiter" and the recovery path. */
 function tutorialEnterGrowth(state: GameState): void {
   if (!state.tutorial) return;
   state.tutorial.step = STEP.GROWTH;
   state.settings.autoPrep = true;
-  forceTutorialInquiries(state);
 }
 
 /** UI hook for the celebration overlay's "Weiter". */
@@ -1380,18 +1380,12 @@ function tutorialRecoverToGrowth(state: GameState): void {
   tutorialEnterGrowth(state);
 }
 
-/** Enter the ordering beat (BEAT 3). Per spec the order screen opens when stock
- * is actually short — with a freshly won third customer that is virtually always
- * the case; if not, the regular Saturday window (now unlocked) takes over. */
+/** Enter the ordering beat (BEAT 3). No forced prompt — the order window opens
+ * through the REGULAR Saturday cycle (processWeeklyOrder is unlocked from this
+ * step), so the first purchase happens at the natural weekly moment. */
 function enterTutorialOrder(state: GameState): void {
   if (!state.tutorial) return;
   state.tutorial.step = STEP.ORDER;
-  const stockShort = state.products.some(
-    (p) => weeklyDemand(state, p.id) > 0 && inventoryTotal(p) < weeklyDemand(state, p.id),
-  );
-  if (stockShort && state.currentWeekPoId == null) {
-    state.pendingOrderWeek = weekOf(state.totalDays);
-  }
 }
 
 /** UI hook for the monthly-statement overlay's "Fertig": end the tutorial and
@@ -1427,8 +1421,16 @@ export function advanceTutorial(state: GameState): void {
       break;
     }
     case STEP.GROWTH: {
-      // Both of the uncle's inquiries have been dealt with (accepted, countered,
-      // dismissed or expired) — the accept + counter-offer lesson is done.
+      // The uncle's inquiries arrive on the weekly inquiry day (Thursday) — not
+      // the instant the celebration closes. Until then the player just plays.
+      if (!state.inquiries.some((i) => TUTORIAL_INQUIRY_IDS.includes(i.id))) {
+        if (dayOfWeek(state.totalDays) >= INQUIRY_DAY_OF_WEEK) {
+          forceTutorialInquiries(state);
+        }
+        break;
+      }
+      // Both dealt with (accepted, countered, dismissed or expired) → the
+      // accept + counter-offer lesson is done.
       const anyOpen = state.inquiries.some(
         (i) => TUTORIAL_INQUIRY_IDS.includes(i.id) && i.status === 'open',
       );
@@ -1436,11 +1438,15 @@ export function advanceTutorial(state: GameState): void {
       break;
     }
     case STEP.ORDER: {
-      // Advance once this week's order window is dealt with: an order was placed,
-      // or the raised prompt was deliberately closed/skipped (the Monday rollover
-      // clearing pendingOrderWeek doubles as a time-based fallback). Ordering
-      // stays unlocked either way — the Saturday window continues normally.
-      if (state.currentWeekPoId != null || state.pendingOrderWeek == null) {
+      // The first purchase happens at the REGULAR Saturday window. Remember that
+      // the prompt was raised; advance once it's dealt with — an order placed, or
+      // the raised prompt closed/skipped (the Monday rollover clearing it doubles
+      // as a time-based fallback).
+      if (state.pendingOrderWeek != null) t.orderPromptSeen = true;
+      if (
+        state.currentWeekPoId != null ||
+        (t.orderPromptSeen && state.pendingOrderWeek == null)
+      ) {
         t.step = STEP.CAPACITY;
       }
       break;
@@ -1464,21 +1470,19 @@ export function advanceTutorial(state: GameState): void {
       }
       // Phase A: Fleisch must be listed in the assortment (coach guides there).
       if (!isInAssortment(state, 'fleisch')) break;
-      // Phase B: the guaranteed meat inquiry arrives once, then wants accepting.
+      // Phase B: the guaranteed meat inquiry arrives on the weekly inquiry day
+      // (Thursday) after listing, then wants accepting.
       if (!state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID)) {
-        forceMeatInquiry(state);
-        break;
-      }
-      if (state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID && i.status === 'open')) break;
-      // Phase C: restock meat — open the order window exactly once.
-      if (!t.meatOrderPrompted) {
-        t.meatOrderPrompted = true;
-        if (state.currentWeekPoId == null && state.pendingOrderWeek == null) {
-          state.pendingOrderWeek = weekOf(state.totalDays);
+        if (dayOfWeek(state.totalDays) >= INQUIRY_DAY_OF_WEEK) {
+          forceMeatInquiry(state);
         }
         break;
       }
-      const orderHandled = state.currentWeekPoId != null || state.pendingOrderWeek == null;
+      if (state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID && i.status === 'open')) break;
+      // Phase C: restock meat via the REGULAR Saturday window (no forced prompt).
+      if (state.pendingOrderWeek != null) t.meatOrderPrompted = true;
+      const orderHandled =
+        state.currentWeekPoId != null || (t.meatOrderPrompted && state.pendingOrderWeek == null);
       // Lesson done → the first monthly statement closes the tutorial once the
       // first 4 weeks have settled (time-based, buying capacity stays optional).
       if (orderHandled && state.reports.length >= WEEKS_PER_MONTH) {

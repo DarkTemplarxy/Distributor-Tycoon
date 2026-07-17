@@ -82,12 +82,12 @@ export const EXPRESS_PO_LEAD_DAYS = 2;
 export const EXPRESS_RESTOCK_SURCHARGE = 0.2;
 
 /** Day-of-week (0=Mon .. 6=Sun) helpers for the weekly rhythm:
- *  - new customer inquiries arrive on Friday, and
+ *  - new customer inquiries arrive on Thursday, and
  *  - the weekly order window is Saturday — by then the whole week's customer
  *    orders are in, so the player plans with full knowledge of demand.
  * The order (placed Saturday) still arrives the following Monday, ready for the
  * new week. */
-export const INQUIRY_DAY_OF_WEEK = 4; // Friday
+export const INQUIRY_DAY_OF_WEEK = 3; // Donnerstag
 export const ORDER_DAY_OF_WEEK = 5; // Saturday
 
 /**

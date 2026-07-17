@@ -1,21 +1,36 @@
 import { useGame } from '../state/GameProvider';
 import { catalogStatus, inventoryTotal, isInAssortment, shelfStock } from '../game/simulation';
-import { isFeatureUnlocked, STEP, TUTORIAL_MEAT_INQUIRY_ID, type Feature } from '../game/tutorial';
+import {
+  isFeatureUnlocked,
+  STEP,
+  TUTORIAL_INQUIRY_IDS,
+  TUTORIAL_MEAT_INQUIRY_ID,
+  type Feature,
+} from '../game/tutorial';
 import type { GameState } from '../game/types';
 import type { ModalId } from '../App';
 
-/** Which action button glows to point at the next tutorial step. The meat beat
- * moves its target along its phases: list Fleisch → accept the inquiry → order. */
+/** Which action button glows to point at the next tutorial step. Nothing glows
+ * during the waiting phases (inquiries come Thursday, the order window opens
+ * Saturday) — the coach card explains the wait; the glow follows the moment the
+ * window is actually there. */
 function tutorialGlowTarget(state: GameState): ModalId {
   const t = state.tutorial;
   if (!t?.active) return null;
-  if (t.step === STEP.GROWTH) return 'inquiries';
-  if (t.step === STEP.ORDER) return 'procurement';
+  if (t.step === STEP.GROWTH) {
+    const anyOpen = state.inquiries.some(
+      (i) => TUTORIAL_INQUIRY_IDS.includes(i.id) && i.status === 'open',
+    );
+    return anyOpen ? 'inquiries' : null;
+  }
+  if (t.step === STEP.ORDER) {
+    return state.pendingOrderWeek != null ? 'procurement' : null;
+  }
   if (t.step === STEP.MEAT) {
     if (!isInAssortment(state, 'fleisch')) return 'sortiment';
     const meatInq = state.inquiries.find((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID);
     if (meatInq?.status === 'open') return 'inquiries';
-    if (meatInq && state.currentWeekPoId == null) return 'procurement';
+    if (meatInq && state.currentWeekPoId == null && state.pendingOrderWeek != null) return 'procurement';
   }
   return null;
 }

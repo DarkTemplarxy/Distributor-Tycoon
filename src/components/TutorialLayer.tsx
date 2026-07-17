@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useGame } from '../state/GameProvider';
 import { finishTutorial, isInAssortment, tutorialContinueFromCelebrate } from '../game/simulation';
-import { STEP, TUTORIAL_MEAT_INQUIRY_ID } from '../game/tutorial';
+import { STEP, TUTORIAL_INQUIRY_IDS, TUTORIAL_MEAT_INQUIRY_ID } from '../game/tutorial';
 import { euro } from '../game/util';
 
 // Fallback for saves from before celebrateAmount was recorded (the starter
@@ -98,8 +98,9 @@ const COACH: Record<number, { emoji: string; text: ReactNode }> = {
     emoji: '🛒',
     text: (
       <>
-        Deine Ware wird knapp. Bestelle im <b>Einkaufsfenster</b> genug, um die <b>fixe
-        Nachfrage</b> der nächsten Woche zu decken – die Lieferung kommt nächsten Montag.
+        Deine Ware wird knapp. Am <b>Samstag</b> öffnet der <b>Wocheneinkauf</b> – bestelle
+        dann genug, um die <b>fixe Nachfrage</b> der nächsten Woche zu decken (Lieferung am
+        Montag).
       </>
     ),
   },
@@ -114,8 +115,20 @@ const COACH: Record<number, { emoji: string; text: ReactNode }> = {
   },
 };
 
-// The meat beat has three guided phases — each gets its own card and its own
-// dismiss key (700+phase), so dismissing one doesn't swallow the next.
+// Waiting card while the uncle's inquiries haven't arrived yet (GROWTH beat
+// starts Monday evening; inquiries come on the Thursday inquiry day).
+const GROWTH_WAIT_COACH: { emoji: string; text: ReactNode } = {
+  emoji: '⏳',
+  text: (
+    <>
+      Gut gemacht! Am <b>Donnerstag</b> schauen sich neue Kunden um – lass die Zeit laufen
+      (⏩ beschleunigen hilft).
+    </>
+  ),
+};
+
+// The meat beat's guided phases — each gets its own card and its own dismiss
+// key (700+phase), so dismissing one doesn't swallow the next.
 const MEAT_COACH: Record<number, { emoji: string; text: ReactNode }> = {
   1: {
     emoji: '🥩',
@@ -127,6 +140,15 @@ const MEAT_COACH: Record<number, { emoji: string; text: ReactNode }> = {
     ),
   },
   2: {
+    emoji: '⏳',
+    text: (
+      <>
+        <b>Fleisch ist gelistet!</b> Am <b>Donnerstag</b> meldet sich ein Fleisch-Interessent –
+        lass die Zeit laufen.
+      </>
+    ),
+  },
+  3: {
     emoji: '📨',
     text: (
       <>
@@ -134,12 +156,12 @@ const MEAT_COACH: Record<number, { emoji: string; text: ReactNode }> = {
       </>
     ),
   },
-  3: {
+  4: {
     emoji: '🛒',
     text: (
       <>
-        Bestelle jetzt <b>Fleisch</b> im <b>Einkauf</b>, damit die erste Lieferung rechtzeitig
-        am Montag kommt.
+        Bestelle am <b>Samstag</b> im <b>Wocheneinkauf</b> auch <b>Fleisch</b>, damit die erste
+        Lieferung rechtzeitig am Montag kommt.
       </>
     ),
   },
@@ -269,14 +291,20 @@ export function TutorialLayer() {
 
   let coach = COACH[step];
   let dismissKey = step;
+  if (step === STEP.GROWTH && !state.inquiries.some((i) => TUTORIAL_INQUIRY_IDS.includes(i.id))) {
+    // The uncle's inquiries only arrive on Thursday — until then, explain the wait.
+    coach = GROWTH_WAIT_COACH;
+    dismissKey = 401;
+  }
   if (step === STEP.MEAT) {
-    // Phase from the live state: list → accept → restock; nothing once done.
+    // Phase from the live state: list → wait for Thursday → accept → Saturday
+    // restock; nothing once done.
     const meatInq = state.inquiries.find((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID);
     let phase: number | null;
     if (!isInAssortment(state, 'fleisch')) phase = 1;
-    else if (!meatInq) phase = null; // created on the next tick
-    else if (meatInq.status === 'open') phase = 2;
-    else if (state.currentWeekPoId == null) phase = 3;
+    else if (!meatInq) phase = 2; // waiting for the Thursday inquiry
+    else if (meatInq.status === 'open') phase = 3;
+    else if (state.currentWeekPoId == null) phase = 4;
     else phase = null; // lesson done — waiting for the monthly statement
     if (phase == null) return null;
     coach = MEAT_COACH[phase];
