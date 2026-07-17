@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { availableCredit, hasEinkaeufer, orderRecommendation } from '../../game/simulation';
+import { availableCredit, hasEinkaeufer, orderOutlook } from '../../game/simulation';
 import { placeWeeklyOrder, type ActionResult } from '../../game/actions';
-import { STEP, tutorialOnStep } from '../../game/tutorial';
 import { euro } from '../../game/util';
 import { PRODUCT_COLOR } from '../shared';
 
@@ -18,19 +17,16 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   );
   const [editing, setEditing] = useState(false);
 
-  // Recommendations are computed once when the screen opens (the game is paused
-  // during the Saturday prompt, so they stay stable).
+  // Facts are computed once when the screen opens (the game is paused during the
+  // Saturday prompt, so they stay stable). No recommendation — quantities start
+  // at 0 and the player decides based on the fixed demand shown per product.
   const recs = useMemo(
-    () => state.products.map((p) => ({ product: p, rec: orderRecommendation(state, p.id) })),
+    () => state.products.map((p) => ({ product: p, rec: orderOutlook(state, p.id) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
-  const [qty, setQty] = useState<Record<string, number>>(() => {
-    const init: Record<string, number> = {};
-    for (const { product, rec } of recs) init[product.id] = rec.qty;
-    return init;
-  });
+  const [qty, setQty] = useState<Record<string, number>>({});
 
   const setQ = (id: string, v: number) => setQty((s) => ({ ...s, [id]: Math.max(0, Math.round(v)) }));
 
@@ -61,9 +57,10 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Wocheneinkauf · Samstag" icon="🛒" onClose={onClose} wide>
       <p className="hint">
-        Jeden <b>Samstag</b> bestellst du für die kommende Woche. Die Empfehlung nutzt die
-        aktuelle Nachfrage deiner Kunden (nächste Woche) und deckt gut eine Woche Bedarf abzüglich
-        Lager. Lieferung kommt <b>Montag</b>.
+        Jeden <b>Samstag</b> bestellst du für die kommende Woche — <b>du entscheidest die
+        Menge</b>. Pro Produkt siehst du, wie viel <b>nächste Woche fix weggeht</b> (die
+        Bestellmengen deiner Kunden), was auf Lager ist und was zuläuft. Lieferung kommt{' '}
+        <b>Montag</b>.
       </p>
 
       {showSummary ? (
@@ -97,19 +94,19 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
             {recs.map(({ product, rec }) => {
               const q = qty[product.id] || 0;
               const price = priceOf(product.id);
-              const sliderMax = Math.max(100, rec.qty * 3, rec.stock + rec.qty);
-              // How long the stock lasts once this order lands (weeks of demand).
+              const sliderMax = Math.max(100, Math.round(rec.fixDemand * 3), rec.stock + Math.round(rec.fixDemand));
+              // How long the stock lasts once this order lands (weeks of fixed demand).
               const afterStock = rec.stock + rec.incoming + q;
-              const coverage = rec.weekDemand > 0 ? afterStock / rec.weekDemand : Infinity;
+              const coverage = rec.fixDemand > 0 ? afterStock / rec.fixDemand : Infinity;
               const covCls =
-                rec.weekDemand <= 0
+                rec.fixDemand <= 0
                   ? 'pill'
                   : coverage < 1
                     ? 'pill bad'
                     : coverage < 1.4
                       ? 'pill warn'
                       : 'pill good';
-              const covText = rec.weekDemand <= 0 ? '—' : `reicht ~${coverage.toFixed(1)} Wo`;
+              const covText = rec.fixDemand <= 0 ? '—' : `reicht ~${coverage.toFixed(1)} Wo`;
               return (
                 <div
                   key={product.id}
@@ -127,14 +124,21 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
                         style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}
                       >
                         <span>📦 Lager {rec.stock}</span>
-                        <span>· 🛒 Nachfrage nächste Woche {Math.round(rec.weekDemand)}</span>
+                        {rec.incoming > 0 && <span>· 🚚 {rec.incoming} im Zulauf</span>}
+                        {rec.backlog > 0 && (
+                          <span style={{ color: 'var(--warn)' }}>· 📋 {rec.backlog} offene Aufträge</span>
+                        )}
                         {rec.expiring > 0 && (
                           <span style={{ color: 'var(--warn)' }}>· ⏳ {rec.expiring} verfällt</span>
                         )}
                       </div>
                     </div>
-                    <span className="pill good" style={{ fontWeight: 700 }} title="Empfohlene Bestellmenge">
-                      Empfehlung {rec.qty}
+                    <span
+                      className="pill"
+                      style={{ fontWeight: 700 }}
+                      title="Summe der fixen Kundenbestellungen nächste Woche"
+                    >
+                      🛒 Fix weg nächste Woche: {Math.round(rec.fixDemand)}
                     </span>
                   </div>
 
@@ -156,16 +160,7 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
                       value={q}
                       onChange={(e) => setQ(product.id, Number(e.target.value))}
                     />
-                    {rec.qty !== q && (
-                      <button
-                        className="btn small ghost"
-                        title="Auf Empfehlung zurücksetzen"
-                        onClick={() => setQ(product.id, rec.qty)}
-                      >
-                        ↺
-                      </button>
-                    )}
-                    <span className={covCls} style={{ minWidth: 92, textAlign: 'center' }} title="Reichweite nach Lieferung">
+                    <span className={covCls} style={{ minWidth: 92, textAlign: 'center' }} title="Reichweite nach Lieferung (in Wochen fixer Nachfrage)">
                       {covText}
                     </span>
                     <span style={{ width: 82, textAlign: 'right', color: 'var(--text-dim)' }}>
@@ -189,7 +184,11 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
             <div style={{ fontWeight: 700, fontSize: 16 }}>Gesamt: {euro(total)}</div>
             <button
               className={`btn primary${
-                total <= budget && tutorialOnStep(state.tutorial, STEP.ORDER) ? ' tut-glow' : ''
+                // Glows whenever the tutorial raised this order window (ordering
+                // beat or the meat lesson) — the next step is confirming here.
+                total <= budget && state.tutorial?.active && state.pendingOrderWeek != null
+                  ? ' tut-glow'
+                  : ''
               }`}
               disabled={total > budget}
               onClick={submit}

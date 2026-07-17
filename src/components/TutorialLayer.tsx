@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useGame } from '../state/GameProvider';
-import { finishTutorial, tutorialContinueFromCelebrate } from '../game/simulation';
-import { STEP } from '../game/tutorial';
+import { finishTutorial, isInAssortment, tutorialContinueFromCelebrate } from '../game/simulation';
+import { STEP, TUTORIAL_MEAT_INQUIRY_ID } from '../game/tutorial';
 import { euro } from '../game/util';
 
 // Fallback for saves from before celebrateAmount was recorded (the starter
@@ -98,8 +98,8 @@ const COACH: Record<number, { emoji: string; text: ReactNode }> = {
     emoji: '🛒',
     text: (
       <>
-        Deine Ware wird knapp. Bestätige im <b>Einkaufsfenster</b> die empfohlene Bestellmenge –
-        die Lieferung kommt nächsten Montag.
+        Deine Ware wird knapp. Bestelle im <b>Einkaufsfenster</b> genug, um die <b>fixe
+        Nachfrage</b> der nächsten Woche zu decken – die Lieferung kommt nächsten Montag.
       </>
     ),
   },
@@ -109,6 +109,37 @@ const COACH: Record<number, { emoji: string; text: ReactNode }> = {
       <>
         Dein erster Monat läuft – gleich kommt die Abrechnung. Dein Lager kannst du{' '}
         <b>jederzeit</b> über <b>🏗️ Bauen</b> oder <b>Personal</b> ausbauen (kein Muss).
+      </>
+    ),
+  },
+};
+
+// The meat beat has three guided phases — each gets its own card and its own
+// dismiss key (700+phase), so dismissing one doesn't swallow the next.
+const MEAT_COACH: Record<number, { emoji: string; text: ReactNode }> = {
+  1: {
+    emoji: '🥩',
+    text: (
+      <>
+        Neu freigeschaltet: <b>Fleisch</b>! Öffne <b>🧺 Sortiment</b> und nimm Fleisch auf
+        (500 € Listungsgebühr) – dann kannst du es verkaufen.
+      </>
+    ),
+  },
+  2: {
+    emoji: '📨',
+    text: (
+      <>
+        Ein <b>Fleisch-Interessent</b> hat angefragt – öffne <b>Anfragen</b> und nimm ihn an.
+      </>
+    ),
+  },
+  3: {
+    emoji: '🛒',
+    text: (
+      <>
+        Bestelle jetzt <b>Fleisch</b> im <b>Einkauf</b>, damit die erste Lieferung rechtzeitig
+        am Montag kommt.
       </>
     ),
   },
@@ -232,16 +263,32 @@ export function TutorialLayer() {
   }
 
   // ---- Coach cards for the interactive beats ----
-  const coach = COACH[step];
-  const dismissed = t.dismissedCoach?.includes(step) ?? false;
   // While the weekly order screen is auto-opened, the modal itself is the guide —
   // a coach card underneath it would be a second simultaneous hint.
-  if (step === STEP.ORDER && state.pendingOrderWeek != null) return null;
+  if ((step === STEP.ORDER || step === STEP.MEAT) && state.pendingOrderWeek != null) return null;
+
+  let coach = COACH[step];
+  let dismissKey = step;
+  if (step === STEP.MEAT) {
+    // Phase from the live state: list → accept → restock; nothing once done.
+    const meatInq = state.inquiries.find((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID);
+    let phase: number | null;
+    if (!isInAssortment(state, 'fleisch')) phase = 1;
+    else if (!meatInq) phase = null; // created on the next tick
+    else if (meatInq.status === 'open') phase = 2;
+    else if (state.currentWeekPoId == null) phase = 3;
+    else phase = null; // lesson done — waiting for the monthly statement
+    if (phase == null) return null;
+    coach = MEAT_COACH[phase];
+    dismissKey = 700 + phase;
+  }
+
+  const dismissed = t.dismissedCoach?.includes(dismissKey) ?? false;
   if (coach && !dismissed) {
     const dismiss = () =>
       mutate((s) => {
         const tt = s.tutorial;
-        if (tt && !(tt.dismissedCoach ??= []).includes(step)) tt.dismissedCoach.push(step);
+        if (tt && !(tt.dismissedCoach ??= []).includes(dismissKey)) tt.dismissedCoach.push(dismissKey);
       });
     return (
       <div className="coach-card">

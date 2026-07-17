@@ -40,8 +40,6 @@ import {
   PER_ARTICLE_PREP_FACTOR,
   PRODUCT_DEFS,
   SHELF_SLOTS,
-  RECOMMENDATION_BUFFER,
-  RECOMMENDATION_COVER_WEEKS,
   SEASONAL_TREND,
   SECONDS_PER_DAY_AT_1X,
   SUPPLIER_INCREASE_CHANCE,
@@ -53,6 +51,7 @@ import {
   WORK_END_HOUR,
   WORK_START_HOUR,
   demandUpliftFromDiscount,
+  getProductDef,
   type ProductDef,
 } from './constants';
 import type {
@@ -70,7 +69,6 @@ import type {
 import {
   clamp,
   dayOfWeek,
-  monthOfYear,
   pick,
   quarterOf,
   randInt,
@@ -82,6 +80,7 @@ import {
   STEP,
   TUTORIAL_FIRST_PREP_DAYS,
   TUTORIAL_INQUIRY_IDS,
+  TUTORIAL_MEAT_INQUIRY_ID,
   TUTORIAL_ORDER_ID,
 } from './tutorial';
 
@@ -163,7 +162,7 @@ export type CatalogEntryStatus = 'active' | 'addable' | 'locked';
 export interface CatalogEntry {
   def: ProductDef;
   status: CatalogEntryStatus;
-  /** Human "ab Monat N" reason when locked. */
+  /** Human "ab Woche N" reason when locked. */
   reason?: string;
 }
 
@@ -174,7 +173,7 @@ export function catalogStatus(state: GameState): CatalogEntry[] {
   return PRODUCT_DEFS.map((def) => {
     if (isInAssortment(state, def.id)) return { def, status: 'active' };
     if (week >= def.unlockWeek) return { def, status: 'addable' };
-    return { def, status: 'locked', reason: `ab Monat ${monthOfYear(def.unlockWeek) + 1}` };
+    return { def, status: 'locked', reason: `ab Woche ${def.unlockWeek + 1}` };
   });
 }
 
@@ -800,38 +799,42 @@ export function expiringWithinDays(product: Product, currentDay: number, days: n
     .reduce((s, b) => s + b.quantity, 0);
 }
 
-export interface OrderRecommendation {
-  qty: number;
-  /** Next week's demand = the current customers' subscribed volumes for this
-   * product (the numbers shown in the customer view). */
-  weekDemand: number;
+export interface OrderOutlook {
+  /** Next week's FIXED outflow: the current customers' subscribed volumes,
+   * seasonally adjusted for the coming week — what will definitely be ordered. */
+  fixDemand: number;
+  /** Units in already-created orders still waiting to be fulfilled. */
+  backlog: number;
   stock: number;
   incoming: number;
   expiring: number;
+  /** Units missing to cover the backlog + next week's fixed demand — what the
+   * Einkäufer buys automatically. Deliberately NOT surfaced as a
+   * "recommendation": the order screen only states the facts. */
+  deficit: number;
 }
 
 /**
- * Weekly order recommendation for one product, shown on the Saturday order
- * screen. Built on next week's demand — the current customers' subscribed
- * volumes — so newly won customers/expansions count immediately. It aims to
- * cover ~1.5 weeks of that demand (the order arrives Monday and must last until
- * the next Monday delivery), minus what's already available (shelf + in transit),
- * plus whatever will spoil this week. Never negative.
- *
- *   qty = max(0, coverWeeks × weekDemand × (1+buffer) − (stock + incoming) + expiring)
+ * Facts for the Saturday order screen — no cover-multiplier, no buffer, no
+ * recommendation: next week's fixed outflow (subscribed volumes × next week's
+ * seasonal factor; newly won customers count immediately), the unfulfilled
+ * backlog, what's on hand / in transit, what spoils within the week, and the
+ * resulting deficit.
  */
-export function orderRecommendation(state: GameState, productId: ProductId): OrderRecommendation {
+export function orderOutlook(state: GameState, productId: ProductId): OrderOutlook {
   const product = getProduct(state, productId);
   const stock = inventoryTotal(product);
   const incoming = incomingPO(state, productId);
-  // Next week's demand = what the current customers are subscribed to order (the
-  // volumes shown in the customer view), so a just-accepted customer / expansion
-  // feeds into the recommendation immediately.
-  const weekDemand = weeklyDemand(state, productId);
+  const week = weekOf(state.totalDays);
+  const fixDemand = Math.round(
+    weeklyDemand(state, productId) * seasonalMultiplier(productId, week + 1),
+  );
+  const backlog = state.orders
+    .filter((o) => o.productId === productId && o.status === 'pending')
+    .reduce((s, o) => s + o.quantity, 0);
   const expiring = expiringWithinDays(product, state.totalDays, DAYS_PER_WEEK);
-  const target = RECOMMENDATION_COVER_WEEKS * weekDemand * (1 + RECOMMENDATION_BUFFER);
-  const qty = Math.max(0, Math.round(target - stock - incoming + expiring));
-  return { qty, weekDemand, stock, incoming, expiring };
+  const deficit = Math.max(0, Math.round(backlog + fixDemand - stock - incoming + expiring));
+  return { fixDemand, backlog, stock, incoming, expiring, deficit };
 }
 
 /** Cancel & refund the current week's still-pending PO (used when the player
@@ -877,15 +880,16 @@ function processWeeklyOrder(state: GameState, week: number): void {
     return;
   }
 
-  // Automatic: the Einkäufer orders the recommended amounts, trimmed to budget.
+  // Automatic: the Einkäufer covers next week's fixed demand (the deficit),
+  // trimmed to budget — no cushion, exactly what the subscriptions need.
   let budget = state.cash + availableCredit(state);
   const items: { productId: ProductId; quantity: number }[] = [];
   for (const product of state.products) {
-    const rec = orderRecommendation(state, product.id);
-    if (rec.qty <= 0) continue;
+    const outlook = orderOutlook(state, product.id);
+    if (outlook.deficit <= 0) continue;
     const sp = state.supplier.products.find((s) => s.productId === product.id);
     if (!sp) continue;
-    const affordable = Math.min(rec.qty, Math.floor(budget / sp.price));
+    const affordable = Math.min(outlook.deficit, Math.floor(budget / sp.price));
     if (affordable <= 0) continue;
     items.push({ productId: product.id, quantity: affordable });
     budget -= affordable * sp.price;
@@ -897,7 +901,7 @@ function processWeeklyOrder(state: GameState, week: number): void {
       .join(', ');
     notify(
       state,
-      `✓ Einkäufer bestellt automatisch: ${summary} (${Math.round(po.totalCost)}€) – Lieferung nächsten Montag.`,
+      `✓ Einkäufer deckt die fixe Nachfrage: ${summary} (${Math.round(po.totalCost)}€) – Lieferung nächsten Montag.`,
       'success',
     );
   }
@@ -1328,6 +1332,29 @@ function forceTutorialInquiries(state: GameState): void {
   }
 }
 
+/** The guaranteed (100 %) Fleisch inquiry of the meat beat — arrives the moment
+ * Fleisch is listed in the assortment. Small customer, so accepting can't be
+ * late; fixed id so the UI can glow its Annehmen button. */
+function forceMeatInquiry(state: GameState): void {
+  if (state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID)) return;
+  const week = weekOf(state.totalDays);
+  const product = getProduct(state, 'fleisch');
+  const [minV, maxV] = CUSTOMER_VOLUME_RANGE.small;
+  state.inquiries.push({
+    id: TUTORIAL_MEAT_INQUIRY_ID,
+    name: uniqueCustomerName(state, 'small'),
+    emoji: CUSTOMER_EMOJI.small,
+    type: 'small',
+    preferredProduct: 'fleisch',
+    suggestedVolume: randInt(minV, maxV),
+    targetPrice: Math.round(product.verkaufspreis * 2) / 2,
+    createdWeek: week,
+    expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
+    status: 'open',
+  });
+  notify(state, `📨 Ein Fleisch-Interessent hat angefragt – dein erster 🥩-Kunde wartet!`, 'info');
+}
+
 /** Move to the growth beat: auto-prep on for the rest of the game and the uncle's
  * two inquiries dropped in. Shared by the celebration's "Weiter" and the recovery
  * path. */
@@ -1419,11 +1446,42 @@ export function advanceTutorial(state: GameState): void {
       break;
     }
     case STEP.CAPACITY: {
-      // Beat 5 is TIME-based per spec: the first monthly statement appears once
-      // the first 4 weeks have settled. Buying a table / hiring is the beat's
-      // suggestion (coach card shows only under real congestion), not a gate —
-      // otherwise a frugal player would keep most of the UI locked forever.
-      if (state.reports.length >= WEEKS_PER_MONTH) {
+      // Free play until Fleisch unlocks (3rd week) — then the meat lesson runs:
+      // list Fleisch, win the guaranteed meat customer, restock.
+      if (weekOf(state.totalDays) >= getProductDef('fleisch').unlockWeek) {
+        t.step = STEP.MEAT;
+        notify(state, `🥩 Neue Produktgruppe freigeschaltet: Fleisch! Nimm sie ins Sortiment auf.`, 'success');
+      }
+      break;
+    }
+    case STEP.MEAT: {
+      // Safety valve first: a week past the first month the statement comes
+      // regardless — the lesson must never hold the locked features hostage.
+      if (state.reports.length >= WEEKS_PER_MONTH + 1) {
+        t.step = STEP.MONTH;
+        state.paused = true;
+        break;
+      }
+      // Phase A: Fleisch must be listed in the assortment (coach guides there).
+      if (!isInAssortment(state, 'fleisch')) break;
+      // Phase B: the guaranteed meat inquiry arrives once, then wants accepting.
+      if (!state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID)) {
+        forceMeatInquiry(state);
+        break;
+      }
+      if (state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID && i.status === 'open')) break;
+      // Phase C: restock meat — open the order window exactly once.
+      if (!t.meatOrderPrompted) {
+        t.meatOrderPrompted = true;
+        if (state.currentWeekPoId == null && state.pendingOrderWeek == null) {
+          state.pendingOrderWeek = weekOf(state.totalDays);
+        }
+        break;
+      }
+      const orderHandled = state.currentWeekPoId != null || state.pendingOrderWeek == null;
+      // Lesson done → the first monthly statement closes the tutorial once the
+      // first 4 weeks have settled (time-based, buying capacity stays optional).
+      if (orderHandled && state.reports.length >= WEEKS_PER_MONTH) {
         t.step = STEP.MONTH;
         state.paused = true; // story overlay — don't let the sim run behind it
       }

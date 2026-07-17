@@ -3,6 +3,7 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { availableCredit, catalogStatus } from '../../game/simulation';
 import { addProduct } from '../../game/actions';
+import { STEP, tutorialOnStep } from '../../game/tutorial';
 import { euro } from '../../game/util';
 import { PRODUCT_COLOR } from '../shared';
 
@@ -55,7 +56,12 @@ export function SortimentModal({ onClose }: { onClose: () => void }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span className="pill warn">Gebühr {euro(def.listingFee)}</span>
                   <button
-                    className="btn primary small"
+                    className={`btn primary small${
+                      // Meat beat phase A: point at listing Fleisch.
+                      affordable && def.id === 'fleisch' && tutorialOnStep(state.tutorial, STEP.MEAT)
+                        ? ' tut-glow'
+                        : ''
+                    }`}
                     disabled={!affordable}
                     onClick={() => take(def.id)}
                   >

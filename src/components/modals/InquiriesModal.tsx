@@ -3,7 +3,7 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { counterAcceptChance, freeCapacity } from '../../game/simulation';
 import { acceptInquiry, counterOffer, dismissInquiry } from '../../game/actions';
-import { STEP, TUTORIAL_INQUIRY_IDS, tutorialOnStep } from '../../game/tutorial';
+import { STEP, TUTORIAL_INQUIRY_IDS, TUTORIAL_MEAT_INQUIRY_ID, tutorialOnStep } from '../../game/tutorial';
 import type { CustomerType } from '../../game/types';
 import { PRODUCT_COLOR } from '../shared';
 
@@ -19,6 +19,10 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
   const guided = tutorialOnStep(state.tutorial, STEP.GROWTH);
   const [tut1Id, tut2Id] = TUTORIAL_INQUIRY_IDS;
   const tut1Open = state.inquiries.some((i) => i.id === tut1Id && i.status === 'open');
+  // Meat beat: the guaranteed Fleisch inquiry wants accepting.
+  const guidedMeat =
+    tutorialOnStep(state.tutorial, STEP.MEAT) &&
+    state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID && i.status === 'open');
 
   return (
     <Modal title="Kundenanfragen" icon="📨" onClose={onClose} wide>
@@ -27,6 +31,13 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
         Preis fordern für mehr Marge – der Kunde nimmt mit sinkender Chance an, sonst platzt der Deal.
         Die Menge ist fix. Neue Kunden brauchen freie KAM-Kapazität.
       </p>
+
+      {guidedMeat && (
+        <p className="hint" style={{ borderLeft: '3px solid var(--accent)', paddingLeft: 10 }}>
+          🥩 Nimm den <b>Fleisch-Interessenten an</b> – Fleisch ist bereits in deinem Sortiment
+          gelistet.
+        </p>
+      )}
 
       {guided && (
         <p className="hint" style={{ borderLeft: '3px solid var(--accent)', paddingLeft: 10 }}>
@@ -75,7 +86,9 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
           // Guided steps: glow Annehmen on the uncle's first inquiry; once it's
           // handled, glow Gegenangebot on the second — with the higher price
           // pre-filled so the button is immediately actionable.
-          const glowAccept = guided && inq.id === tut1Id && !noCapacity;
+          const glowAccept =
+            ((guided && inq.id === tut1Id) || (guidedMeat && inq.id === TUTORIAL_MEAT_INQUIRY_ID)) &&
+            !noCapacity;
           const glowCounter = guided && inq.id === tut2Id && !tut1Open && !noCapacity;
           const price = prices[inq.id] ?? (glowCounter ? inq.targetPrice + 2 : inq.targetPrice);
           const chance = Math.round(counterAcceptChance(inq.targetPrice, price) * 100);

@@ -90,13 +90,6 @@ export const EXPRESS_RESTOCK_SURCHARGE = 0.2;
 export const INQUIRY_DAY_OF_WEEK = 4; // Friday
 export const ORDER_DAY_OF_WEEK = 5; // Saturday
 
-/** Order recommendation: how many weeks of demand to cover. The Saturday order
- * arrives Monday and has to last until the next order's Monday delivery (~one
- * week of selling), so ~1.5 weeks (plus a small buffer) keeps a healthy cushion
- * without overstocking into spoilage. */
-export const RECOMMENDATION_COVER_WEEKS = 1.5;
-export const RECOMMENDATION_BUFFER = 0.1;
-
 /**
  * Delay between a delivery and the customer paying us, in days, by customer type.
  * Small customers pay CASH ON PICKUP (0 = credited immediately when the truck
@@ -229,7 +222,9 @@ export interface ProductDef {
 // Verkaufspreise auf ~40% Zielmarge: verkaufspreis = EK / (1 - 0.40), auf 0,5€ gerundet.
 export const PRODUCT_DEFS: ProductDef[] = [
   { id: 'fisch', name: 'Fischfilet', emoji: '🐟', einkaufspreis: 20, verkaufspreis: 33.5, zielmarge: 40, spoilageDays: 21, unlockWeek: 0, listingFee: 0 },
-  { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 25, zielmarge: 40, spoilageDays: 42, unlockWeek: 4, listingFee: 500 },
+  // Fleisch unlocks in the 3rd game week (index 2) — inside the tutorial, whose
+  // meat beat guides listing it, winning the first meat customer and restocking.
+  { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 25, zielmarge: 40, spoilageDays: 42, unlockWeek: 2, listingFee: 500 },
   { id: 'gemuese', name: 'Gemüse', emoji: '🥦', einkaufspreis: 10, verkaufspreis: 16.5, zielmarge: 40, spoilageDays: 56, unlockWeek: 8, listingFee: 500 },
 ];
 

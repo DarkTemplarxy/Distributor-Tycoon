@@ -1,13 +1,24 @@
 import { useGame } from '../state/GameProvider';
-import { catalogStatus, inventoryTotal, shelfStock } from '../game/simulation';
-import { isFeatureUnlocked, STEP, tutorialOnStep, type Feature } from '../game/tutorial';
+import { catalogStatus, inventoryTotal, isInAssortment, shelfStock } from '../game/simulation';
+import { isFeatureUnlocked, STEP, TUTORIAL_MEAT_INQUIRY_ID, type Feature } from '../game/tutorial';
+import type { GameState } from '../game/types';
 import type { ModalId } from '../App';
 
-// Which action button glows to point at the next tutorial step.
-const GLOW_BY_ID: Partial<Record<NonNullable<ModalId>, number>> = {
-  inquiries: STEP.GROWTH,
-  procurement: STEP.ORDER,
-};
+/** Which action button glows to point at the next tutorial step. The meat beat
+ * moves its target along its phases: list Fleisch → accept the inquiry → order. */
+function tutorialGlowTarget(state: GameState): ModalId {
+  const t = state.tutorial;
+  if (!t?.active) return null;
+  if (t.step === STEP.GROWTH) return 'inquiries';
+  if (t.step === STEP.ORDER) return 'procurement';
+  if (t.step === STEP.MEAT) {
+    if (!isInAssortment(state, 'fleisch')) return 'sortiment';
+    const meatInq = state.inquiries.find((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID);
+    if (meatInq?.status === 'open') return 'inquiries';
+    if (meatInq && state.currentWeekPoId == null) return 'procurement';
+  }
+  return null;
+}
 
 export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; onBuild: () => void }) {
   const { state } = useGame();
@@ -48,8 +59,7 @@ export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; 
       </button>
       {buttons.map((b) => {
         const unlocked = isFeatureUnlocked(state.tutorial, b.id as Feature);
-        const glowStep = b.id ? GLOW_BY_ID[b.id] : undefined;
-        const glow = unlocked && glowStep !== undefined && tutorialOnStep(state.tutorial, glowStep);
+        const glow = unlocked && b.id != null && tutorialGlowTarget(state) === b.id;
         return (
           <button
             key={b.id}

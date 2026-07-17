@@ -317,6 +317,9 @@ export interface GameState {
     step: number;
     celebrateAmount?: number;
     dismissedCoach?: number[];
+    /** One-shot marker: the meat beat already opened the order window once
+     * (closing it without ordering must not reopen it in a loop). */
+    meatOrderPrompted?: boolean;
   } | null;
 
   /** Transient UI cue: game-day the truck animation should play until. */
