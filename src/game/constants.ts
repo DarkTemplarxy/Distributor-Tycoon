@@ -47,7 +47,7 @@ export const WEEKS_PER_YEAR = WEEKS_PER_MONTH * MONTHS_PER_YEAR; // 48
 export const WEEKS_PER_QUARTER = 12; // 3 months per season
 
 /** Fixed monthly warehouse rent, charged together with salaries at month end. */
-export const MONTHLY_RENT = 600;
+export const MONTHLY_RENT = 800;
 
 /** Truck arrives Monday at this hour (0-24). Day fraction 0.75 = 18:00. */
 export const TRUCK_HOUR = 18;
