@@ -15,6 +15,7 @@ import {
   PUTAWAY_HOURS_PER_UNIT,
   SKILL_SPEED_BASELINE,
   SKILL_SPEED_PER_POINT,
+  COUNTER_ACCEPT_SLOPE,
   CREDIT_INTEREST_RATE,
   CREDIT_LIMIT_FLOOR,
   CUSTOMER_EMOJI,
@@ -30,6 +31,7 @@ import {
   ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
+  INQUIRY_PRICE_TIERS,
   KAM_CAPACITY,
   LARGE_UNLOCK_REVENUE,
   MEDIUM_UNLOCK_REVENUE,
@@ -990,6 +992,23 @@ function uniqueCustomerName(state: GameState, type: CustomerType): string {
   return `${pick(pool)} ${uid('n')}`;
 }
 
+/** Draw a wish price for a new inquiry from the tiered spread (good / mid /
+ * lowball as a fraction of list VK). This is the growth brake: many inquiries
+ * arrive, but not all are good business — the player earns growth by choosing. */
+function rollInquiryTargetPrice(listVk: number): number {
+  const r = Math.random();
+  let acc = 0;
+  let range: [number, number] = INQUIRY_PRICE_TIERS[INQUIRY_PRICE_TIERS.length - 1].range;
+  for (const tier of INQUIRY_PRICE_TIERS) {
+    acc += tier.weight;
+    if (r <= acc) {
+      range = tier.range;
+      break;
+    }
+  }
+  return Math.round(listVk * randRange(range[0], range[1]) * 2) / 2;
+}
+
 function maybeGenerateInquiry(state: GameState): void {
   if (Math.random() > INQUIRY_CHANCE_PER_WEEK) return;
   const week = weekOf(state.totalDays);
@@ -1006,7 +1025,7 @@ function maybeGenerateInquiry(state: GameState): void {
     type,
     preferredProduct: preferred,
     suggestedVolume: randInt(minV, maxV),
-    targetPrice: Math.round(product.verkaufspreis * randRange(0.92, 1.02) * 2) / 2,
+    targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
     createdWeek: week,
     expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
     status: 'open',
@@ -1040,7 +1059,7 @@ function maybeGenerateExpansionInquiry(state: GameState): void {
     existingCustomerId: cust.id,
     preferredProduct: productId,
     suggestedVolume: randInt(minV, maxV),
-    targetPrice: Math.round(product.verkaufspreis * randRange(0.92, 1.02) * 2) / 2,
+    targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
     createdWeek: week,
     expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
     status: 'open',
@@ -1058,10 +1077,11 @@ function makeLine(inq: Inquiry, price: number): CustomerLine {
 }
 
 /** Probability a customer accepts a counter offer at `price`. At or below the
- * target it's certain; above target it drops off the greedier the ask. */
+ * target it's certain; above target it drops off the greedier the ask (slope
+ * tuned via COUNTER_ACCEPT_SLOPE so a fair premium lands ~50-70 %). */
 export function counterAcceptChance(targetPrice: number, price: number): number {
   if (price <= targetPrice) return 1;
-  return clamp(1 - (price / targetPrice - 1) * 2.5, 0.05, 1);
+  return clamp(1 - (price / targetPrice - 1) * COUNTER_ACCEPT_SLOPE, 0.05, 1);
 }
 
 /** Immediately onboard an inquiry: create a new customer, or add a product line
@@ -1365,6 +1385,10 @@ function forceTutorialInquiries(state: GameState): void {
   let created = 0;
   for (const id of TUTORIAL_INQUIRY_IDS) {
     if (state.inquiries.some((i) => i.id === id)) continue;
+    // The first inquiry (Annehmen lesson) offers a fair wish price; the second
+    // (Gegenangebot lesson) deliberately lowballs at ~90 % of list, so the player
+    // learns early that accepting is a decision and countering restores margin.
+    const isCounterLesson = id === TUTORIAL_INQUIRY_IDS[1];
     state.inquiries.push({
       id,
       name: uniqueCustomerName(state, 'small'),
@@ -1372,7 +1396,7 @@ function forceTutorialInquiries(state: GameState): void {
       type: 'small',
       preferredProduct: 'fisch',
       suggestedVolume: randInt(minV, maxV),
-      targetPrice: Math.round(product.verkaufspreis * 2) / 2,
+      targetPrice: Math.round(product.verkaufspreis * (isCounterLesson ? 0.9 : 1) * 2) / 2,
       createdWeek: week,
       expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
       status: 'open',

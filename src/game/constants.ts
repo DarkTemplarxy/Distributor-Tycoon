@@ -286,12 +286,34 @@ export const EXPANSION_MIN_LOYALTY = 50;
  * customer's first order isn't automatically late from the supply lead time). */
 export const INQUIRY_FAMILIAR_PRODUCT_CHANCE = 0.7;
 
+/**
+ * Wish-price spread for new inquiries, as a fraction of the product's list sales
+ * price. Growth is braked by QUALITY, not frequency: not every inquiry is a good
+ * deal, so the player earns growth through selection. ~40 % are good (at or just
+ * below list), ~40 % middling (5-10 % under), ~20 % lowball (15-25 % under —
+ * acceptable but a visible bite out of the margin). Weights should sum to 1; the
+ * last tier catches any rounding remainder. Tune here + verify in the harness.
+ */
+export const INQUIRY_PRICE_TIERS: { weight: number; range: [number, number] }[] = [
+  { weight: 0.4, range: [0.97, 1.05] }, // gut: ≥ Listen-VK oder knapp darunter
+  { weight: 0.4, range: [0.9, 0.95] }, // mittel: 5-10 % unter Listen-VK
+  { weight: 0.2, range: [0.75, 0.85] }, // Lowball: 15-25 % unter Listen-VK
+];
+
 /** Weeks a potential customer waits for us to respond to their inquiry. */
 export const INQUIRY_EXPIRY_WEEKS = 3;
 
 /** Quarterly supplier price increase settings. */
 export const SUPPLIER_INCREASE_CHANCE = 0.6;
 export const SUPPLIER_INCREASE_RANGE: [number, number] = [0.03, 0.1];
+
+/**
+ * How sharply a counter-offer's acceptance chance falls as the asked price rises
+ * above the customer's wish. Higher = steeper (premium asks fail more often),
+ * which makes growth naturally irregular. With slope 4: +10 % over wish ≈ 60 %,
+ * +20 % ≈ 20 %. At or below the wish it's always accepted.
+ */
+export const COUNTER_ACCEPT_SLOPE = 4;
 
 // ============================================================================
 // Milestones — "Onkels Notizbuch". Definitions (title, description, condition,

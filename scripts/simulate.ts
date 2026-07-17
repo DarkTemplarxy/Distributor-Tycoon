@@ -26,7 +26,7 @@ import {
   getProduct,
   orderOutlook,
 } from '../src/game/simulation.ts';
-import { acceptInquiry, hireEmployee, placeWeeklyOrder } from '../src/game/actions.ts';
+import { acceptInquiry, counterOffer, hireEmployee, placeWeeklyOrder } from '../src/game/actions.ts';
 import { weekOf } from '../src/game/util.ts';
 import type { CustomerType, GameState } from '../src/game/types.ts';
 
@@ -70,12 +70,12 @@ function orderDeficit(s: GameState) {
   s.pendingOrderWeek = null;
 }
 
-/** Would accepting this inquiry at its wish price reach the product's target
- * margin? Used by the `sinnvoll` bot to only take deals worth taking. */
-function wishPriceHitsTarget(s: GameState, preferredProduct: GameState['products'][number]['id'], wish: number): boolean {
+/** The sales price that yields a product's target margin (rounded to 0.5). The
+ * `sinnvoll` bot secures this: it accepts a wish already at/above it, else
+ * counter-offers up to it (taking the rejection risk — the growth brake). */
+function targetMarginPrice(s: GameState, preferredProduct: GameState['products'][number]['id']): number {
   const p = getProduct(s, preferredProduct);
-  const margin = wish > 0 ? ((wish - p.einkaufspreis) / wish) * 100 : 0;
-  return margin >= p.zielmarge;
+  return Math.round((p.einkaufspreis / (1 - p.zielmarge / 100)) * 2) / 2;
 }
 
 function runSim(strategy: Strategy): RunResult {
@@ -98,19 +98,24 @@ function runSim(strategy: Strategy): RunResult {
     advance(s, 250);
     const wk = weekOf(s.totalDays);
 
-    // --- bot: accept inquiries per strategy ---
+    // --- bot: handle inquiries per strategy ---
     if (strategy !== 'passiv') {
       for (const inq of s.inquiries.filter((i) => i.status === 'open')) {
-        if (inq.existingCustomerId) {
-          // Expansion of an existing customer — greedy takes it, sinnvoll only if it pays.
-          if (strategy === 'greedy' || wishPriceHitsTarget(s, inq.preferredProduct, inq.targetPrice)) {
-            acceptInquiry(s, inq.id);
-          }
-          continue;
+        // New customers need free capacity; expansions of existing ones don't.
+        if (!inq.existingCustomerId && freeCapacity(s, inq.type) <= 0) continue;
+        if (strategy === 'greedy') {
+          acceptInquiry(s, inq.id); // takes everything at the wish price, lowballs included
+        } else {
+          // sinnvoll: reject clear lowballs, secure the target margin on the rest —
+          // accept if the wish already meets it, else counter up to it (may be
+          // rejected → irregular, earned growth).
+          const p = getProduct(s, inq.preferredProduct);
+          const wishMargin = inq.targetPrice > 0 ? ((inq.targetPrice - p.einkaufspreis) / inq.targetPrice) * 100 : 0;
+          if (wishMargin < p.zielmarge * 0.7) continue; // lowball — not worth it
+          const target = targetMarginPrice(s, inq.preferredProduct);
+          if (inq.targetPrice >= target) acceptInquiry(s, inq.id);
+          else counterOffer(s, inq.id, target);
         }
-        if (freeCapacity(s, inq.type) <= 0) continue;
-        if (strategy === 'greedy') acceptInquiry(s, inq.id);
-        else if (wishPriceHitsTarget(s, inq.preferredProduct, inq.targetPrice)) acceptInquiry(s, inq.id);
       }
     }
 
