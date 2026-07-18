@@ -8,7 +8,14 @@ import { BuildBar } from './components/BuildBar';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
 import { buildShelf, buildTable, buildInboundSlot, buildDesk, expandHall, expandOffice } from './game/actions';
-import { notify } from './game/simulation';
+import { isInAssortment, notify } from './game/simulation';
+import {
+  LARGE_UNLOCK_MONTHLY,
+  MEDIUM_UNLOCK_MONTHLY,
+  monthlyRevenue,
+  PRODUCT_DEFS,
+} from './game/constants';
+import { euro, weekOf } from './game/util';
 import { Toasts } from './components/Toasts';
 import { TutorialLayer } from './components/TutorialLayer';
 import { MilestoneLayer } from './components/MilestoneLayer';
@@ -165,6 +172,38 @@ export function App() {
     closeModal();
   };
 
+  // One-time unlock roadmap ("Jetzt geht's los"): after the first full week —
+  // or, for tutorial players, once the tutorial (and its intro/help chain) is
+  // done — show WHAT is still locked and HOW to unlock it. Never stacked on
+  // another window; if everything is already unlocked, mark it silently done.
+  const [unlockIntro, setUnlockIntro] = useState(false);
+  const week = weekOf(state.totalDays);
+  useEffect(() => {
+    if (unlockIntro || state.unlockIntroShown) return;
+    if (state.tutorial !== null || state.gameOver || state.yearComplete) return;
+    if (week < 1 || modal !== null || notebookIntro || buildMode || restartOpen) return;
+    if ((state.celebrateMilestones ?? []).length > 0) return; // Feier zuerst
+    const anythingLocked =
+      PRODUCT_DEFS.some((d) => !isInAssortment(state, d.id)) ||
+      monthlyRevenue(state) < LARGE_UNLOCK_MONTHLY;
+    if (!anythingLocked) {
+      mutate((s) => {
+        s.unlockIntroShown = true;
+      });
+      return;
+    }
+    setUnlockIntro(true);
+    openUi();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [week, state.tutorial, state.gameOver, state.yearComplete, modal, notebookIntro, buildMode, restartOpen]);
+  const closeUnlockIntro = () => {
+    setUnlockIntro(false);
+    mutate((s) => {
+      s.unlockIntroShown = true;
+    });
+    closeUi();
+  };
+
   // A demand inquiry (Wunsch/Ultimatum eines Bestandskunden, Wachstumsmotor B)
   // is a BLOCKING event: auto-open the inquiries screen so the decision can't
   // slip by — the generic auto-pause above holds the clock while it's open.
@@ -271,6 +310,71 @@ export function App() {
               }}
             >
               Alles klar ▶
+            </button>
+          </div>
+        </div>
+      )}
+
+      {unlockIntro && (
+        <div className="overlay-screen">
+          <div className="overlay-card">
+            <div className="big-emoji">🔓</div>
+            <h1>Jetzt geht's los!</h1>
+            <p style={{ maxWidth: 500, margin: '10px auto' }}>
+              Das ist noch gesperrt – und so schaltest du es frei:
+            </p>
+            <div style={{ maxWidth: 500, margin: '0 auto', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {PRODUCT_DEFS.filter((d) => d.unlockWeek > 0).map((d) => {
+                const listed = isInAssortment(state, d.id);
+                return (
+                  <div key={d.id} className="row" style={{ padding: '8px 10px' }}>
+                    <span style={{ fontSize: 20 }}>{d.emoji}</span>
+                    <div className="grow">
+                      <div className="title" style={{ fontSize: 14 }}>{d.name}</div>
+                      <div className="sub">
+                        {listed
+                          ? 'Bereits im Sortiment ✅'
+                          : `Ab Woche ${d.unlockWeek + 1} im 🧺 Sortiment listbar (Gebühr ${euro(d.listingFee)}) – Bestandskunden fragen es irgendwann aktiv nach!`}
+                      </div>
+                    </div>
+                    <span className="pill">{listed ? '✅' : week >= d.unlockWeek ? 'jetzt listbar' : `ab Woche ${d.unlockWeek + 1}`}</span>
+                  </div>
+                );
+              })}
+              <div className="row" style={{ padding: '8px 10px' }}>
+                <span style={{ fontSize: 20 }}>🏨</span>
+                <div className="grow">
+                  <div className="title" style={{ fontSize: 14 }}>Mittlere Kunden (Hotels, Kantinen)</div>
+                  <div className="sub">
+                    Fragen ab <b>{euro(MEDIUM_UNLOCK_MONTHLY)} Monatsumsatz</b> an (rollierende 4
+                    Wochen, aktuell {euro(monthlyRevenue(state))}). Dahin: kleine Kunden über 📨
+                    Anfragen gewinnen, Produktbreite listen, pünktlich liefern.
+                  </div>
+                </div>
+                <span className="pill">{monthlyRevenue(state) >= MEDIUM_UNLOCK_MONTHLY ? '✅' : '🔒'}</span>
+              </div>
+              <div className="row" style={{ padding: '8px 10px' }}>
+                <span style={{ fontSize: 20 }}>🏬</span>
+                <div className="grow">
+                  <div className="title" style={{ fontSize: 14 }}>Große Kunden (Supermärkte)</div>
+                  <div className="sub">
+                    Fragen ab <b>{euro(LARGE_UNLOCK_MONTHLY)} Monatsumsatz</b> an – das
+                    Langzeitziel.
+                  </div>
+                </div>
+                <span className="pill">{monthlyRevenue(state) >= LARGE_UNLOCK_MONTHLY ? '✅' : '🔒'}</span>
+              </div>
+            </div>
+            <p className="hint" style={{ maxWidth: 500, margin: '10px auto 0' }}>
+              Den Fortschritt siehst du jederzeit in 📨 Anfragen; alle Regeln stehen im 📖 Handbuch
+              (Kopfleiste).
+            </p>
+            <button
+              className="btn primary"
+              style={{ fontSize: 15, padding: '10px 22px', marginTop: 10 }}
+              onClick={closeUnlockIntro}
+            >
+              Los geht's ▶
             </button>
           </div>
         </div>

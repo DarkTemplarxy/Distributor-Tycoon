@@ -84,21 +84,34 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
       </p>
 
       <div className="two-col" style={{ marginBottom: 14 }}>
-        {(['small', 'medium', 'large'] as CustomerType[]).map((t) => (
-          <div key={t} className="row" style={{ padding: '8px 10px' }}>
-            <div className="grow">
-              <div className="title" style={{ fontSize: 13 }}>{TYPE_LABEL[t]}e Kunden</div>
-              <div className="sub">
-                {freeCapacity(state, t) > 0
-                  ? `${freeCapacity(state, t)} Platz frei`
-                  : 'kein Manager mit freien Slots – KAM einstellen oder umverteilen'}
+        {(['small', 'medium', 'large'] as CustomerType[]).map((t) => {
+          // Locked segments explain themselves on hover: what unlocks them.
+          const lockedHint =
+            t === 'medium' && monthly < MEDIUM_UNLOCK_MONTHLY
+              ? `Noch gesperrt: Mittlere Kunden (Hotels, Kantinen) fragen erst ab ${euro(MEDIUM_UNLOCK_MONTHLY)} Monatsumsatz an – aktuell ${euro(monthly)}. Dahin kommst du über mehr kleine Kunden, Produktbreite und gute Preise.`
+              : t === 'large' && monthly < LARGE_UNLOCK_MONTHLY
+                ? `Noch gesperrt: Große Kunden (Supermärkte) fragen erst ab ${euro(LARGE_UNLOCK_MONTHLY)} Monatsumsatz an – aktuell ${euro(monthly)}.`
+                : undefined;
+          return (
+            <div key={t} className="row" style={{ padding: '8px 10px' }} title={lockedHint}>
+              <div className="grow">
+                <div className="title" style={{ fontSize: 13 }}>
+                  {TYPE_LABEL[t]}e Kunden{lockedHint ? ' 🔒' : ''}
+                </div>
+                <div className="sub">
+                  {lockedHint
+                    ? `ab ${euro(t === 'medium' ? MEDIUM_UNLOCK_MONTHLY : LARGE_UNLOCK_MONTHLY)} Monatsumsatz`
+                    : freeCapacity(state, t) > 0
+                      ? `${freeCapacity(state, t)} Platz frei`
+                      : 'kein Manager mit freien Slots – KAM einstellen oder umverteilen'}
+                </div>
               </div>
+              <span className={`pill ${lockedHint ? '' : freeCapacity(state, t) > 0 ? 'good' : 'bad'}`}>
+                {lockedHint ? '🔒' : freeCapacity(state, t)}
+              </span>
             </div>
-            <span className={`pill ${freeCapacity(state, t) > 0 ? 'good' : 'bad'}`}>
-              {freeCapacity(state, t)}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {list.length === 0 && (

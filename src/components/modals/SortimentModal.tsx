@@ -47,7 +47,10 @@ export function SortimentModal({ onClose }: { onClose: () => void }) {
               {status === 'active' && <span className="pill good">Im Sortiment</span>}
 
               {status === 'locked' && (
-                <span className="pill" title="Noch nicht freigeschaltet">
+                <span
+                  className="pill"
+                  title={`Diese Produktgruppe wird erst später freigeschaltet (${reason}). Sobald sie verfügbar ist, kannst du sie hier gegen die Listungsgebühr von ${euro(def.listingFee)} aufnehmen – Bestandskunden fragen sie dann auch aktiv nach.`}
+                >
                   🔒 {reason}
                 </span>
               )}
@@ -63,6 +66,11 @@ export function SortimentModal({ onClose }: { onClose: () => void }) {
                         : ''
                     }`}
                     disabled={!affordable}
+                    title={
+                      affordable
+                        ? undefined
+                        : `Gesperrt: Die Listungsgebühr von ${euro(def.listingFee)} übersteigt Kasse + Kreditrahmen.`
+                    }
                     onClick={() => take(def.id)}
                   >
                     Aufnehmen

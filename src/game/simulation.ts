@@ -2153,11 +2153,20 @@ export function advanceTutorial(state: GameState): void {
       break;
     }
     case STEP.MEAT: {
-      // Safety valve first: a week past the first month the statement comes
-      // regardless — the lesson must never hold the locked features hostage.
-      if (state.reports.length >= WEEKS_PER_MONTH + 1) {
+      // The first monthly statement ends the lesson REGARDLESS — the meat beat
+      // is optional and must never hold the locked features hostage. Ignoring
+      // Fleisch is a valid choice: it stays listable in the Sortiment forever,
+      // and the tutorial ends at the same moment as on the guided path.
+      if (state.reports.length >= WEEKS_PER_MONTH) {
+        if (!isInAssortment(state, 'fleisch')) {
+          notify(
+            state,
+            '👴 „Fleisch läuft dir nicht weg – du findest es jederzeit im Sortiment."',
+            'info',
+          );
+        }
         t.step = STEP.MONTH;
-        state.paused = true;
+        state.paused = true; // story overlay — don't let the sim run behind it
         break;
       }
       // Phase A: Fleisch must be listed in the assortment (coach guides there).
@@ -2170,17 +2179,10 @@ export function advanceTutorial(state: GameState): void {
         }
         break;
       }
-      if (state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID && i.status === 'open')) break;
-      // Phase C: restock meat via the REGULAR Saturday window (no forced prompt).
+      // Phase C: restock meat via the REGULAR Saturday window (no forced
+      // prompt) — the marker keeps the coach text honest; the transition above
+      // fires at the week-4 statement either way.
       if (state.pendingOrderWeek != null) t.meatOrderPrompted = true;
-      const orderHandled =
-        state.currentWeekPoId != null || (t.meatOrderPrompted && state.pendingOrderWeek == null);
-      // Lesson done → the first monthly statement closes the tutorial once the
-      // first 4 weeks have settled (time-based, buying capacity stays optional).
-      if (orderHandled && state.reports.length >= WEEKS_PER_MONTH) {
-        t.step = STEP.MONTH;
-        state.paused = true; // story overlay — don't let the sim run behind it
-      }
       break;
     }
     // REWARD→CELEBRATE is set in truckPickup; INTRO/CELEBRATE/MONTH wait on the UI.

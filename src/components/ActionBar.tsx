@@ -35,6 +35,24 @@ function tutorialGlowTarget(state: GameState): ModalId {
   return null;
 }
 
+/** Why a button is still locked and what unlocks it — shown on hover so the
+ * lock is never a mystery. Features without an early tutorial beat open when
+ * the tutorial ends (keyed loosely: 'notebook' is gated but not a Feature). */
+const LOCK_HINT: Record<string, string> = {
+  notebook: '🔒 Öffnet am Ende des Tutorials – der Onkel übergibt dir dann sein Notizbuch mit den Zielen.',
+  inventory: '🔒 Öffnet am Ende des Tutorials – folge einfach Onkels Anleitung.',
+  sortiment: '🔒 Schaltet mit der Fleisch-Lektion des Tutorials frei (sobald Fleisch listbar wird).',
+  procurement: '🔒 Schaltet mit der Bestell-Lektion frei – das erste Bestellfenster öffnet am Samstag.',
+  pricing: '🔒 Öffnet am Ende des Tutorials – folge einfach Onkels Anleitung.',
+  customers: '🔒 Öffnet am Ende des Tutorials – folge einfach Onkels Anleitung.',
+  inquiries: '🔒 Schaltet mit der Wachstums-Lektion frei – schließe zuerst deine erste Lieferung ab.',
+  employees: '🔒 Schaltet mit der Kapazitäts-Lektion frei – erst kommt die erste eigene Lieferung.',
+  finance: '🔒 Schaltet mit der Monats-Lektion des Tutorials frei.',
+  reports: '🔒 Schaltet mit der Monats-Lektion des Tutorials frei.',
+  log: '🔒 Öffnet am Ende des Tutorials – folge einfach Onkels Anleitung.',
+  build: '🔒 Schaltet mit der Kapazitäts-Lektion des Tutorials frei.',
+};
+
 export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; onBuild: () => void }) {
   const { state } = useGame();
 
@@ -68,7 +86,7 @@ export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; 
         className={`action-btn${buildUnlocked ? '' : ' locked'}`}
         onClick={buildUnlocked ? onBuild : undefined}
         disabled={!buildUnlocked}
-        title={buildUnlocked ? 'Lager bauen & erweitern' : 'Im Tutorial noch gesperrt'}
+        title={buildUnlocked ? 'Lager bauen & erweitern' : LOCK_HINT.build}
       >
         <span className="ico">🏗️</span>
         <span>Bauen</span>
@@ -83,7 +101,7 @@ export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; 
             className={`action-btn${unlocked ? '' : ' locked'}${glow ? ' tut-glow' : ''}`}
             onClick={unlocked ? () => onOpen(b.id) : undefined}
             disabled={!unlocked}
-            title={unlocked ? undefined : 'Im Tutorial noch gesperrt'}
+            title={unlocked ? undefined : LOCK_HINT[b.id as string]}
           >
             <span className="ico">{b.icon}</span>
             <span>{b.label}</span>

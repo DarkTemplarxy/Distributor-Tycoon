@@ -393,6 +393,9 @@ export interface GameState {
   /** Ids of just-achieved milestones queued for the celebration overlay. The UI
    * shows them one at a time and clears each as it's dismissed. */
   celebrateMilestones?: string[];
+  /** One-time "Jetzt geht's los" unlock-roadmap popup was shown (after the
+   * first full week / tutorial end). Optional for save compatibility. */
+  unlockIntroShown?: boolean;
   settings: {
     autoPrep: boolean;
     /** The side orders panel is collapsed to a slim handle (persisted). */
