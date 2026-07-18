@@ -4,7 +4,7 @@
 // aggregate over many runs. It's the tool for tuning the early game against the
 // target curve; it adds no runtime dependency to the game (run via `npx tsx`).
 //
-//   npx tsx scripts/simulate.ts [greedy|passiv|sinnvoll|all] [runs] [weeks]
+//   npx tsx scripts/simulate.ts [greedy|passiv|sinnvoll|kam_spam|all] [runs] [weeks]
 //
 // Strategies:
 //   greedy   — accepts EVERY inquiry at its wish price, orders the deficit,
@@ -14,6 +14,16 @@
 //              orders the deficit; grows the operation when it binds: warehouse
 //              worker on slipping deliveries, KAM + desk when customer capacity
 //              is full, shelf/table/hall expansion when storage or prep binds.
+//   kam_spam — MESS-BOT (Messauftrag KAM-Spam): accepts every SMALL inquiry at
+//              its wish price, hires another KAM the moment total free slots
+//              drop below 2 (building desks/office as needed, no cash buffer),
+//              but trails warehouse staff deliberately late (one Lager hire only
+//              after a week with ≥ 1 late order) and never builds shelves or
+//              tables — to expose whether prep capacity brakes the spam.
+//   kam_spam_plus — MESS-BOT variant: the same aggressive small-customer spam
+//              and KAM hiring, but with sinnvoll's infrastructure growth
+//              (lager on lateness, shelves/tables/hall/office). Answers whether
+//              spam dominates once the warehouse is allowed to keep up.
 //
 // simulation.ts / actions.ts use no DOM or browser APIs (localStorage lives only
 // in save/BrowserStorage.ts, which the harness never touches), so the engine runs
@@ -26,8 +36,10 @@ import {
   freeCapacity,
   freeDesks,
   hallExpansionFrontier,
+  managers,
   officeExpansionFrontier,
   orderOutlook,
+  placementBlocksAccess,
   shelfFree,
 } from '../src/game/simulation.ts';
 import {
@@ -50,7 +62,7 @@ import {
 import { weekOf } from '../src/game/util.ts';
 import type { CustomerType, GameState } from '../src/game/types.ts';
 
-type Strategy = 'greedy' | 'passiv' | 'sinnvoll';
+type Strategy = 'greedy' | 'passiv' | 'sinnvoll' | 'kam_spam' | 'kam_spam_plus';
 
 interface WeekRow {
   week: number;
@@ -63,6 +75,15 @@ interface WeekRow {
   spoilage: number;
   open: number;
   late: number;
+  /** Staffing + service trajectory (Messauftrag KAM-Spam). */
+  kams: number;
+  lager: number;
+  stars: number;
+  /** Customers lost during this week (lateness churn + demand churn). */
+  churned: number;
+  /** Average concurrently-busy prep workers over the week vs available tables. */
+  prepBusy: number;
+  tables: number;
 }
 
 interface RunResult {
@@ -85,6 +106,10 @@ interface RunResult {
   /** Demand-path outcomes over the run. */
   ultimatumsHeld: number;
   demandChurns: number;
+  /** Customers lost over the whole run (any churn path). */
+  totalChurned: number;
+  endKams: number;
+  endLager: number;
 }
 
 const activeByType = (s: GameState, t: CustomerType) =>
@@ -109,24 +134,47 @@ function targetMarginPrice(preferredProduct: GameState['products'][number]['id']
   return Math.round((p.einkaufspreis / (1 - p.zielmarge / 100)) * 2) / 2;
 }
 
-/** A free storage tile (no shelf/table) for the sinnvoll bot's build steps. */
+/** A free storage tile (no shelf/table) for the sinnvoll bot's build steps.
+ * Must respect the walkability rule (R2) — the first free tile may be one that
+ * would wall in a neighbour, and the build action would refuse it silently. */
 function freeStorageTile(s: GameState): { gx: number; gy: number } | null {
   for (const t of s.warehouse.tiles) {
     if (t.zone !== 'storage') continue;
     if (s.warehouse.shelves.some((x) => x.gx === t.gx && x.gy === t.gy)) continue;
     if (s.warehouse.tables.some((x) => x.gx === t.gx && x.gy === t.gy)) continue;
+    if (placementBlocksAccess(s, t.gx, t.gy)) continue;
     return t;
   }
   return null;
 }
-/** A free office tile (no desk) for the sinnvoll bot's desk builds. */
+/** A free, walkability-legal office tile (no desk) for desk builds. */
 function freeOfficeTile(s: GameState): { gx: number; gy: number } | null {
   for (const t of s.warehouse.tiles) {
     if (t.zone !== 'office') continue;
     if (s.warehouse.desks.some((d) => d.gx === t.gx && d.gy === t.gy)) continue;
+    if (placementBlocksAccess(s, t.gx, t.gy)) continue;
     return t;
   }
   return null;
+}
+
+/** kam_spam staffing (Messauftrag): the moment fewer than 2 slots are free
+ * across ALL managers, hire another KAM immediately — building a desk (and, if
+ * the office is full, an office expansion) as needed. No cash buffer beyond
+ * what the actions themselves refuse; warehouse staff is handled elsewhere
+ * (deliberately late, one hire per late week). */
+function kamSpamStaffing(s: GameState) {
+  const totalFree = managers(s).reduce((sum, m) => sum + m.free, 0);
+  if (totalFree >= 2) return;
+  if (freeDesks(s) <= 0) {
+    const tile = freeOfficeTile(s);
+    if (tile) buildDesk(s, tile.gx, tile.gy);
+    else {
+      const blk = officeExpansionFrontier(s)[0];
+      if (blk) expandOffice(s, blk);
+    }
+  }
+  if (freeDesks(s) > 0) hireEmployee(s, 'kam');
 }
 
 /** The sinnvoll bot's growth step: expand whatever currently binds, but only
@@ -183,6 +231,10 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
   let reportsSeen = 0;
   let lastLate = 0;
   let demandChurns = 0;
+  let totalChurned = 0;
+  let weekChurned = 0;
+  let prepSamples = 0;
+  let tickSamples = 0;
   const seenNotes = new Set<string>();
   let guard = 0;
 
@@ -197,6 +249,10 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
         if (!inq.existingCustomerId && freeCapacity(s, inq.type) <= 0) continue;
         if (strategy === 'greedy') {
           acceptInquiry(s, inq.id); // takes everything at the wish price, lowballs included
+        } else if (strategy === 'kam_spam' || strategy === 'kam_spam_plus') {
+          // Spam: every SMALL inquiry at the wish price (incl. demand inquiries
+          // of existing small customers — they're annehmbar and add volume).
+          if (inq.type === 'small') acceptInquiry(s, inq.id);
         } else {
           // sinnvoll: reject clear lowballs, secure the target margin on the rest —
           // accept if the wish already meets it, else counter up to it (may be
@@ -215,22 +271,41 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     // --- bot: order the deficit whenever the weekly window opens ---
     if (s.pendingOrderWeek != null) orderDeficit(s);
 
-    // --- bot: sinnvoll hires a warehouse worker when deliveries slip ---
-    if (strategy === 'sinnvoll' && s.stats.lateOrders > lastLate) {
+    // --- bot: sinnvoll (and the supported spam) hire a warehouse worker when
+    // deliveries slip ---
+    if ((strategy === 'sinnvoll' || strategy === 'kam_spam_plus') && s.stats.lateOrders > lastLate) {
       const lager = s.employees.filter((e) => e.role === 'lager').length;
       if (lager < 10) hireEmployee(s, 'lager');
     }
     lastLate = s.stats.lateOrders;
 
-    // --- bot: sinnvoll grows the operation when something binds ---
-    if (strategy === 'sinnvoll') sinnvollGrowth(s);
+    // --- bot: sinnvoll (and the supported spam) grow the operation when
+    // something binds ---
+    if (strategy === 'sinnvoll' || strategy === 'kam_spam_plus') sinnvollGrowth(s);
 
-    // Demand-path churn is only visible in the notification stream (scanned
-    // incrementally — the log is capped, an end-of-run scan misses early ones).
+    // --- bot: the spam bots hire KAMs aggressively (naked kam_spam trails the
+    // warehouse only per-week, see the report block below — deliberately too
+    // late/too little) ---
+    if (strategy === 'kam_spam' || strategy === 'kam_spam_plus') kamSpamStaffing(s);
+
+    // --- measurement: average concurrent prep workers per week ---
+    prepSamples += s.employees.filter((e) => e.task?.kind === 'prep').length;
+    tickSamples += 1;
+
+    // Churn is only visible in the notification stream (scanned incrementally —
+    // the log is capped, an end-of-run scan misses early ones). Lateness churn
+    // says "hat gekündigt", demand churn "zum Konkurrenten gewechselt".
     for (const note of s.notifications) {
       if (seenNotes.has(note.id)) continue;
       seenNotes.add(note.id);
-      if (note.message.includes('zum Konkurrenten gewechselt')) demandChurns++;
+      if (note.message.includes('zum Konkurrenten gewechselt')) {
+        demandChurns++;
+        totalChurned++;
+        weekChurned++;
+      } else if (note.message.includes('hat gekündigt')) {
+        totalChurned++;
+        weekChurned++;
+      }
     }
 
     // milestone celebrations pause via the UI layer; here just drain the queue
@@ -268,8 +343,21 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
         spoilage: r.spoilageLoss,
         open: s.orders.filter((o) => o.status === 'pending').length,
         late: r.lateOrders,
+        kams: s.employees.filter((e) => e.role === 'kam').length,
+        lager: s.employees.filter((e) => e.role === 'lager').length,
+        stars: s.serviceStars,
+        churned: weekChurned,
+        prepBusy: tickSamples > 0 ? prepSamples / tickSamples : 0,
+        tables: s.warehouse.tables.length,
       });
+      weekChurned = 0;
+      prepSamples = 0;
+      tickSamples = 0;
       reportsSeen = s.reports.length;
+
+      // kam_spam: deliberately minimal warehouse staffing — ONE extra Lager hire,
+      // and only after a week that provably ended with ≥ 1 late order.
+      if (strategy === 'kam_spam' && r.lateOrders >= 1) hireEmployee(s, 'lager');
     }
 
     if (s.gameOver) {
@@ -294,6 +382,9 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     endProducts: s.products.length,
     ultimatumsHeld: s.stats.ultimatumsHeld,
     demandChurns,
+    totalChurned,
+    endKams: s.employees.filter((e) => e.role === 'kam').length,
+    endLager: s.employees.filter((e) => e.role === 'lager').length,
   };
 }
 
@@ -304,11 +395,13 @@ const eur = (n: number) => Math.round(n).toLocaleString('de-DE');
 
 function printWeeklyTable(res: RunResult) {
   console.log(
-    [pad('W', 3), pad('Cash', 9), pad('Gewinn', 8), pad('k', 3), pad('m', 3), pad('g', 3), pad('Umsatz', 8), pad('Verderb', 8), pad('offen', 6), pad('spät', 5)].join(' '),
+    [pad('W', 3), pad('Cash', 9), pad('Gewinn', 8), pad('kum.Gew', 9), pad('k', 3), pad('m', 3), pad('g', 3), pad('KAM', 3), pad('Lag', 3), pad('⭐', 4), pad('spät', 5), pad('churn', 5), pad('prep', 7), pad('Verderb', 8)].join(' '),
   );
+  let cum = 0;
   for (const r of res.rows) {
+    cum += r.profit;
     console.log(
-      [pad(r.week, 3), pad(eur(r.cash), 9), pad((r.profit >= 0 ? '+' : '') + eur(r.profit), 8), pad(r.k, 3), pad(r.m, 3), pad(r.g, 3), pad(eur(r.revenue), 8), pad(eur(r.spoilage), 8), pad(r.open, 6), pad(r.late, 5)].join(' '),
+      [pad(r.week, 3), pad(eur(r.cash), 9), pad((r.profit >= 0 ? '+' : '') + eur(r.profit), 8), pad((cum >= 0 ? '+' : '') + eur(cum), 9), pad(r.k, 3), pad(r.m, 3), pad(r.g, 3), pad(r.kams, 3), pad(r.lager, 3), pad(r.stars.toFixed(1), 4), pad(r.late, 5), pad(r.churned, 5), pad(`${r.prepBusy.toFixed(1)}/${r.tables}`, 7), pad(eur(r.spoilage), 8)].join(' '),
     );
   }
 }
@@ -353,6 +446,57 @@ function aggregate(strategy: Strategy, N: number, weeks: number) {
     ' · Ultimaten gehalten Ø ' + avg(runs.map((r) => r.ultimatumsHeld)).toFixed(1) +
     ' · Demand-Abwanderungen Ø ' + avg(runs.map((r) => r.demandChurns)).toFixed(1),
   );
+
+  // --- Messauftrag KAM-Spam: Verlaufs- und Grenzertrags-Kennzahlen -----------
+  const cumProfitAt = (run: RunResult, w: number) =>
+    run.rows.filter((r) => r.week <= w).reduce((sum, r) => sum + r.profit, 0);
+  const cps = [12, 24, 36, 48, 72, 95].filter((w) => w < weeks);
+  console.log(
+    'Kum. Gewinn Ø:   ' + cps.map((w) => `W${w} ${eur(avg(runs.map((r) => cumProfitAt(r, w))))}€`).join(' · '),
+  );
+  console.log(
+    'Sterne Ø:        ' + cps.map((w) => `W${w} ${weekMetric(runs, w, (r) => r.stars).toFixed(1)}`).join(' · ') +
+    '  ·  spät/Woche Ø: ' + cps.map((w) => `W${w} ${weekMetric(runs, w, (r) => r.late).toFixed(1)}`).join(' · '),
+  );
+  console.log(
+    'Abwanderungen gesamt Ø: ' + avg(runs.map((r) => r.totalChurned)).toFixed(1) +
+    ' · KAMs Ende Ø ' + avg(runs.map((r) => r.endKams)).toFixed(1) +
+    ' · Lager Ende Ø ' + avg(runs.map((r) => r.endLager)).toFixed(1),
+  );
+  // Erste Woche, ab der Verspätungen REGELMÄSSIG auftreten (≥1 spät in zwei
+  // aufeinanderfolgenden Wochen) + Kundenzahl an dem Punkt.
+  const regular = runs
+    .map((run) => {
+      for (let i = 0; i + 1 < run.rows.length; i++) {
+        if (run.rows[i].late >= 1 && run.rows[i + 1].late >= 1) return run.rows[i];
+      }
+      return null;
+    })
+    .filter((r): r is WeekRow => r != null);
+  console.log(
+    'Regelmäßig spät ab: ' + (regular.length
+      ? `Ø Woche ${avg(regular.map((r) => r.week)).toFixed(1)} bei Ø ${avg(regular.map((r) => r.k + r.m + r.g)).toFixed(1)} Kunden (${regular.length}/${N} Läufen)`
+      : `nie (${N} Läufe)`),
+  );
+  // Grenzertrag je KAM-Stufe: Ø Wochengewinn und Ø Kundenzahl, solange k KAMs
+  // beschäftigt waren (über alle Läufe gepoolt; Wochen mit Stufenwechsel zählen
+  // zur neuen Stufe).
+  const byKams = new Map<number, { profits: number[]; customers: number[] }>();
+  for (const run of runs) {
+    for (const r of run.rows) {
+      const b = byKams.get(r.kams) ?? { profits: [], customers: [] };
+      b.profits.push(r.profit);
+      b.customers.push(r.k + r.m + r.g);
+      byKams.set(r.kams, b);
+    }
+  }
+  console.log('Gewinn nach KAM-Zahl (Ø Woche · Ø Kunden · n Wochen):');
+  for (const k of [...byKams.keys()].sort((a, b) => a - b)) {
+    const b = byKams.get(k)!;
+    console.log(
+      `  ${k} KAM: ${(avg(b.profits) >= 0 ? '+' : '') + eur(avg(b.profits))}€ · ${avg(b.customers).toFixed(1)} Kunden · ${b.profits.length} Wo.`,
+    );
+  }
   return runs;
 }
 
@@ -361,7 +505,7 @@ function aggregate(strategy: Strategy, N: number, weeks: number) {
 const arg = (process.argv[2] ?? 'all') as Strategy | 'all';
 const N = Number(process.argv[3] ?? 25);
 const WEEKS = Number(process.argv[4] ?? 48);
-const strategies: Strategy[] = arg === 'all' ? ['passiv', 'greedy', 'sinnvoll'] : [arg];
+const strategies: Strategy[] = arg === 'all' ? ['passiv', 'greedy', 'sinnvoll', 'kam_spam'] : [arg];
 
 for (const strat of strategies) {
   const runs = aggregate(strat, N, WEEKS);
