@@ -163,6 +163,24 @@ export function App() {
     closeModal();
   };
 
+  // A demand inquiry (Wunsch/Ultimatum eines Bestandskunden, Wachstumsmotor B)
+  // is a BLOCKING event: auto-open the inquiries screen so the decision can't
+  // slip by — the generic auto-pause above holds the clock while it's open.
+  const seenDemandIdsRef = useRef<Set<string>>(new Set());
+  const openDemandKey = state.inquiries
+    .filter((i) => i.status === 'open' && i.demand)
+    .map((i) => i.id)
+    .join(',');
+  useEffect(() => {
+    const fresh = state.inquiries.filter(
+      (i) => i.status === 'open' && i.demand && !seenDemandIdsRef.current.has(i.id),
+    );
+    if (fresh.length === 0) return;
+    for (const i of fresh) seenDemandIdsRef.current.add(i.id);
+    if (!state.gameOver && !state.yearComplete) openModal('inquiries');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDemandKey, state.gameOver, state.yearComplete]);
+
   return (
     <div className="app">
       <TopBar onRestart={openRestart} onHelp={() => openModal('help')} />

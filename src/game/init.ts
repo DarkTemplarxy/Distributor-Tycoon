@@ -73,6 +73,7 @@ function makeCustomers(): Customer[] {
     loyalty: 70,
     lateDeliveries: 0,
     activeDiscount: 0,
+    sinceWeek: 0, // the uncle's regulars have been customers "forever"
     active: true,
     nextOrderWeek: 0,
     volatility: CUSTOMER_VOLATILITY.small,
@@ -198,6 +199,8 @@ export function createInitialState(): GameState {
     purchaseOrders: [],
     scheduledPayments: [],
     inquiries: [],
+    pendingUltimatums: [],
+    lastDemandWeek: null,
 
     warehouse: makeWarehouse(),
 
@@ -241,6 +244,7 @@ export function createInitialState(): GameState {
       lateOrders: 0,
       spoiledUnits: 0,
       spoilageLoss: 0,
+      ultimatumsHeld: 0,
     },
     milestones: MILESTONE_DEFS.map((d) => ({ id: d.id, achievedWeek: null })),
     // Auto-prep starts OFF so the tutorial's first beat teaches manual Herrichten;

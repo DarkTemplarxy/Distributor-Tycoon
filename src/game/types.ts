@@ -87,6 +87,9 @@ export interface Customer {
   volatility: number;
   /** Active discount fraction (0 - 0.20) the player granted. */
   activeDiscount: number;
+  /** Week this customer was won (starting customers: 0). Only established
+   * customers (≥ DEMAND_MIN_CUSTOMER_WEEKS) ever voice product demands. */
+  sinceWeek: number;
   active: boolean;
 }
 
@@ -105,6 +108,19 @@ export interface Inquiry {
   /** Week the inquiry disappears if untouched. */
   expiryWeek: number;
   status: 'open' | 'accepted' | 'expired';
+  /** Set on demand inquiries (Wachstumsmotor): an established customer WANTS a
+   * new product group. Stage 1 is the friendly wish; rejecting/ignoring it
+   * schedules stage 2, the ultimatum — rejecting THAT churns the customer
+   * completely. `deadlineWeek` (== expiryWeek) drives the visible countdown. */
+  demand?: { stage: 1 | 2; deadlineWeek: number };
+}
+
+/** A scheduled stage-2 escalation: after a rejected/expired wish, the same
+ * customer returns with an ultimatum for the same product in `fireWeek`. */
+export interface PendingUltimatum {
+  customerId: string;
+  productId: ProductId;
+  fireWeek: number;
 }
 
 export interface Order {
@@ -274,6 +290,8 @@ export interface GameStats {
   lateOrders: number;
   spoiledUnits: number;
   spoilageLoss: number;
+  /** Ultimatums answered by adding the demanded line — the customer stayed. */
+  ultimatumsHeld: number;
 }
 
 /** Per-milestone progress — pure serialisable data. The title/description/
@@ -307,6 +325,12 @@ export interface GameState {
   purchaseOrders: PurchaseOrder[];
   scheduledPayments: ScheduledPayment[];
   inquiries: Inquiry[];
+  /** Scheduled demand escalations (Wachstumsmotor Stufe 2). At most one process
+   * runs company-wide, so this rarely holds more than one entry. */
+  pendingUltimatums: PendingUltimatum[];
+  /** Week the last demand process ENDED (accepted/churned/skipped) — anchor for
+   * the frequency cap (DEMAND_COOLDOWN_WEEKS). Null before the first one. */
+  lastDemandWeek: number | null;
 
   warehouse: {
     /** The footprint as grid tiles. 'ramp' tiles (front) host the inbound &

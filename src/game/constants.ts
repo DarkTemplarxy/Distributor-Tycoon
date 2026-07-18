@@ -4,7 +4,7 @@
 
 import type { CustomerType, GameState, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 15;
+export const SAVE_VERSION = 16;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -290,11 +290,35 @@ export const CUSTOMER_EMOJI: Record<CustomerType, string> = {
 /** New-inquiry chance per week (only checked when there is free capacity). */
 export const INQUIRY_CHANCE_PER_WEEK = 0.8;
 
-/** Chance per week that an existing (loyal) customer asks to add another product line. */
-export const EXPANSION_INQUIRY_CHANCE_PER_WEEK = 0.35;
+// ---------------------------------------------------------------------------
+// Wachstumsmotor (Paket B): established customers DEMAND a new product group —
+// Wunsch (Stufe 1) → Ultimatum (Stufe 2) → complete churn. Growth pressure by
+// loss aversion, strictly dosed: at most ONE active process company-wide, with
+// a cooldown after each one ends (no Dauerfeuer).
+// ---------------------------------------------------------------------------
 
-/** Minimum loyalty before a customer will consider expanding its assortment. */
-export const EXPANSION_MIN_LOYALTY = 50;
+/** Weeks that must pass after one demand process ENDS before the next may start. */
+export const DEMAND_COOLDOWN_WEEKS = 5;
+/** Chance per week (after the cooldown) that an eligible customer voices a wish. */
+export const DEMAND_CHANCE_PER_WEEK = 0.5;
+/** Only loyal customers threaten to leave — you must "own" them first. */
+export const DEMAND_MIN_LOYALTY = 60;
+/** …and only established ones (weeks since they became a customer). */
+export const DEMAND_MIN_CUSTOMER_WEEKS = 6;
+/** Customers already buying this many product groups are content — they never
+ * demand more (coupling with the breadth rule: 2 suffice, see Paket C). */
+export const DEMAND_MAX_LINES = 2;
+/** Stufe 1 (friendly wish): deadline in weeks, drawn from this range. */
+export const DEMAND_STAGE1_DEADLINE: [number, number] = [1, 4];
+/** Weeks after a rejected/expired wish until the same customer returns with the
+ * ultimatum (Stufe 2). */
+export const DEMAND_ESCALATION_DELAY: [number, number] = [3, 6];
+/** Stufe 2 (ultimatum): deadline in weeks, drawn from this range. */
+export const DEMAND_STAGE2_DEADLINE: [number, number] = [2, 3];
+/** Loyalty gains: accepting the wish is appreciated; holding the ultimatum is a
+ * relief moment — the relationship recovers noticeably, no grudge. */
+export const DEMAND_STAGE1_LOYALTY_GAIN = 5;
+export const DEMAND_STAGE2_LOYALTY_GAIN = 15;
 
 /** Chance a new inquiry is for a product you already actively sell (so a new
  * customer's first order isn't automatically late from the supply lead time). */

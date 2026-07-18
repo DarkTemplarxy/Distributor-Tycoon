@@ -26,8 +26,16 @@ import {
   CUSTOMER_VOLATILITY,
   CUSTOMER_VOLUME_RANGE,
   DAYS_PER_WEEK,
-  EXPANSION_INQUIRY_CHANCE_PER_WEEK,
-  EXPANSION_MIN_LOYALTY,
+  DEMAND_CHANCE_PER_WEEK,
+  DEMAND_COOLDOWN_WEEKS,
+  DEMAND_ESCALATION_DELAY,
+  DEMAND_MAX_LINES,
+  DEMAND_MIN_CUSTOMER_WEEKS,
+  DEMAND_MIN_LOYALTY,
+  DEMAND_STAGE1_DEADLINE,
+  DEMAND_STAGE1_LOYALTY_GAIN,
+  DEMAND_STAGE2_DEADLINE,
+  DEMAND_STAGE2_LOYALTY_GAIN,
   INQUIRY_CHANCE_PER_WEEK,
   INQUIRY_DAY_OF_WEEK,
   ORDER_DAY_OF_WEEK,
@@ -1363,24 +1371,33 @@ function maybeGenerateInquiry(state: GameState): void {
   );
 }
 
-/** An existing loyal customer asks to add another in-assortment product line. */
-function maybeGenerateExpansionInquiry(state: GameState): void {
-  if (Math.random() > EXPANSION_INQUIRY_CHANCE_PER_WEEK) return;
-  const week = weekOf(state.totalDays);
-  const assortment = state.products.map((p) => p.id);
-  const eligible = state.customers.filter(
-    (c) =>
-      c.active &&
-      c.loyalty >= EXPANSION_MIN_LOYALTY &&
-      assortment.some((pid) => !c.lines.some((l) => l.productId === pid)),
+// --- Demand engine (Wachstumsmotor Paket B) ---------------------------------
+// Established customers WANT more product groups: Wunsch (Stufe 1, friendly,
+// 1-4 week deadline) → on rejection/expiry an Ultimatum 3-6 weeks later (Stufe
+// 2, 2-3 week deadline) → on rejection/expiry the customer churns COMPLETELY.
+// Strictly dosed: one process company-wide, cooldown after each one ends.
+
+/** True while a demand process is running anywhere (open demand inquiry or a
+ * scheduled ultimatum) — no second one may start meanwhile. */
+function demandProcessActive(state: GameState): boolean {
+  return (
+    state.inquiries.some((i) => i.status === 'open' && i.demand) ||
+    state.pendingUltimatums.length > 0
   );
-  if (eligible.length === 0) return;
-  const cust = pick(eligible);
-  const missing = assortment.filter((pid) => !cust.lines.some((l) => l.productId === pid));
-  const productId = pick(missing);
-  const product = getProduct(state, productId);
+}
+
+/** Build the demand inquiry (both stages share the shape; the stage lives in
+ * `demand`, the deadline doubles as expiryWeek so the normal expiry drives it). */
+function pushDemandInquiry(
+  state: GameState,
+  cust: Customer,
+  productId: ProductId,
+  stage: 1 | 2,
+  deadlineWeek: number,
+): void {
+  const product = inquiryProductInfo(state, productId);
   const [minV, maxV] = CUSTOMER_VOLUME_RANGE[cust.type];
-  const inquiry: Inquiry = {
+  state.inquiries.push({
     id: uid('inq'),
     name: cust.name,
     emoji: cust.emoji,
@@ -1389,12 +1406,124 @@ function maybeGenerateExpansionInquiry(state: GameState): void {
     preferredProduct: productId,
     suggestedVolume: randInt(minV, maxV),
     targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
-    createdWeek: week,
-    expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
+    createdWeek: weekOf(state.totalDays),
+    expiryWeek: deadlineWeek,
     status: 'open',
-  };
-  state.inquiries.push(inquiry);
-  notify(state, `🔁 ${cust.name} möchte zusätzlich ${product.emoji} ${product.name} beziehen.`, 'info');
+    demand: { stage, deadlineWeek },
+  });
+}
+
+/** Thursday: maybe an established, loyal customer voices a wish for a product
+ * group they don't buy from us yet (Stufe 1). Conditions keep it fair and rare:
+ * loyal + established customers only, the product must be listable, customers
+ * already at DEMAND_MAX_LINES groups are content, one process at a time. */
+function maybeGenerateDemand(state: GameState): void {
+  const week = weekOf(state.totalDays);
+  if (demandProcessActive(state)) return;
+  if (state.lastDemandWeek != null && week - state.lastDemandWeek < DEMAND_COOLDOWN_WEEKS) return;
+  if (Math.random() > DEMAND_CHANCE_PER_WEEK) return;
+
+  // Anything listable counts — including products the player hasn't listed yet
+  // (the wish is exactly what pulls them toward listing, see Paket A).
+  const listable = [
+    ...state.products.map((p) => p.id),
+    ...listableUnlistedProducts(state),
+  ];
+  const candidates: { cust: Customer; missing: ProductId[] }[] = [];
+  for (const cust of state.customers) {
+    if (!cust.active) continue;
+    if (cust.loyalty < DEMAND_MIN_LOYALTY) continue;
+    if (week - cust.sinceWeek < DEMAND_MIN_CUSTOMER_WEEKS) continue;
+    if (cust.lines.length >= DEMAND_MAX_LINES) continue;
+    const missing = listable.filter((pid) => !cust.lines.some((l) => l.productId === pid));
+    if (missing.length > 0) candidates.push({ cust, missing });
+  }
+  if (candidates.length === 0) return;
+  const { cust, missing } = pick(candidates);
+  const productId = pick(missing);
+  const deadline = week + randInt(DEMAND_STAGE1_DEADLINE[0], DEMAND_STAGE1_DEADLINE[1]);
+  pushDemandInquiry(state, cust, productId, 1, deadline);
+  const product = inquiryProductInfo(state, productId);
+  notify(
+    state,
+    `🙋 ${cust.name} würde gern auch ${product.emoji} ${product.name} bei uns beziehen – Antwort in ${deadline - week} Wochen fällig.`,
+    'info',
+  );
+}
+
+/** Thursday: due stage-2 escalations become the ULTIMATUM inquiry. A firing
+ * that has become moot (customer gone, line meanwhile added, or already content
+ * at DEMAND_MAX_LINES) ends the process silently. */
+function fireDueUltimatums(state: GameState): void {
+  const week = weekOf(state.totalDays);
+  const due = state.pendingUltimatums.filter((u) => u.fireWeek <= week);
+  if (due.length === 0) return;
+  state.pendingUltimatums = state.pendingUltimatums.filter((u) => u.fireWeek > week);
+  for (const u of due) {
+    const cust = state.customers.find((c) => c.id === u.customerId);
+    const moot =
+      !cust ||
+      !cust.active ||
+      cust.lines.some((l) => l.productId === u.productId) ||
+      cust.lines.length >= DEMAND_MAX_LINES;
+    if (moot) {
+      state.lastDemandWeek = week; // process over — cooldown starts
+      continue;
+    }
+    const deadline = week + randInt(DEMAND_STAGE2_DEADLINE[0], DEMAND_STAGE2_DEADLINE[1]);
+    pushDemandInquiry(state, cust, u.productId, 2, deadline);
+    const product = inquiryProductInfo(state, u.productId);
+    notify(
+      state,
+      `⚠️ ULTIMATUM: ${cust.name} braucht einen Distributor, der auch ${product.emoji} ${product.name} liefert – sonst wechseln sie in ${deadline - week} Wochen KOMPLETT zum Konkurrenten!`,
+      'error',
+    );
+  }
+}
+
+/** The demanded line never came: the customer leaves completely — all lines,
+ * all revenue. The pain is quantified so the loss is felt, not vague. */
+function churnDemandCustomer(state: GameState, cust: Customer, productId: ProductId): void {
+  const product = getProductDef(productId);
+  const weeklyRevenue = Math.round(cust.lines.reduce((s, l) => s + l.volume * l.price, 0));
+  cust.active = false;
+  releaseCustomerOrders(state, cust.id);
+  notify(
+    state,
+    `❌ ${cust.name} ist zum Konkurrenten gewechselt (${product.name} fehlte im Sortiment). Verlorener Wochenumsatz: ~${weeklyRevenue}€.`,
+    'error',
+  );
+}
+
+/** Central rejection path for demand inquiries — called when one is dismissed,
+ * expires, or a counter offer on it falls through. Stufe 1 → schedule the
+ * ultimatum; Stufe 2 → the customer churns completely (only ever after this
+ * DOUBLE rejection — never without both warnings). */
+export function resolveDemandRejection(state: GameState, inq: Inquiry): void {
+  if (!inq.demand) return;
+  const week = weekOf(state.totalDays);
+  inq.status = 'expired';
+  const cust = state.customers.find((c) => c.id === inq.existingCustomerId);
+  if (!cust || !cust.active) {
+    state.lastDemandWeek = week;
+    return;
+  }
+  if (inq.demand.stage === 1) {
+    const product = getProductDef(inq.preferredProduct);
+    state.pendingUltimatums.push({
+      customerId: cust.id,
+      productId: inq.preferredProduct,
+      fireWeek: week + randInt(DEMAND_ESCALATION_DELAY[0], DEMAND_ESCALATION_DELAY[1]),
+    });
+    notify(
+      state,
+      `😕 ${cust.name} ist enttäuscht – das Thema ${product.emoji} ${product.name} ist damit nicht vom Tisch.`,
+      'warn',
+    );
+  } else {
+    churnDemandCustomer(state, cust, inq.preferredProduct);
+    state.lastDemandWeek = week;
+  }
 }
 
 function makeLine(inq: Inquiry, price: number): CustomerLine {
@@ -1427,6 +1556,31 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
     const product = getProduct(state, inq.preferredProduct);
     // The new line orders together with the customer's other lines on its day.
     cust.lines.push(makeLine(inq, price));
+    if (inq.demand) {
+      // Demand answered — the process ends here: cooldown starts, any scheduled
+      // escalation for this product is moot, loyalty reacts per stage.
+      state.lastDemandWeek = week;
+      state.pendingUltimatums = state.pendingUltimatums.filter(
+        (u) => !(u.customerId === cust.id && u.productId === inq.preferredProduct),
+      );
+      if (inq.demand.stage === 2) {
+        cust.loyalty = clamp(cust.loyalty + DEMAND_STAGE2_LOYALTY_GAIN, 0, 100);
+        state.stats.ultimatumsHeld += 1;
+        notify(
+          state,
+          `😅 ${cust.name} bleibt! ${product.emoji} ${product.name} kommt dazu (${inq.suggestedVolume}× @ ${price}€) – die Beziehung erholt sich spürbar.`,
+          'success',
+        );
+      } else {
+        cust.loyalty = clamp(cust.loyalty + DEMAND_STAGE1_LOYALTY_GAIN, 0, 100);
+        notify(
+          state,
+          `🤝 ${cust.name} freut sich: ${product.emoji} ${product.name} kommt dazu (${inq.suggestedVolume}× @ ${price}€). Loyalität steigt.`,
+          'success',
+        );
+      }
+      return;
+    }
     notify(
       state,
       `🎉 ${cust.name} nimmt zusätzlich ${product.emoji} ${product.name} ab! ${inq.suggestedVolume}× @ ${price}€.`,
@@ -1462,6 +1616,7 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
     deliveryLeadWeeks: CUSTOMER_LEAD_WEEKS[inq.type],
     volatility: CUSTOMER_VOLATILITY[inq.type],
     activeDiscount: 0,
+    sinceWeek: week,
     active: true,
   };
   state.customers.push(customer);
@@ -1477,6 +1632,11 @@ function expireInquiries(state: GameState): void {
   const week = weekOf(state.totalDays);
   for (const inq of state.inquiries) {
     if (inq.status === 'open' && inq.expiryWeek <= week) {
+      // Letting a demand deadline lapse counts as a rejection (escalate/churn).
+      if (inq.demand) {
+        resolveDemandRejection(state, inq);
+        continue;
+      }
       inq.status = 'expired';
       notify(state, `⌛ Anfrage von ${inq.name} ist verfallen.`, 'info');
     }
@@ -1710,7 +1870,10 @@ function onDayStart(state: GameState, dayIndex: number): void {
       (t) => freeCapacity(state, t) > 0,
     );
     if (hasFreeCapacity) maybeGenerateInquiry(state);
-    maybeGenerateExpansionInquiry(state);
+    // Demand engine (Wachstumsmotor): due ultimatums first, then maybe a new
+    // wish — never both in one week (the active-process check blocks it).
+    fireDueUltimatums(state);
+    maybeGenerateDemand(state);
   }
 
   // Weekly order window: Saturday, after this week's customer orders are in (so

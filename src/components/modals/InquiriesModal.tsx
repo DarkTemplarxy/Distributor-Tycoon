@@ -11,7 +11,7 @@ import {
 } from '../../game/constants';
 import { STEP, TUTORIAL_INQUIRY_IDS, TUTORIAL_MEAT_INQUIRY_ID, tutorialOnStep } from '../../game/tutorial';
 import type { CustomerType } from '../../game/types';
-import { euro } from '../../game/util';
+import { euro, weekOf } from '../../game/util';
 import { PRODUCT_COLOR } from '../shared';
 
 const TYPE_LABEL: Record<CustomerType, string> = { small: 'Klein', medium: 'Mittel', large: 'Groß' };
@@ -114,6 +114,12 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
           const listingFee = getProductDef(inq.preferredProduct).listingFee;
           const isExpansion = !!inq.existingCustomerId;
           const noCapacity = !isExpansion && freeCapacity(state, inq.type) <= 0;
+          // Demand inquiries (Wachstumsmotor) carry a visible countdown; the
+          // ultimatum stage is unmistakably marked.
+          const demand = inq.demand;
+          const weeksLeft = demand
+            ? Math.max(1, demand.deadlineWeek - weekOf(state.totalDays))
+            : 0;
           // Guided steps: glow Annehmen on the uncle's first inquiry; once it's
           // handled, glow Gegenangebot on the second — with the higher price
           // pre-filled so the button is immediately actionable.
@@ -135,7 +141,13 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                       <span className="pill good">🔁 Bestandskunde: {inq.name}</span>
                     ) : (
                       <span className="pill">✨ Neukunde</span>
-                    )}
+                    )}{' '}
+                    {demand &&
+                      (demand.stage === 2 ? (
+                        <span className="pill bad">⚠️ ULTIMATUM · noch {weeksLeft} Wo.</span>
+                      ) : (
+                        <span className="pill warn">🙋 Wunsch · noch {weeksLeft} Wo.</span>
+                      ))}
                   </div>
                   <div className="sub">
                     {isExpansion ? 'Möchte zusätzlich:' : 'Wunsch:'}{' '}
@@ -149,6 +161,14 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                         <span className="pill warn">
                           Erfordert Listung von {product.name} (Gebühr {euro(listingFee)})
                         </span>
+                      </>
+                    )}
+                    {demand?.stage === 2 && (
+                      <>
+                        {' '}
+                        <b style={{ color: 'var(--bad)' }}>
+                          Sonst wechselt {inq.name} komplett zum Konkurrenten!
+                        </b>
                       </>
                     )}
                   </div>
@@ -200,7 +220,17 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                   ⚖ Gegenangebot
                 </button>
 
-                <button className="btn ghost small" onClick={() => mutate((s) => dismissInquiry(s, inq.id))}>
+                <button
+                  className="btn ghost small"
+                  title={
+                    demand?.stage === 2
+                      ? 'Ablehnen: Der Kunde wandert KOMPLETT ab (alle Linien)!'
+                      : demand
+                        ? 'Ablehnen: Das Thema kommt als Ultimatum wieder.'
+                        : undefined
+                  }
+                  onClick={() => mutate((s) => dismissInquiry(s, inq.id))}
+                >
                   Ablehnen
                 </button>
               </div>

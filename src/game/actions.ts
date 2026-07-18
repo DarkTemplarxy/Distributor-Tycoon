@@ -40,6 +40,7 @@ import {
   notify,
   placementBlocksAccess,
   releaseWorkerTask,
+  resolveDemandRejection,
   spend,
   tryPrepareOrder,
 } from './simulation';
@@ -453,12 +454,21 @@ export function counterOffer(state: GameState, inquiryId: string, price: number)
   }
   inq.status = 'expired';
   notify(state, `✗ ${inq.name} lehnt dein Gegenangebot (${offered}€) ab – der Deal ist geplatzt.`, 'warn');
+  // A failed counter on a demand inquiry counts as a rejection: the wish
+  // escalates, the ultimatum churns (the player knowingly took the gamble).
+  if (inq.demand) resolveDemandRejection(state, inq);
   return { ok: true };
 }
 
 export function dismissInquiry(state: GameState, inquiryId: string): void {
   const inq = state.inquiries.find((i) => i.id === inquiryId);
-  if (inq) inq.status = 'expired';
+  if (!inq || inq.status !== 'open') return;
+  // Dismissing a demand inquiry is an explicit rejection — escalate or churn.
+  if (inq.demand) {
+    resolveDemandRejection(state, inq);
+    return;
+  }
+  inq.status = 'expired';
 }
 
 // --- Finance ----------------------------------------------------------------
