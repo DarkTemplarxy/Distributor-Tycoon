@@ -36,6 +36,7 @@ import {
   freeCapacity,
   freeDesks,
   hallExpansionFrontier,
+  inboundFree,
   managers,
   officeExpansionFrontier,
   orderOutlook,
@@ -45,6 +46,7 @@ import {
 import {
   acceptInquiry,
   buildDesk,
+  buildInboundSlot,
   buildShelf,
   buildTable,
   counterOffer,
@@ -180,9 +182,19 @@ function kamSpamStaffing(s: GameState) {
   if (freeDesks(s) > 0) hireEmployee(s, 'kam');
 }
 
+/** Units the active customer base orders per week — the bot's infrastructure
+ * reactions scale with this (fixed thresholds under-build once the volume
+ * factors make lines bigger). */
+function weeklyDemandUnits(s: GameState): number {
+  return s.customers
+    .filter((c) => c.active)
+    .reduce((sum, c) => sum + c.lines.reduce((a, l) => a + l.volume, 0), 0);
+}
+
 /** The sinnvoll bot's growth step: expand whatever currently binds, but only
  * with spare cash — customer capacity (desk + KAM), shelf space (shelf or hall
- * expansion), prep throughput (tables). One action per bind and tick. */
+ * expansion), prep throughput (tables), inbound dock. One action per bind and
+ * tick. */
 function sinnvollGrowth(s: GameState) {
   const monthly = monthlyRevenue(s);
   // 1. Customer capacity: small full, or medium unlocked & full → desk + KAM.
@@ -200,8 +212,9 @@ function sinnvollGrowth(s: GameState) {
     }
     if (freeDesks(s) > 0) hireEmployee(s, 'kam');
   }
-  // 2. Shelf headroom vs the growing weekly volume.
-  if (shelfFree(s) < 150 && s.cash > 6000) {
+  // 2. Shelf headroom vs the growing weekly volume — the threshold scales with
+  // actual demand (fixed 150 under-builds once lines carry bigger volumes).
+  if (shelfFree(s) < Math.max(150, weeklyDemandUnits(s) * 0.6) && s.cash > 6000) {
     const tile = freeStorageTile(s);
     if (tile) buildShelf(s, tile.gx, tile.gy);
     else {
@@ -211,9 +224,15 @@ function sinnvollGrowth(s: GameState) {
   }
   // 3. Prep tables scale with the warehouse crew.
   const lager = s.employees.filter((e) => e.role === 'lager').length;
-  if (s.warehouse.tables.length < Math.min(6, lager) && s.cash > 4000) {
+  if (s.warehouse.tables.length < Math.min(8, lager) && s.cash > 4000) {
     const tile = freeStorageTile(s);
     if (tile) buildTable(s, tile.gx, tile.gy);
+  }
+  // 4. Inbound dock: keep at least two pallets of unloading buffer free, so
+  // Monday deliveries don't jam for days (bigger volumes jam the fixed 6).
+  if (inboundFree(s) < 80 && s.cash > 3000) {
+    const ramp = s.warehouse.tiles.find((t) => t.zone === 'ramp');
+    if (ramp) buildInboundSlot(s, ramp.gx, ramp.gy);
   }
 }
 
@@ -278,7 +297,7 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     // deliveries slip ---
     if ((strategy === 'sinnvoll' || strategy === 'kam_spam_plus') && s.stats.lateOrders > lastLate) {
       const lager = s.employees.filter((e) => e.role === 'lager').length;
-      if (lager < 10) hireEmployee(s, 'lager');
+      if (lager < 12) hireEmployee(s, 'lager');
     }
     lastLate = s.stats.lateOrders;
 
