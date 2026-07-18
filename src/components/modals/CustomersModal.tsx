@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { assignCustomerManager, repriceCooldownLeft, setCustomerLinePrice, setDiscount } from '../../game/actions';
-import { managers, notify, repriceAcceptChance } from '../../game/simulation';
-import { demandUpliftFromDiscount, getProductDef, SLOT_COST } from '../../game/constants';
+import { freeCapacity, managers, notify, repriceAcceptChance } from '../../game/simulation';
+import { demandUpliftFromDiscount, getProductDef, MANAGER_SLOTS, SLOT_COST } from '../../game/constants';
 import type { Customer, CustomerLine, CustomerType, Product } from '../../game/types';
 import { weekOf } from '../../game/util';
 import { CustomerTypeFilter, Stars, PRODUCT_COLOR, useCustomerTypeFilter } from '../shared';
@@ -104,6 +104,43 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
         <b>Service-Sterne</b> erhöhen Chance und Spielraum (bis ~45% Marge) – und Kunden mit sehr
         niedriger Loyalität <b>kündigen</b> nach Vorwarnung.
       </p>
+      {(() => {
+        // Kopfzeile: aktueller Kundenstand + freie Betreuungskapazität. Slots
+        // zählen PRO Manager (klein 1 / mittel 2 / groß 6) — deshalb steht hier
+        // zusätzlich, wie viele Kunden je Größe tatsächlich noch Platz hätten.
+        const mgrs = managers(state);
+        const totalSlots = mgrs.length * MANAGER_SLOTS;
+        const usedSlots = mgrs.reduce((s, m) => s + m.used, 0);
+        return (
+          <div className="two-col" style={{ marginBottom: 10 }}>
+            <div className="row" style={{ padding: '8px 10px' }} title="Aktive Kunden nach Größe (klein / mittel / groß).">
+              <div className="grow">
+                <div className="title" style={{ fontSize: 13 }}>Aktuelle Kunden</div>
+                <div className="sub">
+                  {countOf('small')} klein · {countOf('medium')} mittel · {countOf('large')} groß
+                </div>
+              </div>
+              <span className="pill good">{active.length}</span>
+            </div>
+            <div
+              className="row"
+              style={{ padding: '8px 10px' }}
+              title={`Belegte Betreuungs-Slots über alle Manager (${mgrs.map((m) => `${m.name}: ${m.used}/${MANAGER_SLOTS}`).join(' · ')}). Ein Kunde belegt ${SLOT_COST.small}/${SLOT_COST.medium}/${SLOT_COST.large} Slots (klein/mittel/groß) bei EINEM Manager — für mehr Platz einen KAM einstellen oder Kunden umverteilen.`}
+            >
+              <div className="grow">
+                <div className="title" style={{ fontSize: 13 }}>Noch Platz für</div>
+                <div className="sub">
+                  {freeCapacity(state, 'small')} kleine · {freeCapacity(state, 'medium')} mittlere ·{' '}
+                  {freeCapacity(state, 'large')} große Kunden
+                </div>
+              </div>
+              <span className={`pill ${usedSlots < totalSlots ? 'good' : 'bad'}`}>
+                {usedSlots}/{totalSlots} Slots
+              </span>
+            </div>
+          </div>
+        );
+      })()}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <span className="sub">Anzeigen:</span>
         <CustomerTypeFilter

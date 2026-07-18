@@ -49,22 +49,38 @@ export function ReportsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="Reports & Statistik" icon="📊" onClose={onClose} wide>
+      <p className="hint">
+        <b>So liest du den Report:</b> Gewinn = Umsatz − Ware − Personal − Miete − Logistik −
+        Zinsen. <b>Umsatz</b> zählt erst, wenn Geld wirklich eingeht (kleine Kunden zahlen bei
+        Abholung, mittlere nach 7, große nach 14 Tagen). <b>Ware</b> sind bezahlte Einkäufe inkl.
+        Listungsgebühren und Express-Aufschlägen. <b>Personal & Miete</b> werden je Woche anteilig
+        ausgewiesen, aber erst am Monatsende abgebucht — deshalb kann die Kasse anders schwanken
+        als der Gewinn. <b>Verderb</b> ist kein eigener Abzug: Weggeworfene Ware wurde beim Einkauf
+        schon bezahlt und steckt bereits in „Ware" — die Spalte zeigt dir, wie viel davon umsonst
+        war.
+      </p>
       <div className="report-grid">
-        <div className="stat-box">
+        <div className="stat-box" title="Alle je erhaltenen Zahlungen seit Spielstart.">
           <div className="k">Umsatz gesamt</div>
           <div className="v">{euro(state.stats.totalRevenue)}</div>
         </div>
-        <div className="stat-box">
+        <div
+          className="stat-box"
+          title="Summe aller Wochengewinne (Umsatz − Ware − Personal − Miete − Logistik − Zinsen) seit Spielstart."
+        >
           <div className="k">Gewinn kumuliert</div>
           <div className="v" style={{ color: state.stats.totalProfit >= 0 ? 'var(--good)' : 'var(--bad)' }}>
             {euro(state.stats.totalProfit)}
           </div>
         </div>
-        <div className="stat-box">
+        <div className="stat-box" title="Erfolgreich an den LKW übergebene Aufträge.">
           <div className="k">Gelieferte Aufträge</div>
           <div className="v">{state.stats.deliveredOrders}</div>
         </div>
-        <div className="stat-box">
+        <div
+          className="stat-box"
+          title={`Verspätete Aufträge (kosten Sterne & Loyalität) · verdorbene Einheiten (Wertverlust bisher ${euro(state.stats.spoilageLoss)}).`}
+        >
           <div className="k">Verspätungen · Verderb</div>
           <div className="v">
             {state.stats.lateOrders} · {state.stats.spoiledUnits}
@@ -83,7 +99,8 @@ export function ReportsModal({ onClose }: { onClose: () => void }) {
           </div>
           <p className="hint" style={{ marginTop: 8 }}>
             Personal & Miete werden anteilig je Woche ausgewiesen (echter Wochengewinn), aber erst
-            am Monatsende (Woche 4) tatsächlich vom Konto abgebucht.
+            am Monatsende (Woche 4) tatsächlich vom Konto abgebucht. Jede Kennzahl erklärt sich
+            beim Draufzeigen.
           </p>
           <div className="rows" style={{ marginTop: 10 }}>
             {selMonth.weeks.map((r) => (
@@ -95,12 +112,41 @@ export function ReportsModal({ onClose }: { onClose: () => void }) {
                     {r.lateOrders > 0 ? ` · ${r.lateOrders} spät` : ''}
                   </div>
                 </div>
-                <span className="pill good">Umsatz {euro(r.revenue)}</span>
-                <span className="pill">EK {euro(r.purchases)}</span>
-                {r.salaries > 0 && <span className="pill">Lohn {euro(r.salaries)}</span>}
-                {r.rent > 0 && <span className="pill">Miete {euro(r.rent)}</span>}
-                <span className="pill">Logistik {euro(r.logistics)}</span>
-                <span className={`pill ${r.profit >= 0 ? 'good' : 'bad'}`}>Gewinn {euro(r.profit)}</span>
+                <span className="pill good" title="In dieser Woche eingegangene Zahlungen (kleine Kunden bei Abholung, mittlere +7, große +14 Tage).">
+                  Umsatz {euro(r.revenue)}
+                </span>
+                <span className="pill" title="Bezahlte Wareneinkäufe dieser Woche inkl. Listungsgebühren und Express-Aufschlägen.">
+                  EK {euro(r.purchases)}
+                </span>
+                {r.salaries > 0 && (
+                  <span className="pill" title="Wochenanteil der Gehälter (abgebucht wird gesammelt am Monatsende; Einstellungs-Vorkasse zählt in der Einstellungswoche).">
+                    Lohn {euro(r.salaries)}
+                  </span>
+                )}
+                {r.rent > 0 && (
+                  <span className="pill" title="Wochenanteil der Miete: Basis + 50 € je gebauter Erweiterung (abgebucht am Monatsende).">
+                    Miete {euro(r.rent)}
+                  </span>
+                )}
+                <span className="pill" title="LKW-Kosten: 20 € je abgeholter Palette.">
+                  Logistik {euro(r.logistics)}
+                </span>
+                {r.spoilageLoss > 0 && (
+                  <span className="pill bad" title={`${r.spoiledUnits} Einheiten verdorben. Kein zusätzlicher Abzug — die Ware wurde beim Einkauf schon bezahlt (steckt in EK); so viel davon war umsonst.`}>
+                    Verderb {euro(r.spoilageLoss)}
+                  </span>
+                )}
+                {r.interest > 0 && (
+                  <span className="pill" title="Kreditzinsen: 2 % pro Woche auf den genutzten Kredit.">
+                    Zinsen {euro(r.interest)}
+                  </span>
+                )}
+                <span
+                  className={`pill ${r.profit >= 0 ? 'good' : 'bad'}`}
+                  title="Umsatz − EK − Lohn − Miete − Logistik − Zinsen. Verderb ist in EK enthalten."
+                >
+                  Gewinn {euro(r.profit)}
+                </span>
               </div>
             ))}
           </div>
@@ -144,14 +190,15 @@ export function ReportsModal({ onClose }: { onClose: () => void }) {
                     {m.lateOrders > 0 ? ` · ${m.lateOrders} spät` : ''}
                   </div>
                 </div>
-                <span className="pill good">Umsatz {euro(m.revenue)}</span>
-                <span className="pill">Ware {euro(m.purchases)}</span>
-                <span className="pill">Logistik {euro(m.logistics)}</span>
-                <span className="pill">Personal {euro(m.salaries)}</span>
-                <span className="pill">Miete {euro(m.rent)}</span>
+                <span className="pill good" title="Eingegangene Zahlungen des Monats.">Umsatz {euro(m.revenue)}</span>
+                <span className="pill" title="Bezahlte Wareneinkäufe inkl. Gebühren/Express.">Ware {euro(m.purchases)}</span>
+                <span className="pill" title="LKW-Kosten (20 € je Palette).">Logistik {euro(m.logistics)}</span>
+                <span className="pill" title="Gehälter des Monats (inkl. Einstellungs-Vorkasse).">Personal {euro(m.salaries)}</span>
+                <span className="pill" title="Miete: Basis + 50 € je Erweiterung.">Miete {euro(m.rent)}</span>
                 <span
                   className={`pill ${m.profit >= 0 ? 'good' : 'bad'}`}
                   style={{ fontWeight: 700 }}
+                  title="Umsatz − Ware − Personal − Miete − Logistik − Zinsen."
                 >
                   {m.profit >= 0 ? 'Gewinn' : 'Verlust'} {euro(m.profit)}
                 </span>
