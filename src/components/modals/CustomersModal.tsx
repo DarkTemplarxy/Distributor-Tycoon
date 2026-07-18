@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { setCustomerLinePrice, setDiscount } from '../../game/actions';
-import { demandUpliftFromDiscount } from '../../game/constants';
+import { assignCustomerManager, setCustomerLinePrice, setDiscount } from '../../game/actions';
+import { managers } from '../../game/simulation';
+import { demandUpliftFromDiscount, SLOT_COST } from '../../game/constants';
 import type { Customer, CustomerLine, CustomerType, Product } from '../../game/types';
 import { CustomerTypeFilter, Stars, PRODUCT_COLOR, useCustomerTypeFilter } from '../shared';
 
@@ -98,7 +99,26 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
                     {c.name} <span className="pill">{TYPE_LABEL[c.type]}</span>{' '}
                     <span className="pill good">~{Math.round(weeklyRevenue)}€/Woche</span>
                   </div>
-                  <div className="sub">Lieferzeit {c.deliveryLeadWeeks}W</div>
+                  <div className="sub" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    Lieferzeit {c.deliveryLeadWeeks}W · Manager
+                    <select
+                      className="num-input"
+                      style={{ width: 'auto', padding: '1px 4px', fontSize: 12 }}
+                      value={c.managerId}
+                      onChange={(e) => mutate((s) => assignCustomerManager(s, c.id, e.target.value))}
+                      title={`Belegt ${SLOT_COST[c.type]} Slot(s) beim betreuenden Manager`}
+                    >
+                      {managers(state).map((m) => {
+                        const here = m.id === c.managerId;
+                        const fits = here || m.free >= SLOT_COST[c.type];
+                        return (
+                          <option key={m.id} value={m.id} disabled={!fits}>
+                            {m.name} ({here ? 'aktuell' : `${m.free} frei`})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <Stars value={c.serviceRating} />

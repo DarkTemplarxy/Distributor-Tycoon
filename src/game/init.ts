@@ -3,6 +3,7 @@
 // ============================================================================
 
 import {
+  CHEF_MANAGER_ID,
   CREDIT_LIMIT_FLOOR,
   CUSTOMER_LEAD_WEEKS,
   CUSTOMER_VOLATILITY,
@@ -67,6 +68,7 @@ function makeProducts(): Product[] {
 
 function makeCustomers(): Customer[] {
   const base = {
+    managerId: CHEF_MANAGER_ID, // the uncle's two regulars start with the player
     serviceRating: 3,
     loyalty: 70,
     lateDeliveries: 0,

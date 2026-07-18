@@ -4,7 +4,7 @@
 
 import type { CustomerType, GameState, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -157,16 +157,22 @@ export const ROLE_EMOJI: Record<Role, string> = {
 export const HIRE_WEEKS_UPFRONT = 4;
 
 /** Customer capacity added per KAM, plus a base the player handles alone. */
-export const BASE_CUSTOMER_CAPACITY: Record<CustomerType, number> = {
-  small: 8,
-  medium: 0,
-  large: 0,
+/**
+ * KAM slot system (Entscheidungen R2): customer capacity is counted in slots
+ * PER MANAGER — the player ("Chef") and every KAM each have MANAGER_SLOTS. A
+ * customer occupies SLOT_COST[type] slots at exactly ONE manager, and a new
+ * customer needs that many free slots at a SINGLE manager (no pooling across
+ * managers) — fragmentation is a deliberate part of the game: a large customer
+ * needs one manager with 6 completely free slots.
+ */
+export const MANAGER_SLOTS = 6;
+export const SLOT_COST: Record<CustomerType, number> = {
+  small: 1,
+  medium: 2,
+  large: 6,
 };
-export const KAM_CAPACITY: Record<CustomerType, number> = {
-  small: 6,
-  medium: 3,
-  large: 1,
-};
+/** Sentinel manager id for the player themself. */
+export const CHEF_MANAGER_ID = 'chef';
 
 /**
  * Monthly-revenue thresholds that unlock bigger customers (Entscheidungen R2/R3).

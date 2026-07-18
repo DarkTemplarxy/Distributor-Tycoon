@@ -2,22 +2,23 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import {
   HIRE_WEEKS_UPFRONT,
-  KAM_CAPACITY,
+  MANAGER_SLOTS,
   MONTHLY_RENT,
   ROLE_EMOJI,
   ROLE_LABEL,
   ROLE_SALARY,
+  SLOT_COST,
   TRAINING_COST,
   WEEKS_PER_MONTH,
 } from '../../game/constants';
-import { capacityFor, deskCount, freeDesks, kamCount, usedCapacity } from '../../game/simulation';
+import { deskCount, freeDesks, managers } from '../../game/simulation';
 import { fireEmployee, hireEmployee, trainEmployee } from '../../game/actions';
 import { euro } from '../../game/util';
 import type { Role } from '../../game/types';
 
 const HIREABLE: { role: Role; benefit: string }[] = [
   { role: 'lager', benefit: 'Richtet Ware her – mehr Personal = schnellere Palettenvorbereitung.' },
-  { role: 'kam', benefit: `Kapazität für Kunden (${KAM_CAPACITY.small} kleine / ${KAM_CAPACITY.medium} mittlere / ${KAM_CAPACITY.large} große).` },
+  { role: 'kam', benefit: `+${MANAGER_SLOTS} Kunden-Slots (klein=${SLOT_COST.small}, mittel=${SLOT_COST.medium}, groß=${SLOT_COST.large} Slots) – Kapazität gilt PRO Manager.` },
   { role: 'einkaeufer', benefit: 'Übernimmt die automatische Nachbestellung (bedarfsbasiert) und verhandelt Lieferanten-Preiserhöhungen herunter.' },
 ];
 
@@ -33,16 +34,30 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
         {HIRE_WEEKS_UPFRONT} Wochen im Voraus. Training +10 Skill für {euro(TRAINING_COST)}.
       </p>
 
-      <div className="two-col" style={{ marginBottom: 16 }}>
-        <div className="row" style={{ padding: '8px 10px' }}>
-          <div className="grow">
-            <div className="title" style={{ fontSize: 13 }}>KAM-Kapazität (klein)</div>
-            <div className="sub">{kamCount(state)} KAM angestellt</div>
+      <h3>Kunden-Slots pro Manager</h3>
+      <p className="hint" style={{ marginTop: 2 }}>
+        Jeder Manager (du + jeder KAM) betreut max. {MANAGER_SLOTS} Slots: klein={SLOT_COST.small},
+        mittel={SLOT_COST.medium}, groß={SLOT_COST.large}. Ein neuer Kunde braucht seine Slots bei{' '}
+        <b>einem</b> Manager – umverteilen geht in der Kunden-Ansicht.
+      </p>
+      <div className="two-col" style={{ marginBottom: 12 }}>
+        {managers(state).map((m) => (
+          <div key={m.id} className="row" style={{ padding: '8px 10px' }}>
+            <span style={{ fontSize: 18 }}>{m.isChef ? '👔' : '🧑‍💼'}</span>
+            <div className="grow">
+              <div className="title" style={{ fontSize: 13 }}>{m.name}</div>
+              <div className="sub">
+                {m.counts.small} klein · {m.counts.medium} mittel · {m.counts.large} groß
+              </div>
+            </div>
+            <span className={`pill ${m.free > 0 ? 'good' : 'bad'}`}>
+              {m.used}/{MANAGER_SLOTS} Slots
+            </span>
           </div>
-          <span className="pill">
-            {usedCapacity(state, 'small')} / {capacityFor(state, 'small')}
-          </span>
-        </div>
+        ))}
+      </div>
+
+      <div className="two-col" style={{ marginBottom: 16 }}>
         <div className="row" style={{ padding: '8px 10px' }}>
           <div className="grow">
             <div className="title" style={{ fontSize: 13 }}>Einkäufer</div>

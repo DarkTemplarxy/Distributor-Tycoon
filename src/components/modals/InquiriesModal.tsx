@@ -82,9 +82,7 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
               <div className="sub">
                 {freeCapacity(state, t) > 0
                   ? `${freeCapacity(state, t)} Platz frei`
-                  : t === 'small'
-                    ? 'voll – KAM einstellen'
-                    : 'gesperrt / voll'}
+                  : 'kein Manager mit freien Slots – KAM einstellen oder umverteilen'}
               </div>
             </div>
             <span className={`pill ${freeCapacity(state, t) > 0 ? 'good' : 'bad'}`}>

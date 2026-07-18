@@ -17,6 +17,7 @@ import {
   ROLE_LABEL,
   ROLE_SALARY,
   SHELF_PRICE,
+  SLOT_COST,
   SHELF_SLOTS,
   TABLE_PRICE,
   TRAINING_COST,
@@ -34,6 +35,7 @@ import {
   getProduct,
   isFrontierBlock,
   isInAssortment,
+  managers,
   notify,
   releaseWorkerTask,
   spend,
@@ -252,9 +254,46 @@ export function trainEmployee(state: GameState, employeeId: string): ActionResul
   return { ok: true };
 }
 
+/** Try to move all of `managerId`'s active customers to the other managers
+ * (largest slot cost first, fullest-fitting target). Plans first, applies only
+ * if EVERY customer finds room — never loses a customer. */
+function redistributeCustomers(state: GameState, managerId: string): boolean {
+  const others = managers(state).filter((m) => m.id !== managerId);
+  const free = new Map(others.map((m) => [m.id, m.free]));
+  const moving = state.customers
+    .filter((c) => c.active && c.managerId === managerId)
+    .sort((a, b) => SLOT_COST[b.type] - SLOT_COST[a.type]);
+  const plan: [string, string][] = [];
+  for (const c of moving) {
+    const cost = SLOT_COST[c.type];
+    let best: string | null = null;
+    for (const [id, f] of free) {
+      if (f >= cost && (best === null || f > free.get(best)!)) best = id;
+    }
+    if (best === null) return false;
+    free.set(best, free.get(best)! - cost);
+    plan.push([c.id, best]);
+  }
+  for (const [cid, mid] of plan) {
+    state.customers.find((c) => c.id === cid)!.managerId = mid;
+  }
+  return true;
+}
+
 export function fireEmployee(state: GameState, employeeId: string): ActionResult {
   const emp = state.employees.find((e) => e.id === employeeId);
   if (!emp) return { ok: false, message: 'Mitarbeiter nicht gefunden.' };
+  // A departing KAM's customers move to managers with free slots — if they
+  // don't all fit, the player must re-distribute or hire first (no customer is
+  // ever dropped).
+  const hadCustomers =
+    emp.role === 'kam' && state.customers.some((c) => c.active && c.managerId === emp.id);
+  if (hadCustomers && !redistributeCustomers(state, emp.id)) {
+    return {
+      ok: false,
+      message: 'Die Kunden dieses KAM haben bei niemandem Platz – erst Kunden umverteilen oder einen KAM einstellen.',
+    };
+  }
   // A running task is released cleanly (order back to the queue, goods
   // returned) instead of blocking the dismissal — nothing is lost or duplicated.
   const hadTask = !!emp.task;
@@ -262,7 +301,7 @@ export function fireEmployee(state: GameState, employeeId: string): ActionResult
   state.employees = state.employees.filter((e) => e.id !== employeeId);
   notify(
     state,
-    `👋 ${emp.name} wurde entlassen.${hadTask ? ' Die laufende Aufgabe geht zurück in die Warteschlange.' : ''}`,
+    `👋 ${emp.name} wurde entlassen.${hadCustomers ? ' Die betreuten Kunden wurden umverteilt.' : ''}${hadTask ? ' Die laufende Aufgabe geht zurück in die Warteschlange.' : ''}`,
     'info',
   );
   return { ok: true };
@@ -274,6 +313,24 @@ export function setDiscount(state: GameState, customerId: string, discount: numb
   const cust = state.customers.find((c) => c.id === customerId);
   if (!cust) return;
   cust.activeDiscount = clamp(discount, 0, 0.2);
+}
+
+/** Move a customer to another manager (Chef or a KAM). The target needs the
+ * customer's slot cost free — the minimal re-distribution tool that makes
+ * fragmentation dead-ends solvable. */
+export function assignCustomerManager(state: GameState, customerId: string, managerId: string): ActionResult {
+  const cust = state.customers.find((c) => c.id === customerId);
+  if (!cust) return { ok: false, message: 'Kunde nicht gefunden.' };
+  if (cust.managerId === managerId) return { ok: true };
+  const target = managers(state).find((m) => m.id === managerId);
+  if (!target) return { ok: false, message: 'Manager nicht gefunden.' };
+  const cost = SLOT_COST[cust.type];
+  if (target.free < cost) {
+    return { ok: false, message: `${target.name} hat nur ${target.free} freie Slots (${cost} nötig).` };
+  }
+  cust.managerId = managerId;
+  notify(state, `🔀 ${cust.name} wird jetzt von ${target.isChef ? 'dir' : target.name} betreut.`, 'info');
+  return { ok: true };
 }
 
 /**
@@ -325,9 +382,13 @@ export function acceptInquiry(state: GameState, inquiryId: string): ActionResult
   if (inq.status !== 'open') {
     return { ok: false, message: 'Anfrage ist nicht mehr offen.' };
   }
-  // New customers need free KAM capacity; expansions of existing customers don't.
+  // New customers need SLOT_COST[type] free slots at ONE manager; expansions of
+  // existing customers don't (their manager keeps them).
   if (!inq.existingCustomerId && freeCapacity(state, inq.type) <= 0) {
-    return { ok: false, message: 'Keine KAM-Kapazität für diesen Kundentyp frei.' };
+    return {
+      ok: false,
+      message: `Kein Manager hat ${SLOT_COST[inq.type]} freie Slots – stelle einen KAM ein oder verteile Kunden um.`,
+    };
   }
   onboardInquiry(state, inq);
   return { ok: true };
@@ -343,7 +404,10 @@ export function counterOffer(state: GameState, inquiryId: string, price: number)
     return { ok: false, message: 'Anfrage ist nicht mehr offen.' };
   }
   if (!inq.existingCustomerId && freeCapacity(state, inq.type) <= 0) {
-    return { ok: false, message: 'Keine KAM-Kapazität für diesen Kundentyp frei.' };
+    return {
+      ok: false,
+      message: `Kein Manager hat ${SLOT_COST[inq.type]} freie Slots – stelle einen KAM ein oder verteile Kunden um.`,
+    };
   }
   const offered = Math.max(1, Math.round(price * 100) / 100);
   // During the tutorial's growth beat the customer deliberately says yes, so the

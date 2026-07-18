@@ -10,7 +10,9 @@
 
 import {
   BANKRUPTCY_CASH,
-  BASE_CUSTOMER_CAPACITY,
+  CHEF_MANAGER_ID,
+  MANAGER_SLOTS,
+  SLOT_COST,
   PREP_HOURS_PER_UNIT,
   PUTAWAY_HOURS_PER_UNIT,
   SKILL_SPEED_BASELINE,
@@ -32,7 +34,6 @@ import {
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
   INQUIRY_PRICE_TIERS,
-  KAM_CAPACITY,
   LARGE_UNLOCK_MONTHLY,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
@@ -355,16 +356,56 @@ export function freeDesks(state: GameState): number {
   return Math.max(0, deskCount(state) - officeStaffCount(state));
 }
 
-export function capacityFor(state: GameState, type: CustomerType): number {
-  return BASE_CUSTOMER_CAPACITY[type] + kamCount(state) * KAM_CAPACITY[type];
+// --- Manager slots (KAM-Slot-System, Entscheidungen R2) ----------------------
+
+export interface ManagerInfo {
+  id: string;
+  name: string;
+  isChef: boolean;
+  /** Slots occupied by this manager's active customers. */
+  used: number;
+  free: number;
+  counts: Record<CustomerType, number>;
 }
 
-export function usedCapacity(state: GameState, type: CustomerType): number {
-  return state.customers.filter((c) => c.active && c.type === type).length;
+/** All managers (the player "Chef" first, then every KAM) with their live slot
+ * occupancy. Capacity is per manager — never pooled. */
+export function managers(state: GameState): ManagerInfo[] {
+  const base: { id: string; name: string; isChef: boolean }[] = [
+    { id: CHEF_MANAGER_ID, name: 'Chef (du)', isChef: true },
+    ...state.employees
+      .filter((e) => e.role === 'kam')
+      .map((e) => ({ id: e.id, name: e.name, isChef: false })),
+  ];
+  return base.map((m) => {
+    const cust = state.customers.filter((c) => c.active && c.managerId === m.id);
+    const used = cust.reduce((s, c) => s + SLOT_COST[c.type], 0);
+    return {
+      ...m,
+      used,
+      free: Math.max(0, MANAGER_SLOTS - used),
+      counts: {
+        small: cust.filter((c) => c.type === 'small').length,
+        medium: cust.filter((c) => c.type === 'medium').length,
+        large: cust.filter((c) => c.type === 'large').length,
+      },
+    };
+  });
 }
 
+/** The manager who should take a new customer of `type`: the one with the most
+ * free slots that still fits it. Null when NO single manager has room — pooled
+ * leftovers don't count (fragmentation is intended). */
+export function bestManagerFor(state: GameState, type: CustomerType): ManagerInfo | null {
+  const fitting = managers(state).filter((m) => m.free >= SLOT_COST[type]);
+  if (fitting.length === 0) return null;
+  return fitting.reduce((a, b) => (b.free > a.free ? b : a));
+}
+
+/** How many MORE customers of `type` could be taken right now, honoring the
+ * per-manager slot check (a fragmented 3+3 yields 0 for a large customer). */
 export function freeCapacity(state: GameState, type: CustomerType): number {
-  return capacityFor(state, type) - usedCapacity(state, type);
+  return managers(state).reduce((s, m) => s + Math.floor(m.free / SLOT_COST[type]), 0);
 }
 
 /** True once the company employs at least one Einkäufer (unlocks auto-restock). */
@@ -1258,12 +1299,25 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
     return;
   }
 
+  // Slot check per manager: the new customer needs SLOT_COST[type] free slots
+  // at ONE manager (auto-assigned to the one with the most room).
+  const mgr = bestManagerFor(state, inq.type);
+  if (!mgr) {
+    notify(
+      state,
+      `❌ Kein Manager hat ${SLOT_COST[inq.type]} freie Slots für ${inq.name} – stelle einen KAM ein oder verteile Kunden um.`,
+      'warn',
+    );
+    return;
+  }
+
   const customer: Customer = {
     id: uid('cust'),
     name: inq.name,
     emoji: inq.emoji,
     type: inq.type,
     lines: [makeLine(inq, price)],
+    managerId: mgr.id,
     orderDayOfWeek: randInt(0, 5), // Mon-Sat
     nextOrderWeek: week + 1, // one-week grace to pre-stock before the first order
     serviceRating: 3,
@@ -1276,7 +1330,11 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
   };
   state.customers.push(customer);
   inq.status = 'accepted';
-  notify(state, `🎉 ${inq.name} ist jetzt Kunde! ${inq.suggestedVolume}× @ ${price}€.`, 'success');
+  notify(
+    state,
+    `🎉 ${inq.name} ist jetzt Kunde! ${inq.suggestedVolume}× @ ${price}€ · betreut von ${mgr.isChef ? 'dir' : mgr.name}.`,
+    'success',
+  );
 }
 
 function expireInquiries(state: GameState): void {

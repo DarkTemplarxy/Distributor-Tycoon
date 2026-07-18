@@ -73,6 +73,9 @@ export interface Customer {
   orderDayOfWeek: number;
   /** Next week index on which this customer should place its order. */
   nextOrderWeek: number;
+  /** Manager responsible for this customer: CHEF_MANAGER_ID (the player) or the
+   * employee id of a KAM. Slot accounting runs per manager (see SLOT_COST). */
+  managerId: string;
   /** 1-5 stars this specific customer gives us. */
   serviceRating: number;
   /** 0-100 loyalty. */
