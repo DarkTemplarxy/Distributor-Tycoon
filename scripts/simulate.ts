@@ -110,6 +110,9 @@ interface RunResult {
   totalChurned: number;
   endKams: number;
   endLager: number;
+  /** Ø product lines per active customer at the end — measures whether growth
+   * came from developing existing customers (Ziel: Richtung 2+). */
+  endLinesPerCustomer: number;
 }
 
 const activeByType = (s: GameState, t: CustomerType) =>
@@ -385,6 +388,10 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     totalChurned,
     endKams: s.employees.filter((e) => e.role === 'kam').length,
     endLager: s.employees.filter((e) => e.role === 'lager').length,
+    endLinesPerCustomer: (() => {
+      const act = s.customers.filter((c) => c.active);
+      return act.length ? act.reduce((sum, c) => sum + c.lines.length, 0) / act.length : 0;
+    })(),
   };
 }
 
@@ -444,7 +451,8 @@ function aggregate(strategy: Strategy, N: number, weeks: number) {
   console.log(
     'Wachstumsmotor:  Produktgruppen Ende Ø ' + avg(runs.map((r) => r.endProducts)).toFixed(1) +
     ' · Ultimaten gehalten Ø ' + avg(runs.map((r) => r.ultimatumsHeld)).toFixed(1) +
-    ' · Demand-Abwanderungen Ø ' + avg(runs.map((r) => r.demandChurns)).toFixed(1),
+    ' · Demand-Abwanderungen Ø ' + avg(runs.map((r) => r.demandChurns)).toFixed(1) +
+    ' · Linien/Kunde Ende Ø ' + avg(runs.map((r) => r.endLinesPerCustomer)).toFixed(2),
   );
 
   // --- Messauftrag KAM-Spam: Verlaufs- und Grenzertrags-Kennzahlen -----------

@@ -36,7 +36,11 @@ import {
   DEMAND_STAGE1_LOYALTY_GAIN,
   DEMAND_STAGE2_DEADLINE,
   DEMAND_STAGE2_LOYALTY_GAIN,
-  INQUIRY_CHANCE_PER_WEEK,
+  EXPANSION_CHANCE_PER_CUSTOMER,
+  EXPANSION_MAX_PER_WEEK,
+  EXPANSION_MIN_LOYALTY,
+  INQUIRY_BASE_CHANCE,
+  INQUIRY_SATURATION_CUSTOMERS,
   INQUIRY_DAY_OF_WEEK,
   ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
@@ -1348,8 +1352,19 @@ function rollInquiryTargetPrice(listVk: number): number {
   return Math.round(listVk * randRange(range[0], range[1]) * 2) / 2;
 }
 
+/** Weekly chance of a NEW-customer inquiry — tapers with the active base
+ * (base × SAT/(SAT + Kunden)), so growth shifts from acquisition to developing
+ * existing customers as the shop matures. Exported for tests and UI hints. */
+export function newInquiryChance(state: GameState): number {
+  const active = state.customers.filter((c) => c.active).length;
+  return (
+    INQUIRY_BASE_CHANCE *
+    (INQUIRY_SATURATION_CUSTOMERS / (INQUIRY_SATURATION_CUSTOMERS + active))
+  );
+}
+
 function maybeGenerateInquiry(state: GameState): void {
-  if (Math.random() > INQUIRY_CHANCE_PER_WEEK) return;
+  if (Math.random() > newInquiryChance(state)) return;
   const week = weekOf(state.totalDays);
   // Prefer a type that currently has free capacity.
   const candidates = unlockedTypes(state).filter((t) => freeCapacity(state, t) > 0);
@@ -1376,6 +1391,61 @@ function maybeGenerateInquiry(state: GameState): void {
     `📨 Neue Kundenanfrage: ${inquiry.name} (${type}) sucht ${product.name}${unlistedHint}.`,
     'info',
   );
+}
+
+/**
+ * Light expansion inquiries (🔁): existing customers ask to add a product line
+ * they don't buy yet. SCALES with the base — every eligible customer rolls
+ * EXPANSION_CHANCE_PER_CUSTOMER each Thursday, capped at EXPANSION_MAX_PER_WEEK.
+ * Friendly by design: normal expiry, declining has no consequences — the rare
+ * Wunsch→Ultimatum engine below stays the only escalating pressure. Customers
+ * with any open inquiry or a scheduled ultimatum are skipped (no double-booking).
+ */
+function maybeGenerateExpansionInquiries(state: GameState): void {
+  const week = weekOf(state.totalDays);
+  const listable = [
+    ...state.products.map((p) => p.id),
+    ...listableUnlistedProducts(state),
+  ];
+  const busy = new Set<string>();
+  for (const i of state.inquiries) {
+    if (i.status === 'open' && i.existingCustomerId) busy.add(i.existingCustomerId);
+  }
+  for (const u of state.pendingUltimatums) busy.add(u.customerId);
+
+  let created = 0;
+  for (const cust of state.customers) {
+    if (created >= EXPANSION_MAX_PER_WEEK) break;
+    if (!cust.active) continue;
+    if (cust.loyalty < EXPANSION_MIN_LOYALTY) continue;
+    if (busy.has(cust.id)) continue;
+    const missing = listable.filter((pid) => !cust.lines.some((l) => l.productId === pid));
+    if (missing.length === 0) continue;
+    if (Math.random() > EXPANSION_CHANCE_PER_CUSTOMER) continue;
+
+    const productId = pick(missing);
+    const product = inquiryProductInfo(state, productId);
+    const [minV, maxV] = CUSTOMER_VOLUME_RANGE[cust.type];
+    state.inquiries.push({
+      id: uid('inq'),
+      name: cust.name,
+      emoji: cust.emoji,
+      type: cust.type,
+      existingCustomerId: cust.id,
+      preferredProduct: productId,
+      suggestedVolume: randInt(minV, maxV),
+      targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
+      createdWeek: week,
+      expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
+      status: 'open',
+    });
+    notify(
+      state,
+      `🔁 ${cust.name} möchte zusätzlich ${product.emoji} ${product.name} beziehen.`,
+      'info',
+    );
+    created += 1;
+  }
 }
 
 // --- Demand engine (Wachstumsmotor Paket B) ---------------------------------
@@ -1933,8 +2003,10 @@ function onDayStart(state: GameState, dayIndex: number): void {
       (t) => freeCapacity(state, t) > 0,
     );
     if (hasFreeCapacity) maybeGenerateInquiry(state);
-    // Demand engine (Wachstumsmotor): due ultimatums first, then maybe a new
-    // wish — never both in one week (the active-process check blocks it).
+    // Bestandskunden-Entwicklung: light expansion wishes scale with the base…
+    maybeGenerateExpansionInquiries(state);
+    // …while the demand engine (Wachstumsmotor) stays the rare, serious event:
+    // due ultimatums first, then maybe a new wish (one process at a time).
     fireDueUltimatums(state);
     maybeGenerateDemand(state);
   }

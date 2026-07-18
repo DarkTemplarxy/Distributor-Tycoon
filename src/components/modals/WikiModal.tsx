@@ -5,6 +5,8 @@ import {
   CREDIT_INTEREST_RATE,
   CREDIT_LIMIT_FLOOR,
   CUSTOMER_LEAD_WEEKS,
+  EXPANSION_CHANCE_PER_CUSTOMER,
+  EXPANSION_MAX_PER_WEEK,
   DEMAND_COOLDOWN_WEEKS,
   DEMAND_ESCALATION_DELAY,
   DEMAND_MAX_LINES,
@@ -148,6 +150,14 @@ const ENTRIES: WikiEntry[] = [
           nach {INQUIRY_EXPIRY_WEEKS} Wochen. Anfragen können auch <b>ungelistete Produkte</b>{' '}
           betreffen: Annehmen listet das Produkt automatisch (Gebühr wird fällig). Jede Anfrage ist
           klar als ✨ Neukunde oder 🔁 Bestandskunde markiert.
+        </p>
+        <p>
+          <b>Wachstum verlagert sich mit der Zeit:</b> Je größer dein Kundenstamm, desto{' '}
+          <b>seltener</b> kommen Neukunden-Anfragen (Sättigung: früh ~0,8/Woche, bei ~17 Kunden
+          ~0,4, bei 40+ ~0,2) – dafür melden sich <b>Bestandskunden häufiger</b> mit
+          Erweiterungswünschen für weitere Produktgruppen (je {pct(EXPANSION_CHANCE_PER_CUSTOMER)}{' '}
+          pro treuem Kunden und Woche, max. {EXPANSION_MAX_PER_WEEK}/Woche). Diese Wünsche sind
+          unverbindlich – Ablehnen hat keine Folgen, anders als beim seltenen ⚠️ Ultimatum-Pfad.
         </p>
       </>
     ),

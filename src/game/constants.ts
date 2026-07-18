@@ -287,8 +287,26 @@ export const CUSTOMER_EMOJI: Record<CustomerType, string> = {
   large: '🏬',
 };
 
-/** New-inquiry chance per week (only checked when there is free capacity). */
-export const INQUIRY_CHANCE_PER_WEEK = 0.8;
+/**
+ * New-customer inquiries TAPER as the base grows: the weekly chance is
+ * base × SAT/(SAT + aktive Kunden). Early game ≈ 0.77/Woche (wie gehabt), bei
+ * 17 Kunden ≈ 0,37, bei 40 ≈ 0,21 — Wachstum verlagert sich mit der Zeit von
+ * Akquise auf die Weiterentwicklung der Bestandskunden, damit der Kundenstamm
+ * über mehrere Jahre überschaubar bleibt.
+ */
+export const INQUIRY_BASE_CHANCE = 0.9;
+export const INQUIRY_SATURATION_CUSTOMERS = 12;
+
+/**
+ * Light expansion inquiries (🔁 Bestandskunde möchte eine weitere Produktlinie)
+ * SCALE with the customer base: each eligible customer rolls this chance every
+ * Thursday, capped per week. No deadlines, no escalation — declining is free.
+ * The rare Wunsch→Ultimatum engine stays separate on top (its Frequenz-Cap is
+ * mandatory per Wachstumsmotor). Bei ~17 Kunden ≈ 1/Woche, bei 40+ oft 2-3.
+ */
+export const EXPANSION_CHANCE_PER_CUSTOMER = 0.07;
+export const EXPANSION_MAX_PER_WEEK = 3;
+export const EXPANSION_MIN_LOYALTY = 50;
 
 // ---------------------------------------------------------------------------
 // Wachstumsmotor (Paket B): established customers DEMAND a new product group —
