@@ -290,6 +290,63 @@ function expansionFrontier(state: GameState, zone: 'hall' | 'office'): Expansion
   return blocks;
 }
 
+// --- Walkability (Begehbarkeits-Regel, Entscheidungen R2) --------------------
+
+/** Whether a placed object (shelf, table or desk) occupies the cell. */
+function objectAt(state: GameState, gx: number, gy: number): boolean {
+  return (
+    state.warehouse.shelves.some((s) => s.gx === gx && s.gy === gy) ||
+    state.warehouse.tables.some((t) => t.gx === gx && t.gy === gy) ||
+    state.warehouse.desks.some((d) => d.gx === gx && d.gy === gy)
+  );
+}
+
+const N4 = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+] as const;
+
+/** Free orthogonal neighbors of a cell: tiles that exist (no wall/edge) and
+ * hold no object. `blocked` treats one extra cell as occupied — the candidate
+ * placement being validated. */
+function freeNeighbors(state: GameState, gx: number, gy: number, blocked?: { gx: number; gy: number }): number {
+  let n = 0;
+  for (const [dx, dy] of N4) {
+    const x = gx + dx;
+    const y = gy + dy;
+    if (blocked && blocked.gx === x && blocked.gy === y) continue;
+    if (!state.warehouse.tiles.some((t) => t.gx === x && t.gy === y)) continue;
+    if (objectAt(state, x, y)) continue;
+    n += 1;
+  }
+  return n;
+}
+
+/**
+ * Walkability validation for a new placement at (gx,gy), in BOTH directions:
+ * (1) the new object itself keeps ≥1 free orthogonal neighbor tile, and (2) it
+ * doesn't take the LAST free side of any adjacent existing object. Returns the
+ * human reason, or null when the placement is fine. Hall/office expansions only
+ * add free area and can never violate the rule. Existing saves enjoy
+ * Bestandsschutz — only NEW placements are validated.
+ */
+export function placementBlocksAccess(state: GameState, gx: number, gy: number): string | null {
+  if (freeNeighbors(state, gx, gy) === 0) {
+    return 'Objekt wäre nicht erreichbar – mindestens eine Nachbarkachel muss frei bleiben.';
+  }
+  for (const [dx, dy] of N4) {
+    const x = gx + dx;
+    const y = gy + dy;
+    if (!objectAt(state, x, y)) continue;
+    if (freeNeighbors(state, x, y, { gx, gy }) === 0) {
+      return 'Würde ein Nachbar-Objekt einmauern – dessen letzte freie Seite bleibt frei.';
+    }
+  }
+  return null;
+}
+
 /** Current monthly rent: base + RENT_PER_EXPANSION per built 2×2 block (hall
  * and office alike) — expansion carries running costs. */
 export function currentMonthlyRent(state: GameState): number {

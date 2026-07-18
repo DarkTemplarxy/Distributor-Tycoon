@@ -38,6 +38,7 @@ import {
   isInAssortment,
   managers,
   notify,
+  placementBlocksAccess,
   releaseWorkerTask,
   spend,
   tryPrepareOrder,
@@ -464,6 +465,8 @@ export function buildShelf(state: GameState, gx: number, gy: number): ActionResu
   const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
   if (!tile || tile.zone !== 'storage') return { ok: false, message: 'Nur in der Lagerzone platzierbar.' };
   if (!tileFree(state, gx, gy)) return { ok: false, message: 'Kachel bereits belegt.' };
+  const access = placementBlocksAccess(state, gx, gy);
+  if (access) return { ok: false, message: access };
   if (state.cash + availableCredit(state) < SHELF_PRICE) return { ok: false, message: `Regal kostet ${SHELF_PRICE}€.` };
   spend(state, SHELF_PRICE);
   state.warehouse.shelves.push({ id: uid('shelf'), gx, gy });
@@ -476,6 +479,8 @@ export function buildTable(state: GameState, gx: number, gy: number): ActionResu
   const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
   if (!tile || tile.zone !== 'storage') return { ok: false, message: 'Nur in der Lagerzone platzierbar.' };
   if (!tileFree(state, gx, gy)) return { ok: false, message: 'Kachel bereits belegt.' };
+  const access = placementBlocksAccess(state, gx, gy);
+  if (access) return { ok: false, message: access };
   if (state.cash + availableCredit(state) < TABLE_PRICE) return { ok: false, message: `Tisch kostet ${TABLE_PRICE}€.` };
   spend(state, TABLE_PRICE);
   state.warehouse.tables.push({ gx, gy });
@@ -523,6 +528,8 @@ export function buildDesk(state: GameState, gx: number, gy: number): ActionResul
   const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
   if (!tile || tile.zone !== 'office') return { ok: false, message: 'Nur im Bürobereich platzierbar.' };
   if (!tileFree(state, gx, gy)) return { ok: false, message: 'Kachel bereits belegt.' };
+  const access = placementBlocksAccess(state, gx, gy);
+  if (access) return { ok: false, message: access };
   if (state.cash + availableCredit(state) < DESK_PRICE) return { ok: false, message: `Arbeitsplatz kostet ${DESK_PRICE}€.` };
   spend(state, DESK_PRICE);
   state.warehouse.desks.push({ gx, gy });

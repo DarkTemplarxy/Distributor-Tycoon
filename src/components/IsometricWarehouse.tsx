@@ -13,6 +13,7 @@ import {
   inboundStock,
   inboundUsed,
   officeExpansionFrontier,
+  placementBlocksAccess,
   shelfCapacity,
   shelfStock,
   shelfUsed,
@@ -182,7 +183,9 @@ function chunkStock(state: GameState, which: 'shelf' | 'inbound'): ShelfPallet[]
 // outside block that currently touches the zone — so L-shapes and notches stay
 // expandable and the overlay always matches what expandHall/expandOffice accept.
 
-/** Tiles that are valid targets for the current build tool. */
+/** Tiles that are valid targets for the current build tool. Placement targets
+ * additionally honor the walkability rule (an object must keep a free side and
+ * may not wall in a neighbor) — invalid tiles are not highlighted green. */
 function validBuildTiles(state: GameState, tool: BuildTool): { gx: number; gy: number }[] {
   if (tool === 'expand' || tool === 'officeExpand') return []; // handled via blocks
   const out: { gx: number; gy: number }[] = [];
@@ -191,14 +194,33 @@ function validBuildTiles(state: GameState, tool: BuildTool): { gx: number; gy: n
     if (tool === 'inbound') {
       if (t.zone === 'ramp' && !inbUsed.has(`${t.gx},${t.gy}`)) out.push(t);
     } else if (tool === 'desk') {
-      // desk: empty office tile
-      if (t.zone === 'office' && !deskAt(state, t.gx, t.gy)) out.push(t);
+      // desk: empty, reachable office tile
+      if (t.zone === 'office' && !deskAt(state, t.gx, t.gy) && placementBlocksAccess(state, t.gx, t.gy) === null) out.push(t);
     } else {
-      // shelf or table: empty storage tile
-      if (t.zone === 'storage' && !shelfAt(state, t.gx, t.gy) && !tableAt(state, t.gx, t.gy)) out.push(t);
+      // shelf or table: empty, reachable storage tile
+      if (
+        t.zone === 'storage' &&
+        !shelfAt(state, t.gx, t.gy) &&
+        !tableAt(state, t.gx, t.gy) &&
+        placementBlocksAccess(state, t.gx, t.gy) === null
+      ) {
+        out.push(t);
+      }
     }
   }
   return out;
+}
+
+/** Whether a click on (gx,gy) is at least in the right ZONE for the tool — such
+ * clicks are forwarded to the action, so an invalid placement (occupied, would
+ * wall something in, too expensive) surfaces its reason instead of failing
+ * silently. Clicks outside the relevant zone stay silent. */
+function zoneMatchesTool(state: GameState, tool: BuildTool, gx: number, gy: number): boolean {
+  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+  if (!tile) return false;
+  if (tool === 'inbound') return tile.zone === 'ramp';
+  if (tool === 'desk') return tile.zone === 'office';
+  return tile.zone === 'storage';
 }
 
 // --- Color helpers ---------------------------------------------------------
@@ -351,9 +373,10 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
         const blocks = b.tool === 'expand' ? hallExpansionFrontier(stateRef.current) : officeExpansionFrontier(stateRef.current);
         const block = blocks.find((blk) => blk.some((c) => c.gx === gx && c.gy === gy));
         if (block) b.onExpand(block);
-      } else {
-        const ok = validBuildTiles(stateRef.current, b.tool).some((t) => t.gx === gx && t.gy === gy);
-        if (ok) b.onPlaceTile(gx, gy);
+      } else if (zoneMatchesTool(stateRef.current, b.tool, gx, gy)) {
+        // Forward every in-zone click — the action validates and reports why an
+        // invalid placement fails (no silent refusal).
+        b.onPlaceTile(gx, gy);
       }
     };
     const onUp = (ev: PointerEvent) => {

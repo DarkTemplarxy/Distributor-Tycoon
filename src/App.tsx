@@ -8,6 +8,7 @@ import { BuildBar } from './components/BuildBar';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
 import { buildShelf, buildTable, buildInboundSlot, buildDesk, expandHall, expandOffice } from './game/actions';
+import { notify } from './game/simulation';
 import { Toasts } from './components/Toasts';
 import { TutorialLayer } from './components/TutorialLayer';
 import { MilestoneLayer } from './components/MilestoneLayer';
@@ -176,10 +177,18 @@ export function App() {
                     tool: buildTool,
                     onPlaceTile: (gx, gy) =>
                       mutate((s) => {
-                        if (buildTool === 'shelf') buildShelf(s, gx, gy);
-                        else if (buildTool === 'table') buildTable(s, gx, gy);
-                        else if (buildTool === 'inbound') buildInboundSlot(s, gx, gy);
-                        else if (buildTool === 'desk') buildDesk(s, gx, gy);
+                        const r =
+                          buildTool === 'shelf'
+                            ? buildShelf(s, gx, gy)
+                            : buildTool === 'table'
+                              ? buildTable(s, gx, gy)
+                              : buildTool === 'inbound'
+                                ? buildInboundSlot(s, gx, gy)
+                                : buildTool === 'desk'
+                                  ? buildDesk(s, gx, gy)
+                                  : null;
+                        // No silent refusal: surface why a placement failed.
+                        if (r && !r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
                       }),
                     onExpand: (block) =>
                       mutate((s) => {
