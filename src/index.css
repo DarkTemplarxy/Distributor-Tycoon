@@ -116,6 +116,54 @@ button {
   gap: 12px;
 }
 
+/* Collapsed orders panel: the right column shrinks to a slim handle and the
+ * hall view takes the space. */
+.main.orders-collapsed { grid-template-columns: 1fr 34px; }
+.panel-handle {
+  height: 100%;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  font: inherit;
+}
+.panel-handle:hover { color: var(--text); border-color: var(--accent); }
+.panel-handle .chev { font-size: 11px; }
+.panel-handle .handle-label {
+  writing-mode: vertical-rl;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-size: 11px;
+}
+.panel-handle .handle-count {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  min-width: 20px;
+  padding: 1px 4px;
+  font-size: 11px;
+  color: var(--text);
+}
+.panel-handle .handle-count.late { border-color: var(--bad); color: var(--bad); }
+.panel-collapse {
+  margin-left: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  border-radius: 6px;
+  font-size: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+.panel-collapse:hover { color: var(--text); border-color: var(--accent); }
+
 /* --- Top bar -------------------------------------------------------------- */
 
 .topbar {

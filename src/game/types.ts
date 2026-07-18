@@ -338,7 +338,11 @@ export interface GameState {
   /** Ids of just-achieved milestones queued for the celebration overlay. The UI
    * shows them one at a time and clears each as it's dismissed. */
   celebrateMilestones?: string[];
-  settings: { autoPrep: boolean };
+  settings: {
+    autoPrep: boolean;
+    /** The side orders panel is collapsed to a slim handle (persisted). */
+    ordersPanelCollapsed: boolean;
+  };
 
   /** Guided onboarding state. `active` runs the beat machine and gates the UI;
    * `step` is the current beat (see STEP in tutorial.ts). Null once the tutorial

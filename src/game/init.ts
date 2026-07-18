@@ -243,7 +243,7 @@ export function createInitialState(): GameState {
     milestones: MILESTONE_DEFS.map((d) => ({ id: d.id, achievedWeek: null })),
     // Auto-prep starts OFF so the tutorial's first beat teaches manual Herrichten;
     // it is switched on once the first delivery is celebrated (see advanceTutorial).
-    settings: { autoPrep: false },
+    settings: { autoPrep: false, ordersPanelCollapsed: false },
 
     tutorial: { active: true, step: STEP.INTRO },
 

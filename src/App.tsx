@@ -125,7 +125,7 @@ export function App() {
     <div className="app">
       <TopBar onRestart={() => setRestartOpen(true)} onHelp={() => openModal('help')} />
 
-      <div className="main">
+      <div className={`main${state.settings.ordersPanelCollapsed ? ' orders-collapsed' : ''}`}>
         <div className="col-left" style={{ position: 'relative' }}>
           {buildMode && <BuildBar tool={buildTool} onSelect={setBuildTool} onExit={exitBuild} />}
           <IsometricWarehouse

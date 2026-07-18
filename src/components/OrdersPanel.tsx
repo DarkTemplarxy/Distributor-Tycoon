@@ -18,6 +18,27 @@ export function OrdersPanel() {
   const week = weekOf(state.totalDays);
 
   const open = state.orders.filter((o) => o.status !== 'delivered');
+  const collapsed = state.settings.ordersPanelCollapsed;
+  const setCollapsed = (v: boolean) => mutate((s) => (s.settings.ordersPanelCollapsed = v));
+
+  // Collapsed: only a slim handle stays; the hall view gets the space. Toasts
+  // and warnings are positioned independently, so nothing blocking is lost.
+  if (collapsed) {
+    const anyLate = open.some((o) => o.late);
+    return (
+      <button
+        className="panel-handle"
+        onClick={() => setCollapsed(false)}
+        title="Aufträge einblenden"
+      >
+        <span className="chev">◀</span>
+        <span className="handle-label">Aufträge</span>
+        {open.length > 0 && (
+          <span className={`handle-count${anyLate ? ' late' : ''}`}>{open.length}</span>
+        )}
+      </button>
+    );
+  }
 
   // Group open orders by customer so a multi-product customer shows one card.
   const groups = new Map<string, Order[]>();
@@ -39,6 +60,13 @@ export function OrdersPanel() {
     <div className="panel">
       <h3>
         🧾 Aufträge <span className="count">{open.length}</span>
+        <button
+          className="panel-collapse"
+          onClick={() => setCollapsed(true)}
+          title="Aufträge zuklappen"
+        >
+          ▶
+        </button>
       </h3>
       {cards.length === 0 && <div className="empty">Keine offenen Aufträge.</div>}
 
