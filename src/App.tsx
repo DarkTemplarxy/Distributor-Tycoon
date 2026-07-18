@@ -202,7 +202,7 @@ export function App() {
       )}
 
       {restartOpen && (
-        <Modal title="Neues Spiel starten?" icon="🔄" onClose={() => setRestartOpen(false)}>
+        <Modal title="Neues Spiel starten?" icon="🔄" top onClose={() => setRestartOpen(false)}>
           <p className="hint">
             Der aktuelle Fortschritt geht dabei verloren und kann nicht wiederhergestellt werden.
           </p>

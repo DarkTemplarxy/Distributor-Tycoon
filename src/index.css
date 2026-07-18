@@ -612,6 +612,9 @@ button {
   padding: 20px;
   backdrop-filter: blur(2px);
 }
+/* Dialogs that must stay reachable ABOVE the overlay screens (z 70), e.g. the
+ * restart confirmation opened from the Jahresbilanz. */
+.modal-overlay.top { z-index: 80; }
 .modal {
   background: var(--bg-panel);
   border: 1px solid var(--border);
