@@ -3,8 +3,8 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { setCustomerLinePrice, setDiscount } from '../../game/actions';
 import { demandUpliftFromDiscount } from '../../game/constants';
-import type { Customer, CustomerLine, Product } from '../../game/types';
-import { Stars, PRODUCT_COLOR } from '../shared';
+import type { Customer, CustomerLine, CustomerType, Product } from '../../game/types';
+import { CustomerTypeFilter, Stars, PRODUCT_COLOR, useCustomerTypeFilter } from '../shared';
 
 const TYPE_LABEL = { small: 'Klein', medium: 'Mittel', large: 'Groß' } as const;
 
@@ -60,7 +60,10 @@ function LineEditor({ customerId, line, product }: { customerId: string; line: C
 
 export function CustomersModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
+  const filter = useCustomerTypeFilter();
   const active = state.customers.filter((c) => c.active);
+  const shown = active.filter((c) => filter.matches(c.type));
+  const countOf = (t: CustomerType) => active.filter((c) => c.type === t).length;
   const productOf = (id: Product['id']) => state.products.find((p) => p.id === id);
 
   return (
@@ -70,9 +73,19 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
         vielen kündigt der Kunde. <b>Vertragspreise</b> kannst du je Linie anpassen – eine deutliche
         Erhöhung kostet <b>Loyalität</b> (zufriedene Kunden verzeihen mehr).
       </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span className="sub">Anzeigen:</span>
+        <CustomerTypeFilter
+          filter={filter}
+          counts={{ small: countOf('small'), medium: countOf('medium'), large: countOf('large') }}
+        />
+      </div>
       {active.length === 0 && <div className="empty">Keine aktiven Kunden.</div>}
+      {active.length > 0 && shown.length === 0 && (
+        <div className="empty">Alle Kundengrößen ausgeblendet – Filter oben anpassen.</div>
+      )}
       <div className="rows">
-        {active.map((c: Customer) => {
+        {shown.map((c: Customer) => {
           const uplift = demandUpliftFromDiscount(c.activeDiscount);
           const tolerance = 3 + Math.max(0, Math.round(c.serviceRating - 3));
           const weeklyRevenue = c.lines.reduce((sum, l) => sum + l.volume * l.price, 0);

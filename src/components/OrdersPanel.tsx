@@ -4,7 +4,7 @@ import { isFeatureUnlocked, STEP, tutorialOnStep } from '../game/tutorial';
 import { prepareOrder, restockForOrder } from '../game/actions';
 import { weekOf } from '../game/util';
 import type { Order } from '../game/types';
-import { PRODUCT_COLOR } from './shared';
+import { CustomerTypeFilter, PRODUCT_COLOR, useCustomerTypeFilter } from './shared';
 
 const STATUS_LABEL: Record<Order['status'], string> = {
   pending: 'Offen',
@@ -16,6 +16,7 @@ const STATUS_LABEL: Record<Order['status'], string> = {
 export function OrdersPanel() {
   const { state, mutate } = useGame();
   const week = weekOf(state.totalDays);
+  const filter = useCustomerTypeFilter();
 
   const open = state.orders.filter((o) => o.status !== 'delivered');
   const collapsed = state.settings.ordersPanelCollapsed;
@@ -48,13 +49,17 @@ export function OrdersPanel() {
     groups.set(o.customerId, arr);
   }
 
-  const cards = [...groups.entries()]
+  const allCards = [...groups.entries()]
     .map(([customerId, orders]) => {
       const late = orders.some((o) => o.late);
       const minDue = Math.min(...orders.map((o) => o.dueWeek));
-      return { customerId, orders, late, minDue };
+      const type = state.customers.find((c) => c.id === customerId)?.type ?? 'small';
+      return { customerId, orders, late, minDue, type };
     })
     .sort((a, b) => Number(b.late) - Number(a.late) || a.minDue - b.minDue);
+  // The k/m/g filter is display-only; show it once the list gets long.
+  const cards = allCards.filter((c) => filter.matches(c.type));
+  const showFilter = allCards.length > 4 || allCards.some((c) => c.type !== 'small');
 
   return (
     <div className="panel">
@@ -68,7 +73,15 @@ export function OrdersPanel() {
           ▶
         </button>
       </h3>
-      {cards.length === 0 && <div className="empty">Keine offenen Aufträge.</div>}
+      {showFilter && (
+        <div style={{ marginBottom: 10 }}>
+          <CustomerTypeFilter filter={filter} />
+        </div>
+      )}
+      {allCards.length === 0 && <div className="empty">Keine offenen Aufträge.</div>}
+      {allCards.length > 0 && cards.length === 0 && (
+        <div className="empty">Ausgeblendet durch den Kundengrößen-Filter.</div>
+      )}
 
       {cards.map(({ customerId, orders, late, minDue }) => {
         const cust = state.customers.find((c) => c.id === customerId);

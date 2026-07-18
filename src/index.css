@@ -164,6 +164,25 @@ button {
 }
 .panel-collapse:hover { color: var(--text); border-color: var(--accent); }
 
+/* Customer-type filter chips (klein/mittel/groß) — display-only toggles. */
+.type-filter { display: inline-flex; gap: 6px; }
+.type-chip {
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-faint);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 9px;
+  cursor: pointer;
+  text-decoration: line-through;
+}
+.type-chip.on {
+  color: var(--text);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+.type-chip:hover { border-color: var(--accent); }
+
 /* --- Top bar -------------------------------------------------------------- */
 
 .topbar {
