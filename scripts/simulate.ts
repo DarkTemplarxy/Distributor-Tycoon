@@ -54,6 +54,8 @@ import {
   expandOffice,
   hireEmployee,
   placeWeeklyOrder,
+  repriceCooldownLeft,
+  setCustomerLinePrice,
 } from '../src/game/actions.ts';
 import {
   getProductDef,
@@ -212,9 +214,12 @@ function sinnvollGrowth(s: GameState) {
     }
     if (freeDesks(s) > 0) hireEmployee(s, 'kam');
   }
-  // 2. Shelf headroom vs the growing weekly volume — the threshold scales with
-  // actual demand (fixed 150 under-builds once lines carry bigger volumes).
-  if (shelfFree(s) < Math.max(150, weeklyDemandUnits(s) * 0.6) && s.cash > 6000) {
+  // 2. Shelf headroom vs the growing weekly volume. Early game keeps the fixed
+  // threshold (spending the thin starting cash on infrastructure kills runs);
+  // from mid-game (40k monthly) it scales with actual demand, because fixed
+  // 150 under-builds once the volume factors make lines bigger.
+  const shelfTarget = monthly > 40_000 ? Math.max(150, weeklyDemandUnits(s) * 0.6) : 150;
+  if (shelfFree(s) < shelfTarget && s.cash > 6000) {
     const tile = freeStorageTile(s);
     if (tile) buildShelf(s, tile.gx, tile.gy);
     else {
@@ -228,11 +233,28 @@ function sinnvollGrowth(s: GameState) {
     const tile = freeStorageTile(s);
     if (tile) buildTable(s, tile.gx, tile.gy);
   }
-  // 4. Inbound dock: keep at least two pallets of unloading buffer free, so
-  // Monday deliveries don't jam for days (bigger volumes jam the fixed 6).
-  if (inboundFree(s) < 80 && s.cash > 3000) {
+  // 4. Inbound dock (mid-game on): keep two pallets of unloading buffer free,
+  // so Monday deliveries don't jam for days at the fixed starting 6 slots.
+  if (monthly > 40_000 && inboundFree(s) < 80 && s.cash > 8000) {
     const ramp = s.warehouse.tiles.find((t) => t.zone === 'ramp');
     if (ramp) buildInboundSlot(s, ramp.gx, ramp.gy);
+  }
+}
+
+/** The sinnvoll bot renegotiates contract prices the way the game intends
+ * since the reprice rework: entry prices sit below target, and with good
+ * service (≥ 4★) it pushes lines toward the target margin in modest +5 %
+ * steps per cooldown window — the honest counterpart of a real player. */
+function sinnvollReprice(s: GameState) {
+  for (const cust of s.customers) {
+    if (!cust.active || cust.serviceRating < 4) continue;
+    for (const line of cust.lines) {
+      const target = targetMarginPrice(line.productId);
+      if (line.price >= target) continue;
+      if (repriceCooldownLeft(s, line) > 0) continue;
+      const step = Math.min(target, Math.round(line.agreedPrice * 1.05 * 2) / 2);
+      if (step > line.price) setCustomerLinePrice(s, cust.id, line.productId, step);
+    }
   }
 }
 
@@ -304,6 +326,9 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     // --- bot: sinnvoll (and the supported spam) grow the operation when
     // something binds ---
     if (strategy === 'sinnvoll' || strategy === 'kam_spam_plus') sinnvollGrowth(s);
+
+    // --- bot: sinnvoll earns its margin through service-backed renegotiation ---
+    if (strategy === 'sinnvoll') sinnvollReprice(s);
 
     // --- bot: the spam bots hire KAMs aggressively (naked kam_spam trails the
     // warehouse only per-week, see the report block below — deliberately too
