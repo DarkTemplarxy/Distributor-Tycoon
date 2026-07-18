@@ -34,6 +34,7 @@ import {
   PAYMENT_DELAY_DAYS_BY_TYPE,
   PO_LEAD_DAYS,
   PRODUCT_DEFS,
+  PRODUCT_VOLUME_FACTOR,
   RENT_PER_EXPANSION,
   REPRICE_COOLDOWN_WEEKS,
   REPRICE_FAIL_LOYALTY_COST,
@@ -314,6 +315,12 @@ const ENTRIES: WikiEntry[] = [
           bereits gepickte Ware mit <b>halber Resthaltbarkeit</b> zurück ins Regal. Produktbreite
           schaltet nicht nur Umsatz frei – Bestandskunden <b>fordern</b> sie irgendwann ein (siehe
           Kundenwünsche).
+        </p>
+        <p>
+          <b>Menge statt Preis:</b> Günstige Produkte werden in größeren Wochenmengen bestellt
+          (Fleisch ×{PRODUCT_VOLUME_FACTOR.fleisch}, Gemüse ×{PRODUCT_VOLUME_FACTOR.gemuese}{' '}
+          gegenüber Fisch) – eine Gemüse-Linie bringt damit ähnlich viel Umsatz wie eine
+          Fisch-Linie, braucht aber mehr Lager- und Herrichtungs-Kapazität.
         </p>
       </>
     ),

@@ -208,6 +208,19 @@ export const CUSTOMER_VOLUME_RANGE: Record<CustomerType, [number, number]> = {
   large: [800, 1000],
 };
 
+/**
+ * Menge statt Preis: cheap products are bought in bigger weekly quantities, so
+ * the revenue per LINE converges across the ladder (Ø kleine Linie: Fisch
+ * ~1.000 €, Fleisch ~975 €, Gemüse ~890 €) without touching prices or the
+ * 40 %-margin fairness. Keeps Ergänzungsprodukte worth their shelf space and
+ * makes the 120k unlock reachable through depth, not only through headcount.
+ */
+export const PRODUCT_VOLUME_FACTOR: Record<ProductId, number> = {
+  fisch: 1,
+  fleisch: 1.3,
+  gemuese: 1.8,
+};
+
 /** Discount → demand uplift curve (progressive). Fractions. */
 export function demandUpliftFromDiscount(discount: number): number {
   // -2% => +5%, -10% => +18%, -20% => +30% (progressive-ish)

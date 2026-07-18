@@ -63,6 +63,7 @@ import {
   NIGHT_SPEED,
   PALETTE_SIZE,
   PAYMENT_DELAY_DAYS_BY_TYPE,
+  PRODUCT_VOLUME_FACTOR,
   PER_ARTICLE_PREP_FACTOR,
   PRODUCT_DEFS,
   SHELF_SLOTS,
@@ -1352,6 +1353,14 @@ function rollInquiryTargetPrice(listVk: number): number {
   return Math.round(listVk * randRange(range[0], range[1]) * 2) / 2;
 }
 
+/** Weekly volume for a new line: customer-type range × product factor — cheap
+ * products sell in bigger quantities (Menge statt Preis), so a Gemüse line is
+ * worth roughly as much revenue as a Fisch line. */
+function rollLineVolume(type: CustomerType, productId: ProductId): number {
+  const [minV, maxV] = CUSTOMER_VOLUME_RANGE[type];
+  return Math.round(randInt(minV, maxV) * PRODUCT_VOLUME_FACTOR[productId]);
+}
+
 /** Weekly chance of a NEW-customer inquiry — tapers with the active base
  * (base × SAT/(SAT + Kunden)), so growth shifts from acquisition to developing
  * existing customers as the shop matures. Exported for tests and UI hints. */
@@ -1369,7 +1378,6 @@ function maybeGenerateInquiry(state: GameState): void {
   // Prefer a type that currently has free capacity.
   const candidates = unlockedTypes(state).filter((t) => freeCapacity(state, t) > 0);
   const type = candidates.length > 0 ? pick(candidates) : 'small';
-  const [minV, maxV] = CUSTOMER_VOLUME_RANGE[type];
   const preferred = pickInquiryProduct(state);
   const product = inquiryProductInfo(state, preferred);
   const inquiry: Inquiry = {
@@ -1378,7 +1386,7 @@ function maybeGenerateInquiry(state: GameState): void {
     emoji: CUSTOMER_EMOJI[type],
     type,
     preferredProduct: preferred,
-    suggestedVolume: randInt(minV, maxV),
+    suggestedVolume: rollLineVolume(type, preferred),
     targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
     createdWeek: week,
     expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
@@ -1425,7 +1433,6 @@ function maybeGenerateExpansionInquiries(state: GameState): void {
 
     const productId = pick(missing);
     const product = inquiryProductInfo(state, productId);
-    const [minV, maxV] = CUSTOMER_VOLUME_RANGE[cust.type];
     state.inquiries.push({
       id: uid('inq'),
       name: cust.name,
@@ -1433,7 +1440,7 @@ function maybeGenerateExpansionInquiries(state: GameState): void {
       type: cust.type,
       existingCustomerId: cust.id,
       preferredProduct: productId,
-      suggestedVolume: randInt(minV, maxV),
+      suggestedVolume: rollLineVolume(cust.type, productId),
       targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
       createdWeek: week,
       expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
@@ -1473,7 +1480,6 @@ function pushDemandInquiry(
   deadlineWeek: number,
 ): void {
   const product = inquiryProductInfo(state, productId);
-  const [minV, maxV] = CUSTOMER_VOLUME_RANGE[cust.type];
   state.inquiries.push({
     id: uid('inq'),
     name: cust.name,
@@ -1481,7 +1487,7 @@ function pushDemandInquiry(
     type: cust.type,
     existingCustomerId: cust.id,
     preferredProduct: productId,
-    suggestedVolume: randInt(minV, maxV),
+    suggestedVolume: rollLineVolume(cust.type, productId),
     targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
     createdWeek: weekOf(state.totalDays),
     expiryWeek: deadlineWeek,
@@ -2031,7 +2037,6 @@ function onDayStart(state: GameState, dayIndex: number): void {
 function forceTutorialInquiries(state: GameState): void {
   const week = weekOf(state.totalDays);
   const product = getProduct(state, 'fisch');
-  const [minV, maxV] = CUSTOMER_VOLUME_RANGE.small;
   let created = 0;
   for (const id of TUTORIAL_INQUIRY_IDS) {
     if (state.inquiries.some((i) => i.id === id)) continue;
@@ -2045,7 +2050,7 @@ function forceTutorialInquiries(state: GameState): void {
       emoji: CUSTOMER_EMOJI.small,
       type: 'small',
       preferredProduct: 'fisch',
-      suggestedVolume: randInt(minV, maxV),
+      suggestedVolume: rollLineVolume('small', 'fisch'),
       targetPrice: Math.round(product.verkaufspreis * (isCounterLesson ? 0.9 : 1) * 2) / 2,
       createdWeek: week,
       expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
@@ -2065,14 +2070,13 @@ function forceMeatInquiry(state: GameState): void {
   if (state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID)) return;
   const week = weekOf(state.totalDays);
   const product = getProduct(state, 'fleisch');
-  const [minV, maxV] = CUSTOMER_VOLUME_RANGE.small;
   state.inquiries.push({
     id: TUTORIAL_MEAT_INQUIRY_ID,
     name: uniqueCustomerName(state, 'small'),
     emoji: CUSTOMER_EMOJI.small,
     type: 'small',
     preferredProduct: 'fleisch',
-    suggestedVolume: randInt(minV, maxV),
+    suggestedVolume: rollLineVolume('small', 'fleisch'),
     targetPrice: Math.round(product.verkaufspreis * 2) / 2,
     createdWeek: week,
     expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
