@@ -25,6 +25,7 @@ import { ReportsModal } from './components/modals/ReportsModal';
 import { LogModal } from './components/modals/LogModal';
 import { NotebookModal } from './components/modals/NotebookModal';
 import { HelpModal } from './components/modals/HelpModal';
+import { WikiModal } from './components/modals/WikiModal';
 
 export type ModalId =
   | 'inventory'
@@ -39,6 +40,7 @@ export type ModalId =
   | 'log'
   | 'notebook'
   | 'help'
+  | 'wiki'
   | null;
 
 export function App() {
@@ -183,7 +185,11 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar onRestart={openRestart} onHelp={() => openModal('help')} />
+      <TopBar
+        onRestart={openRestart}
+        onHelp={() => openModal('help')}
+        onWiki={() => openModal('wiki')}
+      />
 
       <div className={`main${state.settings.ordersPanelCollapsed ? ' orders-collapsed' : ''}`}>
         <div className="col-left" style={{ position: 'relative' }}>
@@ -241,6 +247,7 @@ export function App() {
       {modal === 'log' && <LogModal onClose={closeModal} />}
       {modal === 'notebook' && <NotebookModal onClose={closeModal} />}
       {modal === 'help' && <HelpModal onClose={closeModal} />}
+      {modal === 'wiki' && <WikiModal onClose={closeModal} />}
 
       {state.yearComplete && <YearCompleteScreen onRestart={openRestart} />}
       {state.gameOver && <GameOverScreen />}

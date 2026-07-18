@@ -68,7 +68,11 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
         </p>
       )}
 
-      <p className="hint" style={{ marginBottom: 8 }}>
+      <p
+        className="hint"
+        style={{ marginBottom: 8 }}
+        title="Summe der letzten 4 abgeschlossenen Wochenumsätze. Schaltet mittlere (120.000 €) und große Kunden (600.000 €) frei."
+      >
         📊 Monatsumsatz (rollierende 4 Wochen): <b>{euro(monthly)}</b>
         {nextUnlock ? (
           <>

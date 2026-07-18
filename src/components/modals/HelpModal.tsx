@@ -81,6 +81,12 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
         </Rule>
       </div>
 
+      <p className="hint" style={{ marginTop: 10 }}>
+        📖 Alle Details und konkreten Zahlen (Fristen, Gebühren, Schwellen …) stehen im{' '}
+        <b>Handbuch</b> oben in der Kopfleiste – und viele Felder erklären sich per Tooltip beim
+        Draufzeigen.
+      </p>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
         <button className="btn primary" onClick={onClose}>
           Verstanden

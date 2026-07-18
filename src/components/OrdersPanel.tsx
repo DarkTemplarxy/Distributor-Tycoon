@@ -13,6 +13,13 @@ const STATUS_LABEL: Record<Order['status'], string> = {
   delivered: 'Geliefert',
 };
 
+const STATUS_HINT: Record<Order['status'], string> = {
+  pending: 'Wartet auf Regal-Bestand und eine freie Lagerkraft mit Tisch.',
+  preparing: 'Eine Lagerkraft pickt und packt am Vorbereitungstisch.',
+  ready: 'Palette steht in der Abholzone – der LKW kommt täglich um 18 Uhr.',
+  delivered: 'Abgeholt. Kleine Kunden zahlen bar, mittlere/große nach Zahlungsziel.',
+};
+
 export function OrdersPanel() {
   const { state, mutate } = useGame();
   const week = weekOf(state.totalDays);
@@ -119,7 +126,15 @@ export function OrdersPanel() {
                     {product.emoji} {order.quantity}× {product.name}
                   </span>
                   <span>@ {order.price.toFixed(2)}€</span>
-                  <span className={`o-badge ${badgeClass}`} style={{ marginLeft: 'auto' }}>
+                  <span
+                    className={`o-badge ${badgeClass}`}
+                    style={{ marginLeft: 'auto' }}
+                    title={
+                      order.late
+                        ? 'Die Fälligkeitswoche ist verstrichen – kostet Sterne und Loyalität, zu viele Verspätungen kosten den Kunden.'
+                        : STATUS_HINT[order.status]
+                    }
+                  >
                     {order.late ? 'Verspätet' : STATUS_LABEL[order.status]}
                   </span>
                   {order.status === 'pending' && (
