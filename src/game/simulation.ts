@@ -94,13 +94,56 @@ import {
 
 // --- Notifications ----------------------------------------------------------
 
-export function notify(state: GameState, message: string, type: NotificationType = 'info'): void {
+export interface NotifyOpts {
+  /** 'log' keeps routine events out of the toast stream (log stays complete). */
+  channel?: 'toast' | 'log';
+  /** Aggregate same-day events of this kind into ONE entry — the second event
+   * of a day turns the entry into "3 Paletten fertiggestellt…" instead of
+   * stacking single toasts (Notification-Diät, Entscheidungen R2). */
+  agg?: { key: 'palette' | 'payment' | 'order'; amount?: number };
+}
+
+function aggMessage(key: 'palette' | 'payment' | 'order', count: number, amount: number): string {
+  switch (key) {
+    case 'palette':
+      return `📦 ${count} Paletten fertiggestellt – der LKW holt sie um 18:00 ab.`;
+    case 'payment':
+      return `💰 ${count} Zahlungen erhalten: +${Math.round(amount)}€.`;
+    case 'order':
+      return `🧾 ${count} neue Bestellungen eingegangen (siehe Aufträge).`;
+  }
+}
+
+export function notify(
+  state: GameState,
+  message: string,
+  type: NotificationType = 'info',
+  opts?: NotifyOpts,
+): void {
+  const day = Math.floor(state.totalDays);
+  if (opts?.agg) {
+    const existing = state.notifications.find((n) => n.aggKey === opts.agg!.key && n.day === day);
+    if (existing) {
+      existing.count = (existing.count ?? 1) + 1;
+      existing.amount = (existing.amount ?? 0) + (opts.agg.amount ?? 0);
+      existing.message = aggMessage(opts.agg.key, existing.count, existing.amount ?? 0);
+      existing.week = weekOf(state.totalDays);
+      // Re-surface the merged entry (the toast layer re-shows it once).
+      state.notifications.splice(state.notifications.indexOf(existing), 1);
+      state.notifications.push(existing);
+      return;
+    }
+  }
   state.notifications.push({
     id: uid('note'),
-    day: Math.floor(state.totalDays),
+    day,
     week: weekOf(state.totalDays),
     message,
     type,
+    channel: opts?.channel,
+    aggKey: opts?.agg?.key,
+    count: opts?.agg ? 1 : undefined,
+    amount: opts?.agg?.amount,
   });
   // Keep the log bounded.
   if (state.notifications.length > 60) {
@@ -613,6 +656,7 @@ function completePreparation(state: GameState, orderId: string): void {
     state,
     `📦 Palette fertig: ${order.quantity}× für ${cust?.name ?? 'Kunde'} – der LKW holt sie um 18:00 ab.`,
     'success',
+    { agg: { key: 'palette' } },
   );
 }
 
@@ -785,6 +829,7 @@ function generateCustomerOrder(state: GameState, customer: Customer, line: Custo
     state,
     `🧾 Bestellung ${customer.name}: ${qty}× ${product.emoji} ${product.name} – Lieferung bis Woche ${dueWeek}.`,
     'info',
+    { agg: { key: 'order' } },
   );
 }
 
@@ -847,7 +892,7 @@ function truckPickup(state: GameState, week: number): void {
       state.weekAcc.revenue += amount;
       state.stats.totalRevenue += amount;
       cashPaidOrderIds.add(order.id);
-      notify(state, `💵 ${cust?.name ?? 'Kunde'} zahlt bar bei Abholung: ${Math.round(amount)}€.`, 'success');
+      notify(state, `💵 ${cust?.name ?? 'Kunde'} zahlt bar bei Abholung: ${Math.round(amount)}€.`, 'success', { agg: { key: 'payment', amount } });
       // First tutorial delivery → trigger the celebration beat. `<= REWARD` (not
       // `===`) also catches the same-tick race where prep completion and pickup
       // land in one advance() before the step machine ever showed REWARD.
@@ -888,7 +933,7 @@ function truckPickup(state: GameState, week: number): void {
   }
 
   if (loaded > 0) {
-    notify(state, `🚚 Laster abgefahren – ${loaded} Palette(n) geladen (Kosten ${loaded * state.truck.costPerPallet}€).`, 'success');
+    notify(state, `🚚 Laster abgefahren – ${loaded} Palette(n) geladen (Kosten ${loaded * state.truck.costPerPallet}€).`, 'success', { channel: 'log' });
     state.truckAnimUntil = state.totalDays + 0.06;
   }
 
@@ -1017,7 +1062,7 @@ function receiveDuePurchaseOrders(state: GameState): void {
     const remaining = po.items.reduce((s, i) => s + i.quantity, 0);
     if (remaining <= 0) {
       po.status = 'received';
-      notify(state, `📥 Lieferung im Wareneingang (Wert ${Math.round(po.totalCost)}€) – wird eingelagert.`, 'success');
+      notify(state, `📥 Lieferung im Wareneingang (Wert ${Math.round(po.totalCost)}€) – wird eingelagert.`, 'success', { channel: 'log' });
     } else if (unloadedAny) {
       notify(state, `📥 Wareneingang voll – Lieferung wird nach und nach entladen (${remaining} warten).`, 'warn');
     }
@@ -1035,7 +1080,7 @@ function collectDuePayments(state: GameState): void {
     // The order is fully done — remove it.
     state.orders = state.orders.filter((o) => o.id !== pay.orderId);
     const cust = state.customers.find((c) => c.id === pay.customerId);
-    notify(state, `💰 Zahlung erhalten: ${Math.round(pay.amount)}€ von ${cust?.name ?? 'Kunde'}.`, 'success');
+    notify(state, `💰 Zahlung erhalten: ${Math.round(pay.amount)}€ von ${cust?.name ?? 'Kunde'}.`, 'success', { agg: { key: 'payment', amount: pay.amount } });
   }
   state.scheduledPayments = state.scheduledPayments.filter((p) => p.dueDay > state.totalDays);
 }

@@ -210,6 +210,12 @@ export interface Notification {
   week: number;
   message: string;
   type: NotificationType;
+  /** 'log' = only visible in the log, never as a toast. Default = toast. */
+  channel?: 'toast' | 'log';
+  /** Same-day events of the same kind merge into one entry ("3 Paletten…"). */
+  aggKey?: string;
+  count?: number;
+  amount?: number;
 }
 
 export interface WeeklyReport {
