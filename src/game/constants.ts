@@ -308,7 +308,7 @@ export const CUSTOMER_EMOJI: Record<CustomerType, string> = {
  * über mehrere Jahre überschaubar bleibt.
  */
 export const INQUIRY_BASE_CHANCE = 0.9;
-export const INQUIRY_SATURATION_CUSTOMERS = 12;
+export const INQUIRY_SATURATION_CUSTOMERS = 14;
 
 /**
  * Light expansion inquiries (🔁 Bestandskunde möchte eine weitere Produktlinie)
