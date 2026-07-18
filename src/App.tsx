@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGame } from './state/GameProvider';
-import { STEP } from './game/tutorial';
+import { STEP, tutorialPausesGame } from './game/tutorial';
 import { TopBar } from './components/TopBar';
 import { Modal } from './components/Modal';
 import { IsometricWarehouse, type BuildTool } from './components/IsometricWarehouse';
@@ -44,34 +44,77 @@ export function App() {
   const { state, mutate, togglePause, setPaused, newGame } = useGame();
   const [modal, setModal] = useState<ModalId>(null);
   const [restartOpen, setRestartOpen] = useState(false);
-  // True while the auto-opened Monday order screen is up, so closing it resumes
-  // the game (a manually-opened Einkauf screen must not touch the pause state).
-  const [orderPromptActive, setOrderPromptActive] = useState(false);
   const [buildMode, setBuildMode] = useState(false);
   const [buildTool, setBuildTool] = useState<BuildTool | null>(null);
   // One-time "uncle left you his notebook" intro, shown when the tutorial ends
   // (before the help recap, never stacked on top of it).
   const [notebookIntro, setNotebookIntro] = useState(false);
 
+  // --- Auto-pause on decision windows (Entscheidungen R2) ---
+  // Opening ANY modal, the build mode or the restart dialog pauses the game;
+  // closing the last of them restores the previous state — if the game was
+  // already paused manually before, it stays paused. Info views (Reports, Log,
+  // Notizbuch, Inventar) pause too, deliberately: consistent is simpler.
+  const uiOpenRef = useRef(false);
+  const pausedBeforeUiRef = useRef(false);
+  const openUi = () => {
+    if (!uiOpenRef.current) {
+      uiOpenRef.current = true;
+      pausedBeforeUiRef.current = state.paused;
+      setPaused(true);
+    }
+  };
+  const closeUi = () => {
+    if (!uiOpenRef.current) return;
+    uiOpenRef.current = false;
+    // Never restart the clock behind a tutorial story overlay or an end screen,
+    // and never when the game was already paused before the window opened.
+    if (
+      !pausedBeforeUiRef.current &&
+      !tutorialPausesGame(state.tutorial) &&
+      !state.gameOver &&
+      !state.yearComplete
+    ) {
+      setPaused(false);
+    }
+  };
+
   // Opening a modal leaves build mode; entering build mode closes any modal.
   const openModal = (id: ModalId) => {
     setBuildMode(false);
     setBuildTool(null);
     setModal(id);
+    openUi();
+  };
+  const closeModal = () => {
+    setModal(null);
+    closeUi();
   };
   const enterBuild = () => {
     setModal(null);
     setBuildMode(true);
+    openUi();
   };
   const exitBuild = () => {
     setBuildMode(false);
     setBuildTool(null);
+    closeUi();
+  };
+  const openRestart = () => {
+    setRestartOpen(true);
+    openUi();
+  };
+  const cancelRestart = () => {
+    setRestartOpen(false);
+    closeUi();
   };
 
   const doRestart = () => {
     newGame();
     setRestartOpen(false);
     setModal(null);
+    // Fresh game owns its pause state (tutorial intro) — drop any UI capture.
+    uiOpenRef.current = false;
   };
 
   // Spacebar toggles pause (unless typing in an input).
@@ -94,36 +137,34 @@ export function App() {
   const prevTutStepRef = useRef<number | null>(state.tutorial?.active ? state.tutorial.step : null);
   useEffect(() => {
     const now = state.tutorial?.active ? state.tutorial.step : null;
-    if (prevTutStepRef.current === STEP.MONTH && now === null) setNotebookIntro(true);
+    if (prevTutStepRef.current === STEP.MONTH && now === null) {
+      setNotebookIntro(true);
+      openUi(); // the intro + following help recap count as one UI window
+    }
     prevTutStepRef.current = now;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.tutorial?.active, state.tutorial?.step]);
 
   // Whenever the simulation raises pendingOrderWeek (Saturday without Einkäufer,
-  // or the tutorial's ordering beat), open the weekly order screen and pause the
-  // game until the player has dealt with it. Fresh games always start in the
-  // tutorial intro, so no prompt can precede the player's first interaction.
+  // or the tutorial's ordering beat), open the weekly order screen — the generic
+  // auto-pause captures the running state and closing restores it.
   useEffect(() => {
     if (state.pendingOrderWeek != null && !state.gameOver && !state.yearComplete) {
-      setModal('procurement');
-      setPaused(true);
-      setOrderPromptActive(true);
+      openModal('procurement');
     }
-  }, [state.pendingOrderWeek, state.gameOver, state.yearComplete, setPaused]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.pendingOrderWeek, state.gameOver, state.yearComplete]);
 
-  // Closing the weekly order screen: clear any pending prompt (a skipped week) and
-  // resume the clock only if it was the auto-opened Monday prompt.
+  // Closing the weekly order screen: clear any pending prompt (a skipped week),
+  // then restore the pre-open pause state like every other decision window.
   const closeProcurement = () => {
-    setModal(null);
     if (state.pendingOrderWeek != null) mutate((s) => { s.pendingOrderWeek = null; });
-    if (orderPromptActive) {
-      setPaused(false);
-      setOrderPromptActive(false);
-    }
+    closeModal();
   };
 
   return (
     <div className="app">
-      <TopBar onRestart={() => setRestartOpen(true)} onHelp={() => openModal('help')} />
+      <TopBar onRestart={openRestart} onHelp={() => openModal('help')} />
 
       <div className={`main${state.settings.ordersPanelCollapsed ? ' orders-collapsed' : ''}`}>
         <div className="col-left" style={{ position: 'relative' }}>
@@ -161,20 +202,20 @@ export function App() {
       <TutorialLayer />
       <MilestoneLayer />
 
-      {modal === 'inventory' && <InventoryModal onClose={() => setModal(null)} />}
-      {modal === 'sortiment' && <SortimentModal onClose={() => setModal(null)} />}
+      {modal === 'inventory' && <InventoryModal onClose={closeModal} />}
+      {modal === 'sortiment' && <SortimentModal onClose={closeModal} />}
       {modal === 'procurement' && <ProcurementModal onClose={closeProcurement} />}
-      {modal === 'pricing' && <PricingModal onClose={() => setModal(null)} />}
-      {modal === 'customers' && <CustomersModal onClose={() => setModal(null)} />}
-      {modal === 'inquiries' && <InquiriesModal onClose={() => setModal(null)} />}
-      {modal === 'employees' && <EmployeesModal onClose={() => setModal(null)} />}
-      {modal === 'finance' && <FinanceModal onClose={() => setModal(null)} />}
-      {modal === 'reports' && <ReportsModal onClose={() => setModal(null)} />}
-      {modal === 'log' && <LogModal onClose={() => setModal(null)} />}
-      {modal === 'notebook' && <NotebookModal onClose={() => setModal(null)} />}
-      {modal === 'help' && <HelpModal onClose={() => setModal(null)} />}
+      {modal === 'pricing' && <PricingModal onClose={closeModal} />}
+      {modal === 'customers' && <CustomersModal onClose={closeModal} />}
+      {modal === 'inquiries' && <InquiriesModal onClose={closeModal} />}
+      {modal === 'employees' && <EmployeesModal onClose={closeModal} />}
+      {modal === 'finance' && <FinanceModal onClose={closeModal} />}
+      {modal === 'reports' && <ReportsModal onClose={closeModal} />}
+      {modal === 'log' && <LogModal onClose={closeModal} />}
+      {modal === 'notebook' && <NotebookModal onClose={closeModal} />}
+      {modal === 'help' && <HelpModal onClose={closeModal} />}
 
-      {state.yearComplete && <YearCompleteScreen onRestart={() => setRestartOpen(true)} />}
+      {state.yearComplete && <YearCompleteScreen onRestart={openRestart} />}
       {state.gameOver && <GameOverScreen />}
 
       {notebookIntro && (
@@ -202,12 +243,12 @@ export function App() {
       )}
 
       {restartOpen && (
-        <Modal title="Neues Spiel starten?" icon="🔄" top onClose={() => setRestartOpen(false)}>
+        <Modal title="Neues Spiel starten?" icon="🔄" top onClose={cancelRestart}>
           <p className="hint">
             Der aktuelle Fortschritt geht dabei verloren und kann nicht wiederhergestellt werden.
           </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
-            <button className="btn ghost" onClick={() => setRestartOpen(false)}>
+            <button className="btn ghost" onClick={cancelRestart}>
               Abbrechen
             </button>
             <button className="btn danger" onClick={doRestart}>
