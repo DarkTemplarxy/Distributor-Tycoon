@@ -160,16 +160,17 @@ export const ROLE_EMOJI: Record<Role, string> = {
 };
 
 /**
- * Vertrieb (Sales): dedicated acquisition staff actively drum up NEW-customer
- * inquiries, on top of the passive saturation curve — so the customer count
- * becomes a deliberate investment (hire Vertrieb AND keep KAM slots free to
- * convert), not a fixed ceiling. Diminishing returns via a skill-weighted head
- * count: each rep contributes 0.5 + 0.5×(Skill/100) "power". The weekly
- * new-inquiry bonus is MAX × power/(HALF + power). Tune here + verify in the
- * harness. (Requires a free desk like every office role.)
+ * Vertrieb (Sales): each rep's skill-weighted power (0.5 + 0.5×Skill/100)
+ * ENLARGES every tier's addressable market (see INQUIRY_MARKET) rather than
+ * adding a flat chance. Because the same saturation curve then applies, hiring
+ * more reps has sharply diminishing marginal value and can never push past the
+ * base rate — spamming reps is self-limiting. Early game the extra reach means
+ * more small customers (reach 120k faster); once the small market saturates,
+ * the reps' value shifts to keeping the rarer medium/large pipeline flowing —
+ * the late-game reason to keep a sales team. (Needs a free desk, like every
+ * office role.) Tune here + verify in the harness.
  */
-export const SALES_ACQUISITION_MAX_BONUS = 1.0;
-export const SALES_ACQUISITION_HALF_POWER = 2.0;
+export const SALES_MARKET_PER_REP = 10;
 
 /** Upfront hiring cost is this many weeks of salary. */
 export const HIRE_WEEKS_UPFRONT = 4;
@@ -316,14 +317,29 @@ export const CUSTOMER_EMOJI: Record<CustomerType, string> = {
 };
 
 /**
- * New-customer inquiries TAPER as the base grows: the weekly chance is
- * base × SAT/(SAT + aktive Kunden). Early game ≈ 0.77/Woche (wie gehabt), bei
- * 17 Kunden ≈ 0,37, bei 40 ≈ 0,21 — Wachstum verlagert sich mit der Zeit von
- * Akquise auf die Weiterentwicklung der Bestandskunden, damit der Kundenstamm
- * über mehrere Jahre überschaubar bleibt.
+ * New-customer acquisition is a PER-TIER saturation curve: each customer size
+ * has its OWN market that saturates against how many customers of THAT size you
+ * already have. Weekly chance for a tier = BASE × market/(market + Kunden dieser
+ * Größe), rolled only when the tier is unlocked AND has free KAM capacity.
+ * Vertrieb enlarges the market (SALES_MARKET_PER_REP).
+ *
+ * Why per-tier: a big pile of small customers no longer suppresses the rare,
+ * valuable medium/large inquiries. Small saturates around ~14 (keeps the list
+ * manageable in multi-year runs); medium is a handful; large are endgame
+ * trophies. Early game ≈ 0.79/Woche small (wie gehabt); at 17 small ≈ 0.41, at
+ * 40 small ≈ 0.23 — growth then shifts to developing existing customers and, in
+ * the late game, to landing the bigger tiers.
  */
-export const INQUIRY_BASE_CHANCE = 0.9;
-export const INQUIRY_SATURATION_CUSTOMERS = 14;
+export const INQUIRY_MARKET: Record<CustomerType, number> = {
+  small: 14,
+  medium: 5,
+  large: 2,
+};
+export const INQUIRY_BASE_CHANCE: Record<CustomerType, number> = {
+  small: 0.9,
+  medium: 0.55,
+  large: 0.35,
+};
 
 /**
  * Light expansion inquiries (🔁 Bestandskunde möchte eine weitere Produktlinie)

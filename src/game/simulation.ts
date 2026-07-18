@@ -40,10 +40,9 @@ import {
   EXPANSION_MAX_PER_WEEK,
   EXPANSION_MIN_LOYALTY,
   INQUIRY_BASE_CHANCE,
-  INQUIRY_SATURATION_CUSTOMERS,
+  INQUIRY_MARKET,
   INQUIRY_DAY_OF_WEEK,
-  SALES_ACQUISITION_HALF_POWER,
-  SALES_ACQUISITION_MAX_BONUS,
+  SALES_MARKET_PER_REP,
   ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
@@ -1364,38 +1363,34 @@ function rollLineVolume(type: CustomerType, productId: ProductId): number {
 }
 
 /** Skill-weighted acquisition power of the Vertrieb team (each rep contributes
- * 0.5 + 0.5×Skill/100). Drives the sales bonus in newInquiryChance. */
+ * 0.5 + 0.5×Skill/100). Enlarges every tier's market (see typeInquiryChance). */
 export function salesAcquisitionPower(state: GameState): number {
   return state.employees
     .filter((e) => e.role === 'sales')
     .reduce((sum, e) => sum + 0.5 + 0.5 * (e.skill / 100), 0);
 }
 
-/** Extra weekly new-inquiry chance from the Vertrieb team, with diminishing
- * returns (MAX × power/(HALF + power)). Zero without sales staff. */
-export function salesAcquisitionBonus(state: GameState): number {
-  const power = salesAcquisitionPower(state);
-  return SALES_ACQUISITION_MAX_BONUS * (power / (SALES_ACQUISITION_HALF_POWER + power));
+/** Weekly chance of a NEW-customer inquiry of a given size: a per-tier
+ * saturation curve, BASE × market/(market + Kunden dieser Größe), whose market
+ * is enlarged by the Vertrieb team. Each tier saturates against its OWN count,
+ * so a pile of small customers never suppresses the rare medium/large tiers. */
+export function typeInquiryChance(state: GameState, type: CustomerType): number {
+  const count = state.customers.filter((c) => c.active && c.type === type).length;
+  const market = INQUIRY_MARKET[type] + salesAcquisitionPower(state) * SALES_MARKET_PER_REP;
+  return INQUIRY_BASE_CHANCE[type] * (market / (market + count));
 }
 
-/** Weekly chance of a NEW-customer inquiry: a passive saturation curve
- * (base × SAT/(SAT + Kunden)) — so growth naturally shifts toward developing
- * existing customers — PLUS the Vertrieb team's active acquisition bonus, which
- * lets a player who invests in sales keep growing the customer count on purpose.
- * Exported for tests and UI hints. */
-export function newInquiryChance(state: GameState): number {
-  const active = state.customers.filter((c) => c.active).length;
-  const base =
-    INQUIRY_BASE_CHANCE * (INQUIRY_SATURATION_CUSTOMERS / (INQUIRY_SATURATION_CUSTOMERS + active));
-  return Math.min(1, base + salesAcquisitionBonus(state));
+/** Expected new-customer inquiries per week across all unlocked tiers that have
+ * free capacity — the headline the staff screen shows. */
+export function expectedNewInquiriesPerWeek(state: GameState): number {
+  return unlockedTypes(state)
+    .filter((t) => freeCapacity(state, t) > 0)
+    .reduce((sum, t) => sum + typeInquiryChance(state, t), 0);
 }
 
-function maybeGenerateInquiry(state: GameState): void {
-  if (Math.random() > newInquiryChance(state)) return;
+/** Create one NEW-customer inquiry of the given size. */
+function generateNewInquiry(state: GameState, type: CustomerType): void {
   const week = weekOf(state.totalDays);
-  // Prefer a type that currently has free capacity.
-  const candidates = unlockedTypes(state).filter((t) => freeCapacity(state, t) > 0);
-  const type = candidates.length > 0 ? pick(candidates) : 'small';
   const preferred = pickInquiryProduct(state);
   const product = inquiryProductInfo(state, preferred);
   const inquiry: Inquiry = {
@@ -2023,10 +2018,13 @@ function onDayStart(state: GameState, dayIndex: number): void {
   // only open ones while the accept/counter guidance runs.
   const inquiriesUnlocked = !state.tutorial?.active || state.tutorial.step > STEP.GROWTH;
   if (dow === INQUIRY_DAY_OF_WEEK && inquiriesUnlocked) {
-    const hasFreeCapacity = (['small', 'medium', 'large'] as CustomerType[]).some(
-      (t) => freeCapacity(state, t) > 0,
-    );
-    if (hasFreeCapacity) maybeGenerateInquiry(state);
+    // Per-tier acquisition: each unlocked size with free capacity rolls its own
+    // saturation curve independently (small saturates → bounded; medium/large
+    // keep their own trickle; Vertrieb enlarges every market).
+    for (const type of unlockedTypes(state)) {
+      if (freeCapacity(state, type) <= 0) continue;
+      if (Math.random() < typeInquiryChance(state, type)) generateNewInquiry(state, type);
+    }
     // Bestandskunden-Entwicklung: light expansion wishes scale with the base…
     maybeGenerateExpansionInquiries(state);
     // …while the demand engine (Wachstumsmotor) stays the rare, serious event:

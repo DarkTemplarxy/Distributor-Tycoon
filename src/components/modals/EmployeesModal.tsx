@@ -13,9 +13,9 @@ import {
 import {
   currentMonthlyRent,
   deskCount,
+  expectedNewInquiriesPerWeek,
   freeDesks,
   managers,
-  newInquiryChance,
 } from '../../game/simulation';
 import { fireEmployee, hireEmployee, trainEmployee } from '../../game/actions';
 import { euro } from '../../game/util';
@@ -78,13 +78,13 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
         <div
           className="row"
           style={{ padding: '8px 10px' }}
-          title="Vertriebsmitarbeiter erhöhen die wöchentliche Chance auf eine neue Kundenanfrage (abnehmender Grenzertrag). Ohne Vertrieb sinkt die Chance mit wachsendem Kundenstamm von selbst."
+          title="Vertriebsmitarbeiter vergrößern deinen Markt je Kundengröße (abnehmender Grenzertrag). Jede Kundengröße sättigt gegen ihre eigene Kundenzahl – kleine Kunden werden mit der Zeit seltener, mittlere/große bleiben ein eigener Kanal."
         >
           <div className="grow">
             <div className="title" style={{ fontSize: 13 }}>Vertrieb · Akquise</div>
             <div className="sub">
-              {state.employees.filter((e) => e.role === 'sales').length} Vertriebsmitarbeiter ·
-              Neukunden-Chance ~{Math.round(newInquiryChance(state) * 100)}%/Woche
+              {state.employees.filter((e) => e.role === 'sales').length} Vertriebsmitarbeiter · Ø ~
+              {expectedNewInquiriesPerWeek(state).toFixed(1)} Neukunden-Anfragen/Woche
             </div>
           </div>
           <span className="pill">{state.employees.filter((e) => e.role === 'sales').length}</span>

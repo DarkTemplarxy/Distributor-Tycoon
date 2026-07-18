@@ -157,14 +157,19 @@ const ENTRIES: WikiEntry[] = [
           – so erkennst du gute Angebote und Lowballs auf einen Blick, ohne selbst zu rechnen.
         </p>
         <p>
-          <b>Wachstum verlagert sich mit der Zeit:</b> Je größer dein Kundenstamm, desto{' '}
-          <b>seltener</b> kommen von selbst Neukunden-Anfragen (Sättigung: früh ~0,8/Woche, bei ~17
-          Kunden ~0,4, bei 40+ ~0,2) – dafür melden sich <b>Bestandskunden häufiger</b> mit
-          Erweiterungswünschen für weitere Produktgruppen (je {pct(EXPANSION_CHANCE_PER_CUSTOMER)}{' '}
-          pro treuem Kunden und Woche, max. {EXPANSION_MAX_PER_WEEK}/Woche). Diese Wünsche sind
-          unverbindlich – Ablehnen hat keine Folgen, anders als beim seltenen ⚠️ Ultimatum-Pfad.
-          Willst du den Kundenstamm bewusst weiter vergrößern, stelle <b>Vertriebsmitarbeiter</b>{' '}
-          ein – sie heben die Neukunden-Chance wieder an (siehe Personal).
+          <b>Jede Kundengröße hat ihren eigenen Markt.</b> Neukunden-Anfragen kommen pro Größe umso{' '}
+          <b>seltener</b>, je mehr Kunden dieser Größe du schon hast (kleine sättigen früh: ~0,8/Woche
+          am Anfang, bei ~17 kleinen ~0,4, bei 40+ ~0,2). Weil kleine und mittlere/große Kunden{' '}
+          <b>getrennte</b> Märkte sind, verdrängt ein großer Stamm kleiner Kunden nicht die seltenen,
+          wertvollen mittleren und großen Anfragen – die bleiben ein eigener Kanal. So bleibt die
+          Kundenliste über Jahre überschaubar, während spät der Fokus auf größere Kunden wandert.
+        </p>
+        <p>
+          Dafür melden sich <b>Bestandskunden häufiger</b> mit Erweiterungswünschen für weitere
+          Produktgruppen (je {pct(EXPANSION_CHANCE_PER_CUSTOMER)} pro treuem Kunden und Woche, max.{' '}
+          {EXPANSION_MAX_PER_WEEK}/Woche). Diese Wünsche sind unverbindlich – Ablehnen hat keine
+          Folgen, anders als beim seltenen ⚠️ Ultimatum-Pfad. Willst du bewusst mehr Kunden gewinnen,
+          stelle <b>Vertriebsmitarbeiter</b> ein – sie <b>vergrößern deinen Markt</b> (siehe Personal).
         </p>
       </>
     ),
@@ -366,9 +371,10 @@ const ENTRIES: WikiEntry[] = [
         </p>
         <p>
           <b>Lagermitarbeiter</b> richten Ware her. <b>Key Account Manager</b> geben Betreuungs-Slots
-          für mehr Kunden. <b>Vertriebsmitarbeiter</b> werben aktiv neue Kunden an – je mehr (und je
-          höher ihr Skill), desto höher die wöchentliche Neukunden-Chance, mit abnehmendem
-          Grenzertrag; zum Abschließen brauchst du weiterhin freie KAM-Slots. <b>Einkäufer</b>{' '}
+          für mehr Kunden. <b>Vertriebsmitarbeiter</b> vergrößern deinen Markt und bringen so mehr
+          Neukunden-Anfragen (je mehr Reps und je höher ihr Skill, desto größer der Markt – mit
+          abnehmendem Grenzertrag, weil dieselbe Sättigung greift; Spam lohnt nicht). Zum
+          Abschließen brauchst du weiterhin freie KAM-Slots. <b>Einkäufer</b>{' '}
           bestellen automatisch nach und verhandeln Preiserhöhungen herunter.
         </p>
         <p>
