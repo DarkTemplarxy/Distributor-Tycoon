@@ -3,7 +3,6 @@ import { useGame } from '../../state/GameProvider';
 import {
   HIRE_WEEKS_UPFRONT,
   MANAGER_SLOTS,
-  MONTHLY_RENT,
   ROLE_EMOJI,
   ROLE_LABEL,
   ROLE_SALARY,
@@ -11,7 +10,7 @@ import {
   TRAINING_COST,
   WEEKS_PER_MONTH,
 } from '../../game/constants';
-import { deskCount, freeDesks, managers } from '../../game/simulation';
+import { currentMonthlyRent, deskCount, freeDesks, managers } from '../../game/simulation';
 import { fireEmployee, hireEmployee, trainEmployee } from '../../game/actions';
 import { euro } from '../../game/util';
 import type { Role } from '../../game/types';
@@ -30,7 +29,7 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
     <Modal title="Personal" icon="🧑‍💼" onClose={onClose} wide>
       <p className="hint">
         Monatliche Lohnkosten: <b>{euro(weeklyPayroll * WEEKS_PER_MONTH)}</b> (+ Miete{' '}
-        {euro(MONTHLY_RENT)}) – werden am Monatsende verrechnet. Einstellung kostet{' '}
+        {euro(currentMonthlyRent(state))}) – werden am Monatsende verrechnet. Einstellung kostet{' '}
         {HIRE_WEEKS_UPFRONT} Wochen im Voraus. Training +10 Skill für {euro(TRAINING_COST)}.
       </p>
 

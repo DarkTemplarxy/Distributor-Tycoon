@@ -14,6 +14,7 @@ import {
   INBOUND_SLOT_PRICE,
   officeExpansionPrice,
   PALETTE_SIZE,
+  RENT_PER_EXPANSION,
   ROLE_LABEL,
   ROLE_SALARY,
   SHELF_PRICE,
@@ -513,7 +514,7 @@ export function expandHall(state: GameState, block: { gx: number; gy: number }[]
   }
   spend(state, price);
   state.warehouse.expansions += 1;
-  notify(state, `🏗️ Halle erweitert (${price}€) – 4 neue Lagerkacheln.`, 'info');
+  notify(state, `🏗️ Halle erweitert (${price}€) – 4 neue Lagerkacheln, Miete +${RENT_PER_EXPANSION}€/Monat.`, 'info');
   return { ok: true };
 }
 
@@ -544,6 +545,6 @@ export function expandOffice(state: GameState, block: { gx: number; gy: number }
   }
   spend(state, price);
   state.warehouse.officeExpansions += 1;
-  notify(state, `🏢 Bürogebiet erweitert (${price}€) – 4 neue Bürokacheln.`, 'info');
+  notify(state, `🏢 Bürogebiet erweitert (${price}€) – 4 neue Bürokacheln, Miete +${RENT_PER_EXPANSION}€/Monat.`, 'info');
   return { ok: true };
 }

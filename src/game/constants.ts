@@ -48,6 +48,9 @@ export const WEEKS_PER_QUARTER = 12; // 3 months per season
 
 /** Fixed monthly warehouse rent, charged together with salaries at month end. */
 export const MONTHLY_RENT = 800;
+/** Additional monthly rent per built 2×2 expansion block (hall AND office) —
+ * growth carries running costs, on top of the base rent (Entscheidungen R2). */
+export const RENT_PER_EXPANSION = 50;
 
 /** Truck arrives Monday at this hour (0-24). Day fraction 0.75 = 18:00. */
 export const TRUCK_HOUR = 18;

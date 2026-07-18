@@ -2,6 +2,7 @@ import { useGame } from '../state/GameProvider';
 import {
   DESK_PRICE,
   INBOUND_SLOT_PRICE,
+  RENT_PER_EXPANSION,
   SHELF_PRICE,
   TABLE_PRICE,
   hallExpansionPrice,
@@ -15,9 +16,9 @@ const TOOLS: { id: BuildTool; icon: string; label: string; hint: string }[] = [
   { id: 'shelf', icon: '🧱', label: 'Regal', hint: '+4 Palettenplätze' },
   { id: 'table', icon: '🔧', label: 'Tisch', hint: 'mehr paralleles Herrichten' },
   { id: 'inbound', icon: '📥', label: 'Anlieferung', hint: 'Wareneingang +1 Platz' },
-  { id: 'expand', icon: '🏗️', label: 'Erweiterung', hint: '+4 Kacheln (rechts/hinten)' },
+  { id: 'expand', icon: '🏗️', label: 'Erweiterung', hint: `+4 Kacheln (rechts/hinten) · Miete +${RENT_PER_EXPANSION} €/Monat` },
   { id: 'desk', icon: '🪑', label: 'Arbeitsplatz', hint: 'Sitzplatz für 1 Büro-Mitarbeiter' },
-  { id: 'officeExpand', icon: '🏢', label: 'Bürogebiet', hint: '+4 Bürokacheln (links)' },
+  { id: 'officeExpand', icon: '🏢', label: 'Bürogebiet', hint: `+4 Bürokacheln (links) · Miete +${RENT_PER_EXPANSION} €/Monat` },
 ];
 
 export function BuildBar({

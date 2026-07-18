@@ -39,6 +39,7 @@ import {
   MILESTONE_DEFS,
   monthlyRevenue,
   MONTHLY_RENT,
+  RENT_PER_EXPANSION,
   NIGHT_SPEED,
   PALETTE_SIZE,
   PAYMENT_DELAY_DAYS_BY_TYPE,
@@ -287,6 +288,12 @@ function expansionFrontier(state: GameState, zone: 'hall' | 'office'): Expansion
     }
   }
   return blocks;
+}
+
+/** Current monthly rent: base + RENT_PER_EXPANSION per built 2×2 block (hall
+ * and office alike) — expansion carries running costs. */
+export function currentMonthlyRent(state: GameState): number {
+  return MONTHLY_RENT + RENT_PER_EXPANSION * (state.warehouse.expansions + state.warehouse.officeExpansions);
 }
 
 export function hallExpansionFrontier(state: GameState): ExpansionBlock[] {
@@ -1419,18 +1426,24 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   // economic result even though the cash itself only leaves at month end. Over a
   // full month the four weekly shares add up to the amount actually debited below.
   const weeklySalary = state.employees.reduce((s, e) => s + e.salary, 0);
+  const monthlyRent = currentMonthlyRent(state);
   state.weekAcc.salaries += weeklySalary;
-  state.weekAcc.rent += MONTHLY_RENT / WEEKS_PER_MONTH;
+  state.weekAcc.rent += monthlyRent / WEEKS_PER_MONTH;
 
   // 1c. Cash side — at month end the whole month's salaries + rent are actually
   // debited, all at once (accrued through the weekly shares above). newWeek is the
   // start of the next month when it is divisible by 4.
   if (newWeek % WEEKS_PER_MONTH === 0 && newWeek > 0) {
     const monthlySalary = weeklySalary * WEEKS_PER_MONTH;
-    spend(state, monthlySalary + MONTHLY_RENT);
+    spend(state, monthlySalary + monthlyRent);
+    const expansions = state.warehouse.expansions + state.warehouse.officeExpansions;
+    const rentNote =
+      expansions > 0
+        ? `Miete ${Math.round(monthlyRent)}€ (Basis ${MONTHLY_RENT}€ + ${expansions} Erweiterungen)`
+        : `Miete ${MONTHLY_RENT}€`;
     notify(
       state,
-      `💸 Monatsabschluss: Personal ${Math.round(monthlySalary)}€ + Miete ${MONTHLY_RENT}€ abgebucht.`,
+      `💸 Monatsabschluss: Personal ${Math.round(monthlySalary)}€ + ${rentNote} abgebucht.`,
       'warn',
     );
   }
