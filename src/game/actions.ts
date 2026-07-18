@@ -32,6 +32,7 @@ import {
   freeCapacity,
   freeDesks,
   getProduct,
+  isFrontierBlock,
   isInAssortment,
   notify,
   spend,
@@ -424,8 +425,13 @@ export function buildInboundSlot(state: GameState, gx: number, gy: number): Acti
   return { ok: true };
 }
 
-/** Expand the hall by one 2×2 block (4 storage tiles). Only scaling cost. */
+/** Expand the hall by one 2×2 block (4 storage tiles). Only scaling cost. The
+ * block must be on the current expansion frontier (dynamically recomputed from
+ * the hall shape), so UI and mutation can never disagree. */
 export function expandHall(state: GameState, block: { gx: number; gy: number }[]): ActionResult {
+  if (!isFrontierBlock(state, 'hall', block)) {
+    return { ok: false, message: 'Hier kann die Halle nicht erweitert werden.' };
+  }
   const price = hallExpansionPrice(state.warehouse.expansions);
   if (state.cash + availableCredit(state) < price) return { ok: false, message: `Erweiterung kostet ${price}€.` };
   for (const c of block) {
@@ -451,8 +457,12 @@ export function buildDesk(state: GameState, gx: number, gy: number): ActionResul
   return { ok: true };
 }
 
-/** Expand the office by one 2×2 block (4 office tiles). Only scaling cost. */
+/** Expand the office by one 2×2 block (4 office tiles). Only scaling cost. The
+ * block must be on the current office expansion frontier. */
 export function expandOffice(state: GameState, block: { gx: number; gy: number }[]): ActionResult {
+  if (!isFrontierBlock(state, 'office', block)) {
+    return { ok: false, message: 'Hier kann das Büro nicht erweitert werden.' };
+  }
   const price = officeExpansionPrice(state.warehouse.officeExpansions);
   if (state.cash + availableCredit(state) < price) return { ok: false, message: `Bürogebiet kostet ${price}€.` };
   for (const c of block) {

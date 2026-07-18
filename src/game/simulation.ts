@@ -212,6 +212,106 @@ function deductInventory(product: Product, qty: number): void {
   product.batches = product.batches.filter((b) => b.quantity > 0);
 }
 
+// --- Build frontier ---------------------------------------------------------
+
+export type ExpansionBlock = { gx: number; gy: number }[];
+
+const cellKey = (gx: number, gy: number) => `${gx},${gy}`;
+/** Canonical identity of a 2×2 block (its top-left anchor). */
+export function blockAnchor(block: ExpansionBlock): { gx: number; gy: number } {
+  return { gx: Math.min(...block.map((c) => c.gx)), gy: Math.min(...block.map((c) => c.gy)) };
+}
+
+/**
+ * Dynamically computed 2×2 expansion blocks for a zone. A block is offered when
+ * (a) it sits on the zone's alignment grid (the parity of the original layout —
+ * expansions always step by 2), (b) all four of its tiles are empty, (c) it
+ * touches at least one existing tile of the zone orthogonally, and (d) it lies
+ * within the allowed growth directions. Because this is recomputed from the
+ * CURRENT shape, blocks that only became adjacent through earlier expansions are
+ * offered too — L-shapes and notches can always be filled back into a contiguous
+ * area (no dead pockets, by construction on the aligned grid).
+ *
+ * Growth directions: the hall grows right (+gx) and back (−gy); its front edge
+ * (ramp/dock) and the office side (gx < 0) stay fixed. The office grows left
+ * (−gx) and back (−gy) — away from the hall.
+ */
+function expansionFrontier(state: GameState, zone: 'hall' | 'office'): ExpansionBlock[] {
+  const zoneTiles = state.warehouse.tiles.filter((t) =>
+    zone === 'office' ? t.zone === 'office' : t.zone !== 'office',
+  );
+  if (zoneTiles.length === 0) return [];
+  const occupied = new Set(state.warehouse.tiles.map((t) => cellKey(t.gx, t.gy)));
+  const inZone = new Set(zoneTiles.map((t) => cellKey(t.gx, t.gy)));
+  const gxs = zoneTiles.map((t) => t.gx);
+  const gys = zoneTiles.map((t) => t.gy);
+  const minGx = Math.min(...gxs);
+  const maxGx = Math.max(...gxs);
+  const minGy = Math.min(...gys);
+  const maxGy = Math.max(...gys);
+
+  // Alignment parity from the original layouts: hall origin (0,0) → even/even;
+  // office origin (−3,0) → odd gx, even gy.
+  const ax = zone === 'hall' ? 0 : 1;
+  const mod2 = (v: number) => ((v % 2) + 2) % 2;
+  // Hall: front row fixed (blocks end at the current front edge), left edge at
+  // gx 0 (office corridor). Office: nothing toward the hall (right), the front
+  // may extend one row past the current edge (its 3-row layout tiles that way —
+  // matches the original expansion offers).
+  const allowed = (bx: number, by: number) =>
+    zone === 'hall' ? bx >= 0 && by + 1 <= maxGy : bx + 1 <= maxGx && by <= maxGy;
+
+  const blocks: ExpansionBlock[] = [];
+  for (let by = minGy - 2; by <= maxGy + 2; by += 1) {
+    if (mod2(by) !== 0) continue;
+    for (let bx = minGx - 2; bx <= maxGx + 2; bx += 1) {
+      if (mod2(bx - ax) !== 0) continue;
+      if (!allowed(bx, by)) continue;
+      const cells: ExpansionBlock = [
+        { gx: bx, gy: by },
+        { gx: bx + 1, gy: by },
+        { gx: bx, gy: by + 1 },
+        { gx: bx + 1, gy: by + 1 },
+      ];
+      if (cells.some((c) => occupied.has(cellKey(c.gx, c.gy)))) continue;
+      const touchesZone = cells.some((c) =>
+        [
+          cellKey(c.gx - 1, c.gy),
+          cellKey(c.gx + 1, c.gy),
+          cellKey(c.gx, c.gy - 1),
+          cellKey(c.gx, c.gy + 1),
+        ].some((k) => inZone.has(k)),
+      );
+      if (touchesZone) blocks.push(cells);
+    }
+  }
+  return blocks;
+}
+
+export function hallExpansionFrontier(state: GameState): ExpansionBlock[] {
+  return expansionFrontier(state, 'hall');
+}
+export function officeExpansionFrontier(state: GameState): ExpansionBlock[] {
+  return expansionFrontier(state, 'office');
+}
+
+/** Whether `block` is one of the currently offered frontier blocks. Shared by
+ * the build actions so overlay, click handling and the mutation agree. */
+export function isFrontierBlock(state: GameState, zone: 'hall' | 'office', block: ExpansionBlock): boolean {
+  if (block.length !== 4) return false;
+  const key = block
+    .map((c) => cellKey(c.gx, c.gy))
+    .sort()
+    .join('|');
+  return expansionFrontier(state, zone).some(
+    (b) =>
+      b
+        .map((c) => cellKey(c.gx, c.gy))
+        .sort()
+        .join('|') === key,
+  );
+}
+
 // --- Money helpers ----------------------------------------------------------
 
 export function availableCredit(state: GameState): number {

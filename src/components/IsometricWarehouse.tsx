@@ -7,7 +7,16 @@
 
 import { useEffect, useRef } from 'react';
 import { useGame } from '../state/GameProvider';
-import { inboundStock, shelfStock, shelfCapacity, shelfUsed, inboundUsed, inboundCapacity } from '../game/simulation';
+import {
+  hallExpansionFrontier,
+  inboundCapacity,
+  inboundStock,
+  inboundUsed,
+  officeExpansionFrontier,
+  shelfCapacity,
+  shelfStock,
+  shelfUsed,
+} from '../game/simulation';
 import { PALETTE_SIZE, SHELF_SLOTS, WORK_END_HOUR, WORK_START_HOUR } from '../game/constants';
 import { dayName, formatClock, hourOf } from '../game/util';
 import type { GameState, ProductId } from '../game/types';
@@ -115,9 +124,6 @@ function officeBounds(state: GameState) {
     maxGy: Math.max(...gys),
   };
 }
-function tileAt(state: GameState, gx: number, gy: number) {
-  return state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
-}
 function shelfAt(state: GameState, gx: number, gy: number) {
   return state.warehouse.shelves.find((s) => s.gx === gx && s.gy === gy);
 }
@@ -171,78 +177,10 @@ function chunkStock(state: GameState, which: 'shelf' | 'inbound'): ShelfPallet[]
   return out;
 }
 
-/** 2×2 expansion blocks adjacent to the hall on the right (+gx) and back (−gy). */
-function expansionBlocks(state: GameState): { gx: number; gy: number }[][] {
-  const b = hallBounds(state);
-  const has = (gx: number, gy: number) => !!tileAt(state, gx, gy);
-  const blocks: { gx: number; gy: number }[][] = [];
-  const align = (v: number, base: number) => base + Math.floor((v - base) / 2) * 2;
-  // Right edge: one column of 2×2 blocks just past maxGx.
-  const gx0 = b.maxGx + 1;
-  for (let gy = align(b.minGy, b.minGy); gy <= b.maxGy; gy += 2) {
-    if (has(gx0, gy) || has(gx0, gy + 1)) continue;
-    // only where it touches the existing hall
-    if (has(gx0 - 1, gy) || has(gx0 - 1, gy + 1)) {
-      blocks.push([
-        { gx: gx0, gy },
-        { gx: gx0 + 1, gy },
-        { gx: gx0, gy: gy + 1 },
-        { gx: gx0 + 1, gy: gy + 1 },
-      ]);
-    }
-  }
-  // Back edge: one row of 2×2 blocks just before minGy.
-  const gy0 = b.minGy - 2;
-  for (let gx = align(b.minGx, b.minGx); gx <= b.maxGx; gx += 2) {
-    if (has(gx, gy0) || has(gx + 1, gy0)) continue;
-    if (has(gx, gy0 + 2) || has(gx + 1, gy0 + 2)) {
-      blocks.push([
-        { gx, gy: gy0 },
-        { gx: gx + 1, gy: gy0 },
-        { gx, gy: gy0 + 1 },
-        { gx: gx + 1, gy: gy0 + 1 },
-      ]);
-    }
-  }
-  return blocks;
-}
-
-/** 2×2 office-expansion blocks adjacent to the office on the LEFT (−gx) and
- * back (−gy), so the office grows away from the hall. */
-function officeExpansionBlocks(state: GameState): { gx: number; gy: number }[][] {
-  const b = officeBounds(state);
-  if (!b) return [];
-  const has = (gx: number, gy: number) => !!tileAt(state, gx, gy);
-  const blocks: { gx: number; gy: number }[][] = [];
-  const align = (v: number, base: number) => base + Math.floor((v - base) / 2) * 2;
-  // Left edge: one column of 2×2 blocks just before minGx.
-  const gx0 = b.minGx - 2;
-  for (let gy = align(b.minGy, b.minGy); gy <= b.maxGy; gy += 2) {
-    if (has(gx0, gy) || has(gx0 + 1, gy)) continue;
-    if (has(gx0 + 2, gy) || has(gx0 + 2, gy + 1)) {
-      blocks.push([
-        { gx: gx0, gy },
-        { gx: gx0 + 1, gy },
-        { gx: gx0, gy: gy + 1 },
-        { gx: gx0 + 1, gy: gy + 1 },
-      ]);
-    }
-  }
-  // Back edge: one row of 2×2 blocks just before minGy.
-  const gy0 = b.minGy - 2;
-  for (let gx = align(b.minGx, b.minGx); gx <= b.maxGx; gx += 2) {
-    if (has(gx, gy0) || has(gx + 1, gy0)) continue;
-    if (has(gx, gy0 + 2) || has(gx + 1, gy0 + 2)) {
-      blocks.push([
-        { gx, gy: gy0 },
-        { gx: gx + 1, gy: gy0 },
-        { gx, gy: gy0 + 1 },
-        { gx: gx + 1, gy: gy0 + 1 },
-      ]);
-    }
-  }
-  return blocks;
-}
+// Expansion blocks come from the shared, dynamically computed frontier in
+// simulation.ts (hallExpansionFrontier / officeExpansionFrontier): every 2×2
+// outside block that currently touches the zone — so L-shapes and notches stay
+// expandable and the overlay always matches what expandHall/expandOffice accept.
 
 /** Tiles that are valid targets for the current build tool. */
 function validBuildTiles(state: GameState, tool: BuildTool): { gx: number; gy: number }[] {
@@ -371,7 +309,7 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
       if (!b?.tool) return;
       const { gx, gy } = toTile(ev);
       if (b.tool === 'expand' || b.tool === 'officeExpand') {
-        const blocks = b.tool === 'expand' ? expansionBlocks(stateRef.current) : officeExpansionBlocks(stateRef.current);
+        const blocks = b.tool === 'expand' ? hallExpansionFrontier(stateRef.current) : officeExpansionFrontier(stateRef.current);
         const block = blocks.find((blk) => blk.some((c) => c.gx === gx && c.gy === gy));
         if (block) b.onExpand(block);
       } else {
@@ -947,7 +885,7 @@ function draw(
   if (build && build.tool) {
     const tool = build.tool;
     const blockTool = tool === 'expand' || tool === 'officeExpand';
-    const blocksFor = () => (tool === 'expand' ? expansionBlocks(state) : officeExpansionBlocks(state));
+    const blocksFor = () => (tool === 'expand' ? hallExpansionFrontier(state) : officeExpansionFrontier(state));
     // Dim the whole hall.
     ctx.fillStyle = 'rgba(6,10,14,0.45)';
     ctx.fillRect(0, 0, cw, ch);
