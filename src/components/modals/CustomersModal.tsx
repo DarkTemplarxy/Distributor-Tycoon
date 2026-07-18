@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { assignCustomerManager, setCustomerLinePrice, setDiscount } from '../../game/actions';
-import { managers } from '../../game/simulation';
+import { assignCustomerManager, repriceCooldownLeft, setCustomerLinePrice, setDiscount } from '../../game/actions';
+import { managers, notify, repriceAcceptChance } from '../../game/simulation';
 import { demandUpliftFromDiscount, getProductDef, SLOT_COST } from '../../game/constants';
 import type { Customer, CustomerLine, CustomerType, Product } from '../../game/types';
 import { weekOf } from '../../game/util';
@@ -10,12 +10,13 @@ import { CustomerTypeFilter, Stars, PRODUCT_COLOR, useCustomerTypeFilter } from 
 
 const TYPE_LABEL = { small: 'Klein', medium: 'Mittel', large: 'Groß' } as const;
 
-/** Editable contract price for one customer line. Commits on blur/Enter (not per
- * keystroke) so the loyalty penalty for a hike fires exactly once. The margin pill
- * is the ACTUAL margin on this contract (line price vs current EK), coloured
- * relative to the product's target margin — so supplier-driven erosion is visible. */
-function LineEditor({ customerId, line, product }: { customerId: string; line: CustomerLine; product?: Product }) {
-  const { mutate } = useGame();
+/** Editable contract price for one customer line. Commits on blur/Enter. A real
+ * RAISE is a negotiation (symmetrisch zum Gegenangebot): the chance pill shows
+ * the odds before committing, a refusal keeps the old price and locks the line
+ * for a cooldown. The margin pill is the ACTUAL margin on this contract (line
+ * price vs current EK), coloured relative to the product's target margin. */
+function LineEditor({ customer, line, product }: { customer: Customer; line: CustomerLine; product?: Product }) {
+  const { state, mutate } = useGame();
   const [val, setVal] = useState(String(line.price));
   useEffect(() => setVal(String(line.price)), [line.price]);
 
@@ -25,13 +26,26 @@ function LineEditor({ customerId, line, product }: { customerId: string; line: C
       setVal(String(line.price));
       return;
     }
-    mutate((s) => setCustomerLinePrice(s, customerId, line.productId, n));
+    mutate((s) => {
+      const r = setCustomerLinePrice(s, customer.id, line.productId, n);
+      // Refusal/cooldown must be visible (the action already notifies verdicts;
+      // the cooldown message would otherwise be silent).
+      if (!r.ok && r.message && !/lehnt ab/.test(r.message)) notify(s, `⏳ ${r.message}`, 'info');
+    });
+    setVal(String(line.price));
   };
 
   const ek = product?.einkaufspreis ?? 0;
   const target = product?.zielmarge ?? 40;
   const margin = line.price > 0 ? ((line.price - ek) / line.price) * 100 : 0;
   const marginCls = margin >= target ? 'good' : margin >= target * 0.8 ? 'warn' : 'bad';
+
+  // Preview of the pending edit: is it a negotiation, and with what odds?
+  const entered = Number(val);
+  const isRaise = Number.isFinite(entered) && entered > line.agreedPrice * 1.02;
+  const cooldown = repriceCooldownLeft(state, line);
+  const chance = isRaise ? Math.round(repriceAcceptChance(state, customer, line, entered) * 100) : 100;
+  const chanceCls = chance >= 70 ? 'good' : chance >= 40 ? 'warn' : 'bad';
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -56,6 +70,19 @@ function LineEditor({ customerId, line, product }: { customerId: string; line: C
       <span className={`pill ${marginCls}`} title={`Zielmarge ${target}% · EK ${ek}€`}>
         Marge {margin.toFixed(0)}%
       </span>
+      {isRaise && cooldown > 0 && (
+        <span className="pill" title="Nach jeder Verhandlung ist die Linie einige Wochen gesperrt.">
+          ⏳ Verhandlung in {cooldown} Wo.
+        </span>
+      )}
+      {isRaise && cooldown === 0 && (
+        <span
+          className={`pill ${chanceCls}`}
+          title="Preiserhöhung = Verhandlung: Der Kunde kann ablehnen (Preis bleibt, Loyalität sinkt). Gute Sterne erhöhen Chance und Spielraum."
+        >
+          ⚖ Chance ~{chance}%
+        </span>
+      )}
     </div>
   );
 }
@@ -72,8 +99,10 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
     <Modal title="Kunden" icon="🤝" onClose={onClose} wide>
       <p className="hint">
         Rabatte (bis −20%) erhöhen die Nachfrage progressiv. Verspätungen senken die Sterne – bei zu
-        vielen kündigt der Kunde. <b>Vertragspreise</b> kannst du je Linie anpassen – eine deutliche
-        Erhöhung kostet <b>Loyalität</b> (zufriedene Kunden verzeihen mehr).
+        vielen kündigt der Kunde. <b>Preiserhöhungen sind Verhandlungen:</b> Der Kunde kann ablehnen
+        (Preis bleibt, Loyalität sinkt), danach ist die Linie einige Wochen gesperrt. Gute{' '}
+        <b>Service-Sterne</b> erhöhen Chance und Spielraum (bis ~45% Marge) – und Kunden mit sehr
+        niedriger Loyalität <b>kündigen</b> nach Vorwarnung.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <span className="sub">Anzeigen:</span>
@@ -163,7 +192,7 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 34 }}>
                 {c.lines.map((l) => (
-                  <LineEditor key={l.productId} customerId={c.id} line={l} product={productOf(l.productId)} />
+                  <LineEditor key={l.productId} customer={c} line={l} product={productOf(l.productId)} />
                 ))}
               </div>
 

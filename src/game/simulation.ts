@@ -44,8 +44,15 @@ import {
   INQUIRY_UNLISTED_PRODUCT_CHANCE,
   INQUIRY_PRICE_TIERS,
   LARGE_UNLOCK_MONTHLY,
+  LOYALTY_CHURN_CHANCE_MAX,
+  LOYALTY_CHURN_THRESHOLD,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
+  REPRICE_ACCEPT_FLOOR,
+  REPRICE_ACCEPT_SLOPE,
+  REPRICE_STAR_CEILING_BONUS,
+  REPRICE_TOLERANCE,
+  repriceStarDamp,
   monthlyRevenue,
   MONTHLY_RENT,
   RENT_PER_EXPANSION,
@@ -1530,6 +1537,7 @@ function makeLine(inq: Inquiry, price: number): CustomerLine {
   return {
     productId: inq.preferredProduct,
     price, // accepted price (target price, or the player's counter offer)
+    agreedPrice: price, // the mutually agreed baseline for later renegotiations
     volume: inq.suggestedVolume, // fixed quantity
   };
 }
@@ -1540,6 +1548,29 @@ function makeLine(inq: Inquiry, price: number): CustomerLine {
 export function counterAcceptChance(targetPrice: number, price: number): number {
   if (price <= targetPrice) return 1;
   return clamp(1 - (price / targetPrice - 1) * COUNTER_ACCEPT_SLOPE, 0.05, 1);
+}
+
+/** Probability a customer accepts an IN-CONTRACT raise of `line` to `price` —
+ * the mirror of counterAcceptChance, judged against the last AGREED price.
+ * Existing contracts resist more (steeper slope), great service softens the
+ * resistance and lifts the ceiling: prices above listVK × (1 + (stars−3)×4 %)
+ * collapse to the floor chance, so 40-45 % margin is earned via service. */
+export function repriceAcceptChance(
+  state: GameState,
+  cust: Customer,
+  line: CustomerLine,
+  price: number,
+): number {
+  if (price <= line.agreedPrice * (1 + REPRICE_TOLERANCE)) return 1;
+  const listVk = getProduct(state, line.productId).verkaufspreis;
+  const ceiling = listVk * (1 + (cust.serviceRating - 3) * REPRICE_STAR_CEILING_BONUS);
+  if (price > ceiling) return REPRICE_ACCEPT_FLOOR;
+  const increase = price / line.agreedPrice - 1;
+  return clamp(
+    1 - increase * REPRICE_ACCEPT_SLOPE * repriceStarDamp(cust.serviceRating),
+    REPRICE_ACCEPT_FLOOR,
+    1,
+  );
 }
 
 /** Immediately onboard an inquiry: create a new customer, or add a product line
@@ -1803,6 +1834,38 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
         `🆕 Neue Produktgruppe verfügbar: ${def.emoji} ${def.name}! Im Sortiment aufnehmen (Gebühr ${def.listingFee}€).`,
         'success',
       );
+    }
+  }
+
+  // 5c. Loyalty with teeth: deeply unhappy customers (below the threshold) may
+  // quit — but NEVER without warning. Crossing the threshold raises the warning
+  // and starts the clock; the weekly quit roll only runs from the NEXT week, so
+  // there is always at least one week to react (service, discount, patience).
+  for (const cust of state.customers) {
+    if (!cust.active) continue;
+    if (cust.loyalty < LOYALTY_CHURN_THRESHOLD) {
+      if (cust.lowLoyaltySinceWeek == null) {
+        cust.lowLoyaltySinceWeek = newWeek;
+        notify(
+          state,
+          `💔 ${cust.name} ist tief unzufrieden (Loyalität ${Math.round(cust.loyalty)}%) und droht zu kündigen – Service verbessern oder Rabatt geben!`,
+          'error',
+        );
+      } else if (newWeek > cust.lowLoyaltySinceWeek) {
+        const depth = (LOYALTY_CHURN_THRESHOLD - cust.loyalty) / LOYALTY_CHURN_THRESHOLD;
+        if (Math.random() < depth * LOYALTY_CHURN_CHANCE_MAX) {
+          const weekly = Math.round(cust.lines.reduce((s, l) => s + l.volume * l.price, 0));
+          cust.active = false;
+          releaseCustomerOrders(state, cust.id);
+          notify(
+            state,
+            `❌ ${cust.name} hat gekündigt – das Vertrauen war aufgebraucht. Verlorener Wochenumsatz: ~${weekly}€.`,
+            'error',
+          );
+        }
+      }
+    } else if (cust.lowLoyaltySinceWeek != null) {
+      cust.lowLoyaltySinceWeek = undefined; // recovered — clock resets
     }
   }
 

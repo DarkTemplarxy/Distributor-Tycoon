@@ -67,6 +67,12 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
           Gegenangebot für mehr Marge machen. Manche Anfragen betreffen ein noch{' '}
           <b>ungelistetes Produkt</b> – annehmen listet es automatisch (Gebühr).
         </Rule>
+        <Rule icon="⚖️" title="Marge verdient man sich">
+          Neue Kunden starten meist <b>unter</b> der Zielmarge. <b>Preiserhöhungen sind
+          Verhandlungen</b> mit Ablehnungsrisiko und Sperrfrist – je besser deine{' '}
+          <b>Service-Sterne</b>, desto mehr geht durch (bis ~45% Marge). Sehr unzufriedene Kunden
+          kündigen nach Vorwarnung.
+        </Rule>
         <Rule icon="⚠️" title="Kundenwünsche ernst nehmen">
           Treue Bestandskunden <b>fordern</b> mit der Zeit weitere Produktgruppen. Einen Wunsch
           abzulehnen bringt ihn später als <b>Ultimatum</b> zurück – wer auch das ablehnt, verliert

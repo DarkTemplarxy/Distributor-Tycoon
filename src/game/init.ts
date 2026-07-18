@@ -92,7 +92,7 @@ function makeCustomers(): Customer[] {
       // and Urban could go short during the guided phase.
       orderDayOfWeek: 1,
       nextOrderWeek: 1,
-      lines: [{ productId: 'fisch', price: 33.5, volume: 30 }],
+      lines: [{ productId: 'fisch', price: 33.5, agreedPrice: 33.5, volume: 30 }],
     },
     {
       ...base,
@@ -102,7 +102,7 @@ function makeCustomers(): Customer[] {
       // Thursday, week 0 — day 0/Mon never fires a day-start, so an early fixed
       // weekday guarantees an organic order inside the very first week.
       orderDayOfWeek: 3,
-      lines: [{ productId: 'fisch', price: 33.5, volume: 32 }],
+      lines: [{ productId: 'fisch', price: 33.5, agreedPrice: 33.5, volume: 32 }],
     },
   ];
 }

@@ -15,6 +15,10 @@ import {
   officeExpansionPrice,
   PALETTE_SIZE,
   RENT_PER_EXPANSION,
+  REPRICE_COOLDOWN_WEEKS,
+  REPRICE_FAIL_LOYALTY_COST,
+  REPRICE_SUCCESS_LOYALTY_COST,
+  REPRICE_TOLERANCE,
   ROLE_LABEL,
   ROLE_SALARY,
   SHELF_PRICE,
@@ -24,7 +28,7 @@ import {
   TRAINING_COST,
   TRAINING_SKILL_GAIN,
 } from './constants';
-import type { GameState, ProductId, Role } from './types';
+import type { CustomerLine, GameState, ProductId, Role } from './types';
 import {
   acceptInquiry as onboardInquiry,
   availableCredit,
@@ -40,6 +44,7 @@ import {
   notify,
   placementBlocksAccess,
   releaseWorkerTask,
+  repriceAcceptChance,
   resolveDemandRejection,
   spend,
   tryPrepareOrder,
@@ -343,6 +348,19 @@ export function assignCustomerManager(state: GameState, customerId: string, mana
  * customer swallows more. Uses only the existing loyalty lever — no new mechanic.
  * Small hikes (< 2 %) and price cuts are free.
  */
+/** Weeks until a line may be renegotiated again (0 = free now). */
+export function repriceCooldownLeft(state: GameState, line: CustomerLine): number {
+  if (line.lastNegotiationWeek == null) return 0;
+  return Math.max(0, line.lastNegotiationWeek + REPRICE_COOLDOWN_WEEKS - weekOf(state.totalDays));
+}
+
+/**
+ * Change a contract line's price. Decreases (and micro-raises inside the
+ * tolerance vs the AGREED price) simply apply. A real raise is a NEGOTIATION —
+ * the mirror image of the counter offer: the customer may refuse (price stays,
+ * loyalty drops), and every attempt locks the line for REPRICE_COOLDOWN_WEEKS.
+ * Judged against the last agreed price, so salami steps don't dodge it.
+ */
 export function setCustomerLinePrice(
   state: GameState,
   customerId: string,
@@ -354,25 +372,46 @@ export function setCustomerLinePrice(
   const line = cust.lines.find((l) => l.productId === productId);
   if (!line) return { ok: false, message: 'Produktlinie nicht gefunden.' };
 
-  const oldPrice = line.price;
   const price = Math.max(0, Math.round(newPrice * 100) / 100);
-  line.price = price;
+  if (price === line.price) return { ok: true };
 
-  const increase = oldPrice > 0 ? price / oldPrice - 1 : 0;
-  if (increase > 0.02) {
-    // Stars above 3 dampen the hit, below 3 amplify it; clamp to a sane band.
-    const starDamp = clamp(1 - (cust.serviceRating - 3) * 0.15, 0.4, 1.3);
-    const penalty = clamp(increase * 120 * starDamp, 0, 40);
-    if (penalty >= 1) {
-      cust.loyalty = clamp(cust.loyalty - penalty, 0, 100);
-      notify(
-        state,
-        `⚠️ ${cust.name} akzeptiert den höheren Preis (+${Math.round(increase * 100)}%) widerwillig – Loyalität −${Math.round(penalty)}%.`,
-        'warn',
-      );
-    }
+  // Decreases and tolerance-level adjustments are always fine — and become the
+  // new agreed baseline (a voluntary cut is a real concession, not a trick).
+  if (price <= line.agreedPrice * (1 + REPRICE_TOLERANCE)) {
+    line.price = price;
+    if (price < line.agreedPrice) line.agreedPrice = price;
+    return { ok: true };
   }
-  return { ok: true };
+
+  const cooldown = repriceCooldownLeft(state, line);
+  if (cooldown > 0) {
+    return {
+      ok: false,
+      message: `${cust.name} will über diesen Preis erst in ${cooldown} Wochen wieder verhandeln.`,
+    };
+  }
+
+  const week = weekOf(state.totalDays);
+  line.lastNegotiationWeek = week;
+  const increase = price / line.agreedPrice - 1;
+  if (Math.random() < repriceAcceptChance(state, cust, line, price)) {
+    line.price = price;
+    line.agreedPrice = price;
+    cust.loyalty = clamp(cust.loyalty - REPRICE_SUCCESS_LOYALTY_COST, 0, 100);
+    notify(
+      state,
+      `🤝 ${cust.name} akzeptiert den neuen Preis (+${Math.round(increase * 100)}% → ${price}€).`,
+      'success',
+    );
+    return { ok: true };
+  }
+  cust.loyalty = clamp(cust.loyalty - REPRICE_FAIL_LOYALTY_COST, 0, 100);
+  notify(
+    state,
+    `✗ ${cust.name} lehnt die Preiserhöhung (+${Math.round(increase * 100)}%) ab – der Preis bleibt bei ${line.price}€, Loyalität leidet.`,
+    'warn',
+  );
+  return { ok: false, message: `${cust.name} lehnt ab – frühestens in ${REPRICE_COOLDOWN_WEEKS} Wochen wieder.` };
 }
 
 // --- Inquiries --------------------------------------------------------------

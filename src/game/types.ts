@@ -55,10 +55,15 @@ export interface Product {
 /** One product a customer buys: its own price and weekly volume. */
 export interface CustomerLine {
   productId: ProductId;
-  /** Agreed price per unit. */
+  /** Current price per unit. */
   price: number;
   /** Baseline units ordered per week. */
   volume: number;
+  /** The last MUTUALLY AGREED price (onboarding or a won renegotiation). Raises
+   * are judged against this — small steps accumulate, no salami tactics. */
+  agreedPrice: number;
+  /** Week of the last renegotiation attempt (win or lose) — cooldown gate. */
+  lastNegotiationWeek?: number;
 }
 
 export interface Customer {
@@ -90,6 +95,10 @@ export interface Customer {
   /** Week this customer was won (starting customers: 0). Only established
    * customers (≥ DEMAND_MIN_CUSTOMER_WEEKS) ever voice product demands. */
   sinceWeek: number;
+  /** Week loyalty first dropped below LOYALTY_CHURN_THRESHOLD (the warning
+   * moment). The weekly quit roll only starts the week AFTER — no churn without
+   * a visible warning. Cleared when loyalty recovers. */
+  lowLoyaltySinceWeek?: number;
   active: boolean;
 }
 

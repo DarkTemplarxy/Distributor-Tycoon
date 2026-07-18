@@ -4,7 +4,7 @@
 
 import type { CustomerType, GameState, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 16;
+export const SAVE_VERSION = 17;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -333,15 +333,16 @@ export const INQUIRY_UNLISTED_PRODUCT_CHANCE = 0.3;
 /**
  * Wish-price spread for new inquiries, as a fraction of the product's list sales
  * price. Growth is braked by QUALITY, not frequency: not every inquiry is a good
- * deal, so the player earns growth through selection. ~40 % are good (at or just
- * below list), ~40 % middling (5-10 % under), ~20 % lowball (15-25 % under —
- * acceptable but a visible bite out of the margin). Weights should sum to 1; the
- * last tier catches any rounding remainder. Tune here + verify in the harness.
+ * deal, so the player earns growth through selection. Entry margins sit BELOW
+ * the 40 % target on purpose (≈ 33-38 % for good deals): full target margin and
+ * beyond (40-45 %) is EARNED later through service — in-contract raises run
+ * through the reprice negotiation, whose ceiling scales with the service stars.
+ * Weights should sum to 1; the last tier catches any rounding remainder.
  */
 export const INQUIRY_PRICE_TIERS: { weight: number; range: [number, number] }[] = [
-  { weight: 0.4, range: [0.97, 1.05] }, // gut: ≥ Listen-VK oder knapp darunter
-  { weight: 0.4, range: [0.9, 0.95] }, // mittel: 5-10 % unter Listen-VK
-  { weight: 0.2, range: [0.75, 0.85] }, // Lowball: 15-25 % unter Listen-VK
+  { weight: 0.4, range: [0.93, 1.0] }, // gut: bis Listen-VK (Marge ~35-40 %)
+  { weight: 0.4, range: [0.85, 0.92] }, // mittel: 8-15 % unter Listen-VK
+  { weight: 0.2, range: [0.72, 0.82] }, // Lowball: 18-28 % unter Listen-VK
 ];
 
 /** Weeks a potential customer waits for us to respond to their inquiry. */
@@ -358,6 +359,47 @@ export const SUPPLIER_INCREASE_RANGE: [number, number] = [0.03, 0.1];
  * +20 % ≈ 20 %. At or below the wish it's always accepted.
  */
 export const COUNTER_ACCEPT_SLOPE = 4;
+
+// ---------------------------------------------------------------------------
+// In-contract repricing (symmetrische Preisverhandlung). Raising an agreed line
+// price is a NEGOTIATION with rejection risk — the mirror image of the counter
+// offer — so "accept the wish price, then crank it up" is no longer a free
+// bypass of the negotiation mechanic. Decreases are always accepted.
+// ---------------------------------------------------------------------------
+
+/** Raises up to this fraction above the AGREED price pass silently (rounding
+ * headroom). The reference is the last mutually agreed price, so many small
+ * steps accumulate against it instead of resetting it (no salami tactics). */
+export const REPRICE_TOLERANCE = 0.02;
+/** Weeks a line is locked after any negotiation attempt (win or lose). */
+export const REPRICE_COOLDOWN_WEEKS = 6;
+/** Acceptance slope for in-contract raises — steeper than new-deal counters
+ * (an existing contract is harder to move than an open inquiry). */
+export const REPRICE_ACCEPT_SLOPE = 5;
+/** Stars scale the resistance: each star above 3 softens the slope by 25 %
+ * (5★ → half resistance), each below tightens it (clamped ×0.5 … ×1.5). */
+export function repriceStarDamp(serviceRating: number): number {
+  return Math.min(1.5, Math.max(0.5, 1 - (serviceRating - 3) * 0.25));
+}
+/** Service ceiling: above listVK × (1 + (stars − 3) × bonus) the acceptance
+ * chance collapses to the floor — 40-45 % margin is reachable ONLY with great
+ * service (5★ ≈ +8 % over list ≈ 45 % margin at target-40 pricing). */
+export const REPRICE_STAR_CEILING_BONUS = 0.04;
+export const REPRICE_ACCEPT_FLOOR = 0.05;
+/** Loyalty cost of a raise the customer accepts / refuses. */
+export const REPRICE_SUCCESS_LOYALTY_COST = 3;
+export const REPRICE_FAIL_LOYALTY_COST = 8;
+
+// ---------------------------------------------------------------------------
+// Loyalty with teeth: deeply unhappy customers eventually leave. Fairness rule
+// (Wachstumsmotor): never without warning — crossing the threshold raises a
+// clear notification, and the weekly quit roll only starts the FOLLOWING week.
+// ---------------------------------------------------------------------------
+
+export const LOYALTY_CHURN_THRESHOLD = 30;
+/** Max weekly quit chance, reached as loyalty approaches 0 (scales linearly
+ * with how far below the threshold the customer sits). */
+export const LOYALTY_CHURN_CHANCE_MAX = 0.15;
 
 // ============================================================================
 // Milestones — "Onkels Notizbuch". Definitions (title, description, condition,
