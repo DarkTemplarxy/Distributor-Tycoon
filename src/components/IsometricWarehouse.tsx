@@ -219,8 +219,9 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
   const viewRef = useRef<View>({ ox: 0, oy: 0, s: 1 });
   // Persistent camera (world-space center + scale). Unlike the old per-frame
   // auto-fit, the scale stays fixed after the initial fit, so building expansions
-  // makes the map physically bigger; the player pans (right-drag) to navigate.
-  const camRef = useRef<Camera>({ cx: 0, cy: 0, s: 1, init: false });
+  // makes the map physically bigger; the player pans (right-drag) and zooms
+  // (mouse wheel, anchored at the cursor) to navigate.
+  const camRef = useRef<Camera>({ cx: 0, cy: 0, s: 1, fitS: 1, init: false });
   const hoverRef = useRef<{ gx: number; gy: number } | null>(null);
   const recenter = () => {
     camRef.current.init = false; // next draw re-fits everything into view
@@ -269,11 +270,49 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
     raf = requestAnimationFrame(loop);
     tick();
 
-    // Pointer → grid tile (for build mode).
+    // Live view derived from the camera + current canvas size. Used for input
+    // mapping so clicks are exact even right after a wheel zoom (viewRef lags a
+    // frame behind, until the next draw).
+    const liveView = (): View => {
+      const cam = camRef.current;
+      return { ox: cw / 2 - cam.cx * cam.s, oy: ch / 2 - cam.cy * cam.s, s: cam.s };
+    };
+    // Pointer → grid tile (for build mode). invIso divides by the current scale,
+    // so the inverse projection includes the zoom; DPR is neutral here because
+    // events and canvas CSS size share the same coordinate space.
     const toTile = (ev: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
-      const t = invIso(viewRef.current, ev.clientX - rect.left, ev.clientY - rect.top);
+      const t = invIso(liveView(), ev.clientX - rect.left, ev.clientY - rect.top);
       return { gx: Math.floor(t.gx), gy: Math.floor(t.gy) };
+    };
+
+    // Mouse-wheel zoom, anchored at the CURSOR: the world point under the mouse
+    // stays fixed while the scale changes. Trackpads (pixel deltas) and mice
+    // (line deltas) are normalized; only the camera is mutated — no allocations
+    // in the draw path.
+    const onWheel = (ev: WheelEvent) => {
+      ev.preventDefault();
+      const cam = camRef.current;
+      if (!cam.init) return; // first draw hasn't fitted the site yet
+      const delta = ev.deltaY * (ev.deltaMode === 1 ? 16 : 1);
+      const factor = Math.exp(-delta * 0.0016);
+      const minS = Math.min(ZOOM_MIN_FLOOR, cam.fitS);
+      const s2 = Math.max(minS, Math.min(ZOOM_MAX, cam.s * factor));
+      if (s2 === cam.s) return;
+      const rect = canvas.getBoundingClientRect();
+      const mx = ev.clientX - rect.left;
+      const my = ev.clientY - rect.top;
+      // World point currently under the cursor …
+      const wx = (mx - (cw / 2 - cam.cx * cam.s)) / cam.s;
+      const wy = (my - (ch / 2 - cam.cy * cam.s)) / cam.s;
+      // … must stay under the cursor at the new scale.
+      cam.s = s2;
+      cam.cx = wx - (mx - cw / 2) / s2;
+      cam.cy = wy - (my - ch / 2) / s2;
+    };
+    // Double-click resets zoom + camera to the full-site fit.
+    const onDblClick = () => {
+      camRef.current.init = false;
     };
     // Right-button drag pans the camera (world-space center moves with the mouse).
     let panning = false;
@@ -329,6 +368,8 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointerup', onUp);
     canvas.addEventListener('contextmenu', onContext);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('dblclick', onDblClick);
     const onLeave = () => (hoverRef.current = null);
     canvas.addEventListener('pointerleave', onLeave);
 
@@ -339,6 +380,8 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('contextmenu', onContext);
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('dblclick', onDblClick);
       canvas.removeEventListener('pointerleave', onLeave);
       tickRef.current = () => {};
     };
@@ -353,10 +396,10 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
     <div className="scene-wrap" ref={wrapRef} style={{ cursor: build?.tool ? 'pointer' : 'default' }}>
       <canvas ref={canvasRef} />
       <div className="scene-cam">
-        <button className="btn small" onClick={recenter} title="Ansicht auf die ganze Anlage zentrieren">
+        <button className="btn small" onClick={recenter} title="Ansicht auf die ganze Anlage zentrieren (auch: Doppelklick)">
           ⤢ Zentrieren
         </button>
-        <span className="scene-cam-hint">Rechte Maustaste halten zum Verschieben</span>
+        <span className="scene-cam-hint">Rechte Maustaste: Verschieben · Mausrad: Zoom · Doppelklick: Reset</span>
       </div>
     </div>
   );
@@ -432,13 +475,20 @@ interface View {
   oy: number;
   s: number;
 }
-/** Persistent camera: world-space center point + scale. */
+/** Persistent camera: world-space center point + scale. `fitS` remembers the
+ * fit-everything scale so wheel zoom can clamp against it (zooming out never
+ * gets stuck above the fit when the site is large). */
 interface Camera {
   cx: number;
   cy: number;
   s: number;
+  fitS: number;
   init: boolean;
 }
+
+/** Wheel-zoom bounds (R3): sensible range, soft multiplicative steps. */
+const ZOOM_MAX = 2.5;
+const ZOOM_MIN_FLOOR = 0.5;
 /** World-space (pre-offset) iso projection of a grid point at elevation 0. */
 function worldXY(gx: number, gy: number): [number, number] {
   return [(gx - gy) * (TILE_W / 2), (gx + gy) * (TILE_H / 2)];
@@ -692,6 +742,7 @@ function draw(
     cam.cx = f.cx;
     cam.cy = f.cy;
     cam.s = f.s;
+    cam.fitS = f.s;
     cam.init = true;
   }
   const v: View = { ox: cw / 2 - cam.cx * cam.s, oy: ch / 2 - cam.cy * cam.s, s: cam.s };
