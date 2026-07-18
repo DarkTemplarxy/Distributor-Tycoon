@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react';
 import { useGame } from '../state/GameProvider';
 import {
   hallExpansionFrontier,
+  hasPickupReady,
   inboundCapacity,
   inboundStock,
   inboundUsed,
@@ -94,7 +95,10 @@ interface Anim {
 
 function truckPhase(state: GameState): 'away' | 'here' | 'leaving' {
   if (state.truckAnimUntil > state.totalDays) return 'leaving';
-  if (hourOf(state.totalDays) >= 16.5 && hourOf(state.totalDays) < 18) return 'here';
+  // The truck only pulls up to the dock if there is actually something ready to
+  // collect — no goods, no truck (and no wasted animation).
+  if (hourOf(state.totalDays) >= 16.5 && hourOf(state.totalDays) < 18 && hasPickupReady(state))
+    return 'here';
   return 'away';
 }
 
@@ -1003,7 +1007,17 @@ function draw(
   ctx.fillText(hud, 10 + pad, 27);
 
   const phase = truckPhase(state);
-  const note = phase === 'here' ? '🚚 Laster wartet…' : phase === 'leaving' ? '🚚 Laster fährt ab' : 'Abholung: täglich 18:00';
+  // During the pickup window with nothing ready, say so — the missing truck is
+  // intentional, not a glitch.
+  const inWindow = hourOf(state.totalDays) >= 16.5 && hourOf(state.totalDays) < 18;
+  const note =
+    phase === 'here'
+      ? '🚚 Laster wartet…'
+      : phase === 'leaving'
+        ? '🚚 Laster fährt ab'
+        : inWindow
+          ? 'Keine Abholung – nichts fertig'
+          : 'Abholung: täglich 18:00';
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(230,237,243,0.85)';
   ctx.fillText(note, cw - 14, 27);

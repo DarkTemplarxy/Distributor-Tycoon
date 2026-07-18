@@ -90,6 +90,7 @@ import type {
   Inquiry,
   NotificationType,
   Order,
+  Palette,
   Product,
   ProductId,
   PurchaseOrder,
@@ -863,10 +864,14 @@ function orderGroupKey(customerId: string, createdDay: number): string {
   return `${customerId}|${createdDay}`;
 }
 
-function truckPickup(state: GameState, week: number): void {
-  // A customer's whole order (all its lines from one ordering event) must go on
-  // the truck together — collect the open orders per group and only ship a group
-  // once every one of its orders is 'ready'.
+/**
+ * Ready palettes whose ENTIRE order group is ready — exactly what the next 18:00
+ * truck will load. A customer's whole order (all its lines from one ordering
+ * event) must ship together, so a lone ready palette whose siblings aren't done
+ * yet waits behind. Shared by the pickup and the renderer (does the truck even
+ * bother coming?).
+ */
+export function loadablePalettes(state: GameState): Palette[] {
   const openByGroup = new Map<string, Order[]>();
   for (const o of state.orders) {
     if (o.status === 'delivered') continue;
@@ -875,17 +880,23 @@ function truckPickup(state: GameState, week: number): void {
     if (arr) arr.push(o);
     else openByGroup.set(k, [o]);
   }
-  const groupReady = (o: Order): boolean => {
-    const arr = openByGroup.get(orderGroupKey(o.customerId, o.createdDay)) ?? [];
-    return arr.length > 0 && arr.every((x) => x.status === 'ready');
-  };
-
-  // Load only ready palettes whose entire order group is ready.
-  const loadable = state.palettes.filter((p) => {
+  return state.palettes.filter((p) => {
     if (p.status !== 'ready') return false;
     const order = state.orders.find((o) => o.id === p.orderId);
-    return !!order && groupReady(order);
+    if (!order) return false;
+    const arr = openByGroup.get(orderGroupKey(order.customerId, order.createdDay)) ?? [];
+    return arr.length > 0 && arr.every((x) => x.status === 'ready');
   });
+}
+
+/** Whether the next pickup will actually load anything. If not, the truck
+ * doesn't bother coming to the dock (the renderer skips the arrival animation). */
+export function hasPickupReady(state: GameState): boolean {
+  return loadablePalettes(state).length > 0;
+}
+
+function truckPickup(state: GameState, week: number): void {
+  const loadable = loadablePalettes(state);
   const loadedPaletteIds = new Set<string>();
   let loaded = 0;
 
