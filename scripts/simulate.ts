@@ -79,6 +79,12 @@ interface RunResult {
   month120kWeek: number | null;
   month600kWeek: number | null;
   endMonthly: number;
+  /** Product groups listed at the end — does the demand engine pull the shop to
+   * 2-3 groups organically? (Wachstumsmotor Test-Kriterium 6) */
+  endProducts: number;
+  /** Demand-path outcomes over the run. */
+  ultimatumsHeld: number;
+  demandChurns: number;
 }
 
 const activeByType = (s: GameState, t: CustomerType) =>
@@ -176,6 +182,8 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
   let month600kWeek: number | null = null;
   let reportsSeen = 0;
   let lastLate = 0;
+  let demandChurns = 0;
+  const seenNotes = new Set<string>();
   let guard = 0;
 
   while (weekOf(s.totalDays) < weeks && guard++ < 6_000_000) {
@@ -216,6 +224,14 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
 
     // --- bot: sinnvoll grows the operation when something binds ---
     if (strategy === 'sinnvoll') sinnvollGrowth(s);
+
+    // Demand-path churn is only visible in the notification stream (scanned
+    // incrementally — the log is capped, an end-of-run scan misses early ones).
+    for (const note of s.notifications) {
+      if (seenNotes.has(note.id)) continue;
+      seenNotes.add(note.id);
+      if (note.message.includes('zum Konkurrenten gewechselt')) demandChurns++;
+    }
 
     // milestone celebrations pause via the UI layer; here just drain the queue
     s.celebrateMilestones = [];
@@ -275,6 +291,9 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     month120kWeek,
     month600kWeek,
     endMonthly: monthlyRevenue(s),
+    endProducts: s.products.length,
+    ultimatumsHeld: s.stats.ultimatumsHeld,
+    demandChurns,
   };
 }
 
@@ -327,6 +346,12 @@ function aggregate(strategy: Strategy, N: number, weeks: number) {
     'Checkpoint 120k: ' + (w120.length ? `Ø Woche ${avg(w120).toFixed(1)}` : 'nicht erreicht') + ` (${w120.length}/${N} Läufen)` +
     '  ·  600k: ' + (w600.length ? `Ø Woche ${avg(w600).toFixed(1)}` : 'nicht erreicht') + ` (${w600.length}/${N})` +
     '  ·  Monatsumsatz Ende Ø ' + eur(avg(runs.map((r) => r.endMonthly))) + '€',
+  );
+  // Wachstumsmotor: pulls the shop organically toward 2-3 product groups?
+  console.log(
+    'Wachstumsmotor:  Produktgruppen Ende Ø ' + avg(runs.map((r) => r.endProducts)).toFixed(1) +
+    ' · Ultimaten gehalten Ø ' + avg(runs.map((r) => r.ultimatumsHeld)).toFixed(1) +
+    ' · Demand-Abwanderungen Ø ' + avg(runs.map((r) => r.demandChurns)).toFixed(1),
   );
   return runs;
 }
