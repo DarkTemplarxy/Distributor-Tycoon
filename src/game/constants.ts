@@ -139,6 +139,7 @@ export const ROLE_SALARY: Record<Role, number> = {
   lager: 400,
   einkaeufer: 800,
   kam: 600,
+  sales: 550,
   admin: 500,
 };
 
@@ -146,6 +147,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   lager: 'Lagermitarbeiter',
   einkaeufer: 'Einkäufer',
   kam: 'Key Account Manager',
+  sales: 'Vertriebsmitarbeiter',
   admin: 'Admin',
 };
 
@@ -153,8 +155,21 @@ export const ROLE_EMOJI: Record<Role, string> = {
   lager: '👷',
   einkaeufer: '🛒',
   kam: '🤝',
+  sales: '📞',
   admin: '🗂️',
 };
+
+/**
+ * Vertrieb (Sales): dedicated acquisition staff actively drum up NEW-customer
+ * inquiries, on top of the passive saturation curve — so the customer count
+ * becomes a deliberate investment (hire Vertrieb AND keep KAM slots free to
+ * convert), not a fixed ceiling. Diminishing returns via a skill-weighted head
+ * count: each rep contributes 0.5 + 0.5×(Skill/100) "power". The weekly
+ * new-inquiry bonus is MAX × power/(HALF + power). Tune here + verify in the
+ * harness. (Requires a free desk like every office role.)
+ */
+export const SALES_ACQUISITION_MAX_BONUS = 1.0;
+export const SALES_ACQUISITION_HALF_POWER = 2.0;
 
 /** Upfront hiring cost is this many weeks of salary. */
 export const HIRE_WEEKS_UPFRONT = 4;

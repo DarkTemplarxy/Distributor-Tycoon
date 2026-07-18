@@ -129,6 +129,13 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
             getProductDef(inq.preferredProduct);
           const needsListing = !isInAssortment(state, inq.preferredProduct);
           const listingFee = getProductDef(inq.preferredProduct).listingFee;
+          // Margin the wish price would yield vs the current EK — the owner
+          // knows their own list prices, so we surface the quality of the offer
+          // (good deal vs lowball) instead of making the player do the maths.
+          const wishMargin =
+            inq.targetPrice > 0 ? ((inq.targetPrice - product.einkaufspreis) / inq.targetPrice) * 100 : 0;
+          const marginCls =
+            wishMargin >= product.zielmarge ? 'good' : wishMargin >= product.zielmarge * 0.8 ? 'warn' : 'bad';
           const isExpansion = !!inq.existingCustomerId;
           const noCapacity = !isExpansion && freeCapacity(state, inq.type) <= 0;
           // Demand inquiries (Wachstumsmotor) carry a visible countdown; the
@@ -171,7 +178,13 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                     <span style={{ color: PRODUCT_COLOR[inq.preferredProduct] }}>
                       {product.emoji} {product.name}
                     </span>{' '}
-                    · {inq.suggestedVolume}×/Woche · Wunschpreis {inq.targetPrice}€
+                    · {inq.suggestedVolume}×/Woche · Wunschpreis {inq.targetPrice}€{' '}
+                    <span
+                      className={`pill ${marginCls}`}
+                      title={`Marge zum Wunschpreis · Zielmarge ${product.zielmarge}% · EK ${product.einkaufspreis}€ · Listen-VK ${product.verkaufspreis}€`}
+                    >
+                      Marge {wishMargin.toFixed(0)}%
+                    </span>
                     {needsListing && (
                       <>
                         {' '}

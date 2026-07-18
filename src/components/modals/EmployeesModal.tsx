@@ -10,7 +10,13 @@ import {
   TRAINING_COST,
   WEEKS_PER_MONTH,
 } from '../../game/constants';
-import { currentMonthlyRent, deskCount, freeDesks, managers } from '../../game/simulation';
+import {
+  currentMonthlyRent,
+  deskCount,
+  freeDesks,
+  managers,
+  newInquiryChance,
+} from '../../game/simulation';
 import { fireEmployee, hireEmployee, trainEmployee } from '../../game/actions';
 import { euro } from '../../game/util';
 import type { Role } from '../../game/types';
@@ -18,6 +24,7 @@ import type { Role } from '../../game/types';
 const HIREABLE: { role: Role; benefit: string }[] = [
   { role: 'lager', benefit: 'Richtet Ware her – mehr Personal = schnellere Palettenvorbereitung.' },
   { role: 'kam', benefit: `+${MANAGER_SLOTS} Kunden-Slots (klein=${SLOT_COST.small}, mittel=${SLOT_COST.medium}, groß=${SLOT_COST.large} Slots) – Kapazität gilt PRO Manager.` },
+  { role: 'sales', benefit: 'Wirbt aktiv neue Kunden an: erhöht die wöchentliche Neukunden-Chance (mit abnehmendem Grenzertrag, steigt mit Skill). Zum Abschließen braucht es freie KAM-Slots.' },
   { role: 'einkaeufer', benefit: 'Übernimmt die automatische Nachbestellung (bedarfsbasiert) und verhandelt Lieferanten-Preiserhöhungen herunter.' },
 ];
 
@@ -67,6 +74,20 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
           <span className="pill">{state.employees.filter((e) => e.role === 'einkaeufer').length}</span>
+        </div>
+        <div
+          className="row"
+          style={{ padding: '8px 10px' }}
+          title="Vertriebsmitarbeiter erhöhen die wöchentliche Chance auf eine neue Kundenanfrage (abnehmender Grenzertrag). Ohne Vertrieb sinkt die Chance mit wachsendem Kundenstamm von selbst."
+        >
+          <div className="grow">
+            <div className="title" style={{ fontSize: 13 }}>Vertrieb · Akquise</div>
+            <div className="sub">
+              {state.employees.filter((e) => e.role === 'sales').length} Vertriebsmitarbeiter ·
+              Neukunden-Chance ~{Math.round(newInquiryChance(state) * 100)}%/Woche
+            </div>
+          </div>
+          <span className="pill">{state.employees.filter((e) => e.role === 'sales').length}</span>
         </div>
         <div className="row" style={{ padding: '8px 10px' }}>
           <div className="grow">

@@ -11,7 +11,7 @@ export type ProductId = 'fisch' | 'fleisch' | 'gemuese';
 
 export type CustomerType = 'small' | 'medium' | 'large';
 
-export type Role = 'lager' | 'einkaeufer' | 'kam' | 'admin';
+export type Role = 'lager' | 'einkaeufer' | 'kam' | 'sales' | 'admin';
 
 export type OrderStatus =
   | 'pending' // waiting for inventory / worker

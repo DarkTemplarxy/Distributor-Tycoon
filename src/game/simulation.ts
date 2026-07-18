@@ -42,6 +42,8 @@ import {
   INQUIRY_BASE_CHANCE,
   INQUIRY_SATURATION_CUSTOMERS,
   INQUIRY_DAY_OF_WEEK,
+  SALES_ACQUISITION_HALF_POWER,
+  SALES_ACQUISITION_MAX_BONUS,
   ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
@@ -1361,15 +1363,31 @@ function rollLineVolume(type: CustomerType, productId: ProductId): number {
   return Math.round(randInt(minV, maxV) * PRODUCT_VOLUME_FACTOR[productId]);
 }
 
-/** Weekly chance of a NEW-customer inquiry — tapers with the active base
- * (base × SAT/(SAT + Kunden)), so growth shifts from acquisition to developing
- * existing customers as the shop matures. Exported for tests and UI hints. */
+/** Skill-weighted acquisition power of the Vertrieb team (each rep contributes
+ * 0.5 + 0.5×Skill/100). Drives the sales bonus in newInquiryChance. */
+export function salesAcquisitionPower(state: GameState): number {
+  return state.employees
+    .filter((e) => e.role === 'sales')
+    .reduce((sum, e) => sum + 0.5 + 0.5 * (e.skill / 100), 0);
+}
+
+/** Extra weekly new-inquiry chance from the Vertrieb team, with diminishing
+ * returns (MAX × power/(HALF + power)). Zero without sales staff. */
+export function salesAcquisitionBonus(state: GameState): number {
+  const power = salesAcquisitionPower(state);
+  return SALES_ACQUISITION_MAX_BONUS * (power / (SALES_ACQUISITION_HALF_POWER + power));
+}
+
+/** Weekly chance of a NEW-customer inquiry: a passive saturation curve
+ * (base × SAT/(SAT + Kunden)) — so growth naturally shifts toward developing
+ * existing customers — PLUS the Vertrieb team's active acquisition bonus, which
+ * lets a player who invests in sales keep growing the customer count on purpose.
+ * Exported for tests and UI hints. */
 export function newInquiryChance(state: GameState): number {
   const active = state.customers.filter((c) => c.active).length;
-  return (
-    INQUIRY_BASE_CHANCE *
-    (INQUIRY_SATURATION_CUSTOMERS / (INQUIRY_SATURATION_CUSTOMERS + active))
-  );
+  const base =
+    INQUIRY_BASE_CHANCE * (INQUIRY_SATURATION_CUSTOMERS / (INQUIRY_SATURATION_CUSTOMERS + active));
+  return Math.min(1, base + salesAcquisitionBonus(state));
 }
 
 function maybeGenerateInquiry(state: GameState): void {
