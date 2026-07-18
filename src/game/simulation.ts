@@ -486,7 +486,14 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
   if (state.tutorial?.active && state.tutorial.step <= STEP.HERRICHTEN && order.id === TUTORIAL_ORDER_ID) {
     days = TUTORIAL_FIRST_PREP_DAYS;
   }
-  worker.task = { kind: 'prep', orderId: order.id, totalDays: days, remainingDays: days };
+  // Occupy the lowest prep table not held by another prep task — exclusive by
+  // construction (the freeTables gate above guarantees one is available).
+  const usedTables = new Set(
+    state.employees.map((e) => (e.task?.kind === 'prep' ? (e.task.tableIndex ?? -1) : -1)),
+  );
+  let tableIndex = 0;
+  while (usedTables.has(tableIndex)) tableIndex += 1;
+  worker.task = { kind: 'prep', orderId: order.id, tableIndex, totalDays: days, remainingDays: days };
   return null;
 }
 
@@ -553,15 +560,63 @@ function assignPutaway(state: GameState, product: Product): boolean {
   product.batches = product.batches.filter((b) => b.quantity > 0);
 
   const days = ((qty * PUTAWAY_HOURS_PER_UNIT) / 24) * skillSpeedFactor(worker.skill);
+  // Work at the lowest inbound slot no other putaway task occupies (falls back
+  // to round-robin only if there are more putaway workers than slots).
+  const usedSlots = new Set(
+    state.employees.map((e) => (e.task?.kind === 'putaway' ? (e.task.slotIndex ?? -1) : -1)),
+  );
+  let slotIndex = 0;
+  while (usedSlots.has(slotIndex) && slotIndex < state.warehouse.inboundSlots - 1) slotIndex += 1;
   worker.task = {
     kind: 'putaway',
     productId: product.id,
     quantity: qty,
     expiryDay: expiry === Infinity ? state.totalDays + product.spoilageDays : expiry,
+    slotIndex,
     totalDays: days,
     remainingDays: days,
   };
   return true;
+}
+
+/**
+ * Cleanly release a worker's current task back into the queue — used when an
+ * employee leaves mid-task. Nothing is lost or duplicated: a prep reverts its
+ * order to 'pending' and returns the picked goods to the shelf (half shelf-life,
+ * same convention as releaseCustomerOrders — the original batch expiries are
+ * gone after picking); a putaway returns the carried pallet to the inbound zone
+ * with its exact expiry. Auto-assign then re-queues the work on the next tick.
+ */
+export function releaseWorkerTask(state: GameState, employeeId: string): void {
+  const emp = state.employees.find((e) => e.id === employeeId);
+  const task = emp?.task;
+  if (!emp || !task) return;
+  if (task.kind === 'prep') {
+    const order = state.orders.find((o) => o.id === task.orderId);
+    if (order && order.status === 'preparing') {
+      const product = getProduct(state, order.productId);
+      product.batches.push({
+        id: uid('batch'),
+        productId: order.productId,
+        quantity: order.quantity,
+        expiryDay: state.totalDays + Math.round(product.spoilageDays / 2),
+        location: 'shelf',
+      });
+      state.palettes = state.palettes.filter((p) => p.id !== order.paletteId);
+      order.paletteId = undefined;
+      order.status = 'pending';
+    }
+  } else {
+    const product = getProduct(state, task.productId);
+    product.batches.push({
+      id: uid('batch'),
+      productId: task.productId,
+      quantity: task.quantity,
+      expiryDay: task.expiryDay,
+      location: 'inbound',
+    });
+  }
+  emp.task = undefined;
 }
 
 /**

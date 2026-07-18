@@ -154,15 +154,28 @@ export interface ScheduledPayment {
 }
 
 /** A warehouse worker is either preparing an order for pickup ('prep') or
- * putting delivered goods away from the inbound zone onto a shelf ('putaway'). */
+ * putting delivered goods away from the inbound zone onto a shelf ('putaway').
+ * A task belongs to exactly ONE worker: prep is locked via the order's status
+ * flip at assignment, putaway via the immediate inventory deduction. The
+ * workstation indices bind each task to ONE prep table / inbound slot, so two
+ * workers are never at the same station (also visually). */
 export type WorkerTask =
-  | { kind: 'prep'; orderId: string; totalDays: number; remainingDays: number }
+  | {
+      kind: 'prep';
+      orderId: string;
+      /** Index of the prep table this task occupies (exclusive per task). */
+      tableIndex?: number;
+      totalDays: number;
+      remainingDays: number;
+    }
   | {
       kind: 'putaway';
       productId: ProductId;
       quantity: number;
       /** Expiry carried with the pallet in transit from inbound to the shelf. */
       expiryDay: number;
+      /** Index of the inbound slot this task works at (exclusive while free). */
+      slotIndex?: number;
       totalDays: number;
       remainingDays: number;
     };

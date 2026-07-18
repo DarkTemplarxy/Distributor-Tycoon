@@ -35,6 +35,7 @@ import {
   isFrontierBlock,
   isInAssortment,
   notify,
+  releaseWorkerTask,
   spend,
   tryPrepareOrder,
 } from './simulation';
@@ -254,9 +255,16 @@ export function trainEmployee(state: GameState, employeeId: string): ActionResul
 export function fireEmployee(state: GameState, employeeId: string): ActionResult {
   const emp = state.employees.find((e) => e.id === employeeId);
   if (!emp) return { ok: false, message: 'Mitarbeiter nicht gefunden.' };
-  if (emp.task) return { ok: false, message: 'Mitarbeiter arbeitet gerade an einem Auftrag.' };
+  // A running task is released cleanly (order back to the queue, goods
+  // returned) instead of blocking the dismissal — nothing is lost or duplicated.
+  const hadTask = !!emp.task;
+  if (hadTask) releaseWorkerTask(state, employeeId);
   state.employees = state.employees.filter((e) => e.id !== employeeId);
-  notify(state, `👋 ${emp.name} wurde entlassen.`, 'info');
+  notify(
+    state,
+    `👋 ${emp.name} wurde entlassen.${hadTask ? ' Die laufende Aufgabe geht zurück in die Warteschlange.' : ''}`,
+    'info',
+  );
   return { ok: true };
 }
 

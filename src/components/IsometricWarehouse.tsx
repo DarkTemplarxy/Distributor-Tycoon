@@ -429,8 +429,6 @@ function updateAnim(dt: number, state: GameState, anim: Anim) {
   const aisleGy = (b.minGy + b.maxGy) / 2;
   const workers = state.employees.filter((e) => e.role === 'lager');
   const seen = new Set<string>();
-  let prepIdx = 0;
-  let putIdx = 0;
   let idleIdx = 0;
 
   workers.forEach((e) => {
@@ -443,15 +441,16 @@ function updateAnim(dt: number, state: GameState, anim: Anim) {
     let tgt: { gx: number; gy: number };
     let carrying = false;
     if (e.task?.kind === 'prep') {
-      const t = tables[prepIdx % Math.max(1, tables.length)] ?? { gx: b.minGx + 2, gy: b.maxGy - 1 };
+      // The task carries its exclusive table index — each prepping worker stands
+      // at their OWN table, stably (no re-shuffling when the working set changes).
+      const t = tables[e.task.tableIndex ?? 0] ?? { gx: b.minGx + 2, gy: b.maxGy - 1 };
       tgt = { gx: t.gx + 0.1, gy: t.gy + 0.7 };
       carrying = true;
-      prepIdx++;
     } else if (e.task?.kind === 'putaway') {
-      const t = inbound[putIdx % Math.max(1, inbound.length)] ?? { gx: b.minGx, gy: b.maxGy };
+      // Same for the inbound slot the putaway task works at.
+      const t = inbound[e.task.slotIndex ?? 0] ?? inbound[0] ?? { gx: b.minGx, gy: b.maxGy };
       tgt = { gx: t.gx + 0.5, gy: t.gy - 0.4 };
       carrying = true;
-      putIdx++;
     } else {
       tgt = { gx: b.minGx + 1.2 + (idleIdx % 3) * 1.0, gy: aisleGy + 0.2 };
       idleIdx++;
