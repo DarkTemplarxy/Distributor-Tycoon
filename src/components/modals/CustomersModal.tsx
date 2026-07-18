@@ -3,8 +3,9 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { assignCustomerManager, setCustomerLinePrice, setDiscount } from '../../game/actions';
 import { managers } from '../../game/simulation';
-import { demandUpliftFromDiscount, SLOT_COST } from '../../game/constants';
+import { demandUpliftFromDiscount, getProductDef, SLOT_COST } from '../../game/constants';
 import type { Customer, CustomerLine, CustomerType, Product } from '../../game/types';
+import { weekOf } from '../../game/util';
 import { CustomerTypeFilter, Stars, PRODUCT_COLOR, useCustomerTypeFilter } from '../shared';
 
 const TYPE_LABEL = { small: 'Klein', medium: 'Mittel', large: 'Groß' } as const;
@@ -90,6 +91,15 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
           const uplift = demandUpliftFromDiscount(c.activeDiscount);
           const tolerance = 3 + Math.max(0, Math.round(c.serviceRating - 3));
           const weeklyRevenue = c.lines.reduce((sum, l) => sum + l.volume * l.price, 0);
+          // Offener Wunsch/Ultimatum (Wachstumsmotor): Symbol + Restfrist direkt
+          // am Kunden, damit keine Frist untergeht. Ein abgelehnter Wunsch, dessen
+          // Ultimatum noch aussteht, wird dezent als „verstimmt" markiert.
+          const week = weekOf(state.totalDays);
+          const demandInq = state.inquiries.find(
+            (i) => i.status === 'open' && i.demand && i.existingCustomerId === c.id,
+          );
+          const weeksLeft = demandInq ? Math.max(1, demandInq.demand!.deadlineWeek - week) : 0;
+          const scheduledUlti = !demandInq && state.pendingUltimatums.some((u) => u.customerId === c.id);
           return (
             <div key={c.id} className="row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -98,6 +108,29 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
                   <div className="title">
                     {c.name} <span className="pill">{TYPE_LABEL[c.type]}</span>{' '}
                     <span className="pill good">~{Math.round(weeklyRevenue)}€/Woche</span>
+                    {demandInq && (
+                      <>
+                        {' '}
+                        <span
+                          className={`pill ${demandInq.demand!.stage === 2 ? 'bad' : 'warn'}`}
+                          title="Offene Anfrage im Anfragen-Bildschirm beantworten!"
+                        >
+                          {demandInq.demand!.stage === 2 ? '⚠️ ULTIMATUM' : '🙋 Wunsch'}:{' '}
+                          {getProductDef(demandInq.preferredProduct).name} · noch {weeksLeft} Wo.
+                        </span>
+                      </>
+                    )}
+                    {scheduledUlti && (
+                      <>
+                        {' '}
+                        <span
+                          className="pill warn"
+                          title="Abgelehnter Wunsch – das Thema kommt als Ultimatum zurück."
+                        >
+                          😕 verstimmt
+                        </span>
+                      </>
+                    )}
                   </div>
                   <div className="sub" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     Lieferzeit {c.deliveryLeadWeeks}W · Manager

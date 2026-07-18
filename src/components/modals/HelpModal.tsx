@@ -64,7 +64,14 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
         </Rule>
         <Rule icon="📨" title="Wachstum">
           Über <b>Anfragen</b> gewinnst du neue Kunden – annehmen zum Wunschpreis oder ein
-          Gegenangebot für mehr Marge machen.
+          Gegenangebot für mehr Marge machen. Manche Anfragen betreffen ein noch{' '}
+          <b>ungelistetes Produkt</b> – annehmen listet es automatisch (Gebühr).
+        </Rule>
+        <Rule icon="⚠️" title="Kundenwünsche ernst nehmen">
+          Treue Bestandskunden <b>fordern</b> mit der Zeit weitere Produktgruppen. Einen Wunsch
+          abzulehnen bringt ihn später als <b>Ultimatum</b> zurück – wer auch das ablehnt, verliert
+          den Kunden <b>komplett</b> an die Konkurrenz. Fristen laufen sichtbar in Anfragen- und
+          Kunden-Ansicht mit.
         </Rule>
       </div>
 

@@ -464,6 +464,14 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
     check: (s) => s.products.length >= 3,
   },
   {
+    id: 'ultimatum_held',
+    emoji: '🛡️',
+    title: 'Ultimatum gehalten',
+    description: 'Halte einen Kunden, der mit dem Wechsel zum Konkurrenten droht.',
+    uncleComment: 'Einen Kunden zu halten ist schwerer als einen zu gewinnen – gut gemacht.',
+    check: (s) => s.stats.ultimatumsHeld >= 1,
+  },
+  {
     id: 'monthly_120k',
     emoji: '📊',
     title: '€120.000 Monatsumsatz',
