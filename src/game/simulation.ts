@@ -33,6 +33,7 @@ import {
   ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
+  INQUIRY_UNLISTED_PRODUCT_CHANCE,
   INQUIRY_PRICE_TIERS,
   LARGE_UNLOCK_MONTHLY,
   MEDIUM_UNLOCK_MONTHLY,
@@ -1262,10 +1263,31 @@ function unlockedTypes(state: GameState): CustomerType[] {
   return types;
 }
 
+/** Products that could be listed right now but aren't in the assortment yet
+ * (past their unlockWeek — never before). */
+export function listableUnlistedProducts(state: GameState): ProductId[] {
+  const week = weekOf(state.totalDays);
+  return PRODUCT_DEFS.filter((d) => d.unlockWeek <= week && !isInAssortment(state, d.id)).map(
+    (d) => d.id,
+  );
+}
+
+/** Live product if listed (its VK may have been re-priced by the player),
+ * otherwise the catalog definition — inquiries may target listable-but-unlisted
+ * products (Wachstumsmotor A). */
+function inquiryProductInfo(state: GameState, id: ProductId) {
+  return state.products.find((p) => p.id === id) ?? getProductDef(id);
+}
+
 /** Bias new inquiries toward products we already sell, so a new customer's
- * first order isn't guaranteed late by the supplier lead time. Only products in
- * the current assortment can ever be requested. */
+ * first order isn't guaranteed late by the supplier lead time. A slice of
+ * demand targets listable-but-unlisted products — the market pulling the player
+ * toward more breadth (accepting requires listing, see acceptInquiry). */
 function pickInquiryProduct(state: GameState): ProductId {
+  const unlisted = listableUnlistedProducts(state);
+  if (unlisted.length > 0 && Math.random() < INQUIRY_UNLISTED_PRODUCT_CHANCE) {
+    return pick(unlisted);
+  }
   const familiar = [
     ...new Set(state.customers.filter((c) => c.active).flatMap((c) => c.lines.map((l) => l.productId))),
   ];
@@ -1319,7 +1341,7 @@ function maybeGenerateInquiry(state: GameState): void {
   const type = candidates.length > 0 ? pick(candidates) : 'small';
   const [minV, maxV] = CUSTOMER_VOLUME_RANGE[type];
   const preferred = pickInquiryProduct(state);
-  const product = getProduct(state, preferred);
+  const product = inquiryProductInfo(state, preferred);
   const inquiry: Inquiry = {
     id: uid('inq'),
     name: uniqueCustomerName(state, type),
@@ -1333,7 +1355,12 @@ function maybeGenerateInquiry(state: GameState): void {
     status: 'open',
   };
   state.inquiries.push(inquiry);
-  notify(state, `📨 Neue Kundenanfrage: ${inquiry.name} (${type}) sucht ${product.name}.`, 'info');
+  const unlistedHint = isInAssortment(state, preferred) ? '' : ' (noch nicht gelistet!)';
+  notify(
+    state,
+    `📨 Neue Kundenanfrage: ${inquiry.name} (${type}) sucht ${product.name}${unlistedHint}.`,
+    'info',
+  );
 }
 
 /** An existing loyal customer asks to add another in-assortment product line. */

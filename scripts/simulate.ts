@@ -25,7 +25,6 @@ import {
   advance,
   freeCapacity,
   freeDesks,
-  getProduct,
   hallExpansionFrontier,
   officeExpansionFrontier,
   orderOutlook,
@@ -42,7 +41,12 @@ import {
   hireEmployee,
   placeWeeklyOrder,
 } from '../src/game/actions.ts';
-import { LARGE_UNLOCK_MONTHLY, MEDIUM_UNLOCK_MONTHLY, monthlyRevenue } from '../src/game/constants.ts';
+import {
+  getProductDef,
+  LARGE_UNLOCK_MONTHLY,
+  MEDIUM_UNLOCK_MONTHLY,
+  monthlyRevenue,
+} from '../src/game/constants.ts';
 import { weekOf } from '../src/game/util.ts';
 import type { CustomerType, GameState } from '../src/game/types.ts';
 
@@ -92,9 +96,10 @@ function orderDeficit(s: GameState) {
 
 /** The sales price that yields a product's target margin (rounded to 0.5). The
  * `sinnvoll` bot secures this: it accepts a wish already at/above it, else
- * counter-offers up to it (taking the rejection risk — the growth brake). */
-function targetMarginPrice(s: GameState, preferredProduct: GameState['products'][number]['id']): number {
-  const p = getProduct(s, preferredProduct);
+ * counter-offers up to it (taking the rejection risk — the growth brake).
+ * Def-based, so it also works for inquiries targeting not-yet-listed products. */
+function targetMarginPrice(preferredProduct: GameState['products'][number]['id']): number {
+  const p = getProductDef(preferredProduct);
   return Math.round((p.einkaufspreis / (1 - p.zielmarge / 100)) * 2) / 2;
 }
 
@@ -187,11 +192,12 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
         } else {
           // sinnvoll: reject clear lowballs, secure the target margin on the rest —
           // accept if the wish already meets it, else counter up to it (may be
-          // rejected → irregular, earned growth).
-          const p = getProduct(s, inq.preferredProduct);
+          // rejected → irregular, earned growth). Def-based lookup: the inquiry
+          // may target a product that isn't listed yet (accepting auto-lists it).
+          const p = getProductDef(inq.preferredProduct);
           const wishMargin = inq.targetPrice > 0 ? ((inq.targetPrice - p.einkaufspreis) / inq.targetPrice) * 100 : 0;
           if (wishMargin < p.zielmarge * 0.7) continue; // lowball — not worth it
-          const target = targetMarginPrice(s, inq.preferredProduct);
+          const target = targetMarginPrice(inq.preferredProduct);
           if (inq.targetPrice >= target) acceptInquiry(s, inq.id);
           else counterOffer(s, inq.id, target);
         }

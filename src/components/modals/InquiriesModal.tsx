@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { counterAcceptChance, freeCapacity } from '../../game/simulation';
+import { counterAcceptChance, freeCapacity, isInAssortment, notify } from '../../game/simulation';
 import { acceptInquiry, counterOffer, dismissInquiry } from '../../game/actions';
-import { LARGE_UNLOCK_MONTHLY, MEDIUM_UNLOCK_MONTHLY, monthlyRevenue } from '../../game/constants';
+import {
+  getProductDef,
+  LARGE_UNLOCK_MONTHLY,
+  MEDIUM_UNLOCK_MONTHLY,
+  monthlyRevenue,
+} from '../../game/constants';
 import { STEP, TUTORIAL_INQUIRY_IDS, TUTORIAL_MEAT_INQUIRY_ID, tutorialOnStep } from '../../game/tutorial';
 import type { CustomerType } from '../../game/types';
 import { euro } from '../../game/util';
@@ -100,7 +105,13 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
 
       <div className="rows">
         {list.map((inq) => {
-          const product = state.products.find((p) => p.id === inq.preferredProduct)!;
+          // The product may not be listed yet (Wachstumsmotor A) — fall back to
+          // the catalog definition for name/emoji.
+          const product =
+            state.products.find((p) => p.id === inq.preferredProduct) ??
+            getProductDef(inq.preferredProduct);
+          const needsListing = !isInAssortment(state, inq.preferredProduct);
+          const listingFee = getProductDef(inq.preferredProduct).listingFee;
           const isExpansion = !!inq.existingCustomerId;
           const noCapacity = !isExpansion && freeCapacity(state, inq.type) <= 0;
           // Guided steps: glow Annehmen on the uncle's first inquiry; once it's
@@ -120,7 +131,11 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                 <div className="grow">
                   <div className="title">
                     {inq.name} <span className="pill">{TYPE_LABEL[inq.type]}</span>{' '}
-                    {isExpansion && <span className="pill good">Bestandskunde</span>}
+                    {isExpansion ? (
+                      <span className="pill good">🔁 Bestandskunde: {inq.name}</span>
+                    ) : (
+                      <span className="pill">✨ Neukunde</span>
+                    )}
                   </div>
                   <div className="sub">
                     {isExpansion ? 'Möchte zusätzlich:' : 'Wunsch:'}{' '}
@@ -128,6 +143,14 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                       {product.emoji} {product.name}
                     </span>{' '}
                     · {inq.suggestedVolume}×/Woche · Wunschpreis {inq.targetPrice}€
+                    {needsListing && (
+                      <>
+                        {' '}
+                        <span className="pill warn">
+                          Erfordert Listung von {product.name} (Gebühr {euro(listingFee)})
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -137,9 +160,16 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                   className={`btn good small${glowAccept ? ' tut-glow' : ''}`}
                   disabled={noCapacity}
                   title={noCapacity ? 'Keine KAM-Kapazität frei' : undefined}
-                  onClick={() => mutate((s) => acceptInquiry(s, inq.id))}
+                  onClick={() =>
+                    mutate((s) => {
+                      // Failures beyond the disabled-states (e.g. listing fee
+                      // unaffordable) must be visible, not silent.
+                      const r = acceptInquiry(s, inq.id);
+                      if (!r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
+                    })
+                  }
                 >
-                  ✓ Annehmen ({inq.targetPrice}€)
+                  ✓ Annehmen ({inq.targetPrice}€{needsListing ? ` + Listung ${euro(listingFee)}` : ''})
                 </button>
 
                 <label className="fld">
@@ -160,7 +190,12 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                   className={`btn primary small${glowCounter && price > inq.targetPrice ? ' tut-glow' : ''}`}
                   disabled={noCapacity || price <= inq.targetPrice}
                   title={price <= inq.targetPrice ? 'Über dem Wunschpreis bieten' : undefined}
-                  onClick={() => mutate((s) => counterOffer(s, inq.id, price))}
+                  onClick={() =>
+                    mutate((s) => {
+                      const r = counterOffer(s, inq.id, price);
+                      if (!r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
+                    })
+                  }
                 >
                   ⚖ Gegenangebot
                 </button>

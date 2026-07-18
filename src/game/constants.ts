@@ -300,6 +300,12 @@ export const EXPANSION_MIN_LOYALTY = 50;
  * customer's first order isn't automatically late from the supply lead time). */
 export const INQUIRY_FAMILIAR_PRODUCT_CHANCE = 0.7;
 
+/** Chance a new inquiry targets a LISTABLE but not yet listed product (past its
+ * unlockWeek — never before). Accepting then requires listing it (fee) in the
+ * same flow, so product breadth becomes demand-driven instead of a pure money
+ * decision (Wachstumsmotor Paket A). */
+export const INQUIRY_UNLISTED_PRODUCT_CHANCE = 0.3;
+
 /**
  * Wish-price spread for new inquiries, as a fraction of the product's list sales
  * price. Growth is braked by QUALITY, not frequency: not every inquiry is a good

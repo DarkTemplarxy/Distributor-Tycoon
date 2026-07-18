@@ -376,6 +376,30 @@ export function setCustomerLinePrice(
 
 // --- Inquiries --------------------------------------------------------------
 
+/** An inquiry may target a listable-but-unlisted product (Wachstumsmotor A) —
+ * accepting then lists it (fee) in the same flow. `dryRun` only validates
+ * (unlockWeek + affordability) without paying, so a counter offer can check
+ * upfront but only pays once the customer actually says yes. */
+function ensureInquiryProductListed(
+  state: GameState,
+  productId: ProductId,
+  opts?: { dryRun?: boolean },
+): ActionResult {
+  if (isInAssortment(state, productId)) return { ok: true };
+  const def = getProductDef(productId);
+  const prefix = `Erfordert Listung von ${def.name} (Gebühr ${def.listingFee}€)`;
+  if (weekOf(state.totalDays) < def.unlockWeek) {
+    return { ok: false, message: `${prefix} – erst ab Woche ${def.unlockWeek + 1} möglich.` };
+  }
+  if (state.cash + availableCredit(state) < def.listingFee) {
+    return { ok: false, message: `${prefix} – Gebühr nicht bezahlbar.` };
+  }
+  if (opts?.dryRun) return { ok: true };
+  const res = addProduct(state, productId);
+  if (!res.ok) return { ok: false, message: `${prefix} – ${res.message}` };
+  return { ok: true };
+}
+
 /** Accept an inquiry directly: the product is unlocked for the customer
  * immediately, at the inquiry's desired price and fixed volume. */
 export function acceptInquiry(state: GameState, inquiryId: string): ActionResult {
@@ -392,6 +416,8 @@ export function acceptInquiry(state: GameState, inquiryId: string): ActionResult
       message: `Kein Manager hat ${SLOT_COST[inq.type]} freie Slots – stelle einen KAM ein oder verteile Kunden um.`,
     };
   }
+  const listed = ensureInquiryProductListed(state, inq.preferredProduct);
+  if (!listed.ok) return listed;
   onboardInquiry(state, inq);
   return { ok: true };
 }
@@ -411,11 +437,17 @@ export function counterOffer(state: GameState, inquiryId: string, price: number)
       message: `Kein Manager hat ${SLOT_COST[inq.type]} freie Slots – stelle einen KAM ein oder verteile Kunden um.`,
     };
   }
+  // Validate listability upfront, but only PAY the fee if the customer accepts —
+  // a rejected counter must not leave the player 500€ lighter.
+  const listable = ensureInquiryProductListed(state, inq.preferredProduct, { dryRun: true });
+  if (!listable.ok) return listable;
   const offered = Math.max(1, Math.round(price * 100) / 100);
   // During the tutorial's growth beat the customer deliberately says yes, so the
   // player's first negotiation is a guaranteed success.
   const tutorialForcesYes = state.tutorial?.active && state.tutorial.step === STEP.GROWTH;
   if (tutorialForcesYes || Math.random() < counterAcceptChance(inq.targetPrice, offered)) {
+    const listed = ensureInquiryProductListed(state, inq.preferredProduct);
+    if (!listed.ok) return listed;
     onboardInquiry(state, inq, offered);
     return { ok: true };
   }
