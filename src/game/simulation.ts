@@ -33,9 +33,10 @@ import {
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
   INQUIRY_PRICE_TIERS,
   KAM_CAPACITY,
-  LARGE_UNLOCK_REVENUE,
-  MEDIUM_UNLOCK_REVENUE,
+  LARGE_UNLOCK_MONTHLY,
+  MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
+  monthlyRevenue,
   MONTHLY_RENT,
   NIGHT_SPEED,
   PALETTE_SIZE,
@@ -294,12 +295,8 @@ export function seasonalMultiplier(productId: ProductId, week: number): number {
   return SEASONAL_TREND[productId][quarterOf(week)];
 }
 
-/** Rolling weekly revenue used to gate unlocks (best 4-week average). */
-export function recentWeeklyRevenue(state: GameState): number {
-  const last = state.reports.slice(-4);
-  if (last.length === 0) return 0;
-  return last.reduce((s, r) => s + r.revenue, 0) / last.length;
-}
+// Customer-size unlocks gate on the rolling MONTHLY revenue (sum of the last 4
+// completed weeks, re-checked weekly) — see monthlyRevenue() in constants.ts.
 
 export function serviceStarsRecompute(state: GameState): void {
   const active = state.customers.filter((c) => c.active);
@@ -953,10 +950,10 @@ function processWeeklyOrder(state: GameState, week: number): void {
 // --- Inquiries --------------------------------------------------------------
 
 function unlockedTypes(state: GameState): CustomerType[] {
-  const rev = recentWeeklyRevenue(state);
+  const rev = monthlyRevenue(state);
   const types: CustomerType[] = ['small'];
-  if (rev >= MEDIUM_UNLOCK_REVENUE) types.push('medium');
-  if (rev >= LARGE_UNLOCK_REVENUE) types.push('large');
+  if (rev >= MEDIUM_UNLOCK_MONTHLY) types.push('medium');
+  if (rev >= LARGE_UNLOCK_MONTHLY) types.push('large');
   return types;
 }
 

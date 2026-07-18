@@ -3,8 +3,10 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { counterAcceptChance, freeCapacity } from '../../game/simulation';
 import { acceptInquiry, counterOffer, dismissInquiry } from '../../game/actions';
+import { LARGE_UNLOCK_MONTHLY, MEDIUM_UNLOCK_MONTHLY, monthlyRevenue } from '../../game/constants';
 import { STEP, TUTORIAL_INQUIRY_IDS, TUTORIAL_MEAT_INQUIRY_ID, tutorialOnStep } from '../../game/tutorial';
 import type { CustomerType } from '../../game/types';
+import { euro } from '../../game/util';
 import { PRODUCT_COLOR } from '../shared';
 
 const TYPE_LABEL: Record<CustomerType, string> = { small: 'Klein', medium: 'Mittel', large: 'Groß' };
@@ -13,6 +15,15 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
   const [prices, setPrices] = useState<Record<string, number>>({});
   const list = state.inquiries.filter((i) => i.status === 'open');
+
+  // Progress toward the next customer-size unlock (rolling monthly revenue).
+  const monthly = monthlyRevenue(state);
+  const nextUnlock =
+    monthly < MEDIUM_UNLOCK_MONTHLY
+      ? { value: MEDIUM_UNLOCK_MONTHLY, label: 'schaltet mittlere Kunden frei' }
+      : monthly < LARGE_UNLOCK_MONTHLY
+        ? { value: LARGE_UNLOCK_MONTHLY, label: 'schaltet große Kunden frei' }
+        : null;
 
   // Guided lesson during the tutorial's growth beat: accept the uncle's first
   // inquiry, then counter-offer the second (glow points at the active action).
@@ -51,6 +62,17 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
           </span>
         </p>
       )}
+
+      <p className="hint" style={{ marginBottom: 8 }}>
+        📊 Monatsumsatz (rollierende 4 Wochen): <b>{euro(monthly)}</b>
+        {nextUnlock ? (
+          <>
+            {' '}/ {euro(nextUnlock.value)} — {nextUnlock.label}
+          </>
+        ) : (
+          <> — alle Kundengrößen freigeschaltet</>
+        )}
+      </p>
 
       <div className="two-col" style={{ marginBottom: 14 }}>
         {(['small', 'medium', 'large'] as CustomerType[]).map((t) => (

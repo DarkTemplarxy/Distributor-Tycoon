@@ -4,7 +4,7 @@
 
 import type { CustomerType, GameState, ProductId, Role } from './types';
 
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -169,12 +169,17 @@ export const KAM_CAPACITY: Record<CustomerType, number> = {
 };
 
 /**
- * Weekly-revenue thresholds that unlock bigger customers. Tuned down from the
- * spec's aspirational 20k/100k so the medium/large mechanics are actually
- * reachable inside a 52-week MVP session.
+ * Monthly-revenue thresholds that unlock bigger customers (Entscheidungen R2/R3).
+ * "Monatsumsatz" is the ROLLING sum of the last 4 completed weeks, re-checked
+ * every week — unlocking can happen any week, not just at month end.
  */
-export const MEDIUM_UNLOCK_REVENUE = 40000;
-export const LARGE_UNLOCK_REVENUE = 400000;
+export const MEDIUM_UNLOCK_MONTHLY = 120_000;
+export const LARGE_UNLOCK_MONTHLY = 600_000;
+
+/** Rolling monthly revenue: sum of the last 4 completed weekly reports. */
+export function monthlyRevenue(state: GameState): number {
+  return state.reports.slice(-4).reduce((s, r) => s + r.revenue, 0);
+}
 
 export const CUSTOMER_LEAD_WEEKS: Record<CustomerType, number> = {
   small: 1,
@@ -404,12 +409,28 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
     check: (s) => s.warehouse.expansions >= 1,
   },
   {
+    id: 'monthly_40k',
+    emoji: '🧾',
+    title: '€40.000 Monatsumsatz',
+    description: 'Erreiche 40.000 € Umsatz in einem Monat (rollierende 4 Wochen).',
+    uncleComment: '40.000 € in einem Monat! Das war früher mein bestes Jahresergebnis.',
+    check: (s) => monthlyRevenue(s) >= 40000,
+  },
+  {
     id: 'all_products',
     emoji: '🧺',
     title: 'Alle drei Produkte',
     description: 'Habe alle drei Produkte im Sortiment.',
     uncleComment: 'Alle drei Produktgruppen. Ein richtiger Vollsortimenter – das hab ich nie geschafft.',
     check: (s) => s.products.length >= 3,
+  },
+  {
+    id: 'monthly_120k',
+    emoji: '📊',
+    title: '€120.000 Monatsumsatz',
+    description: 'Erreiche 120.000 € Monatsumsatz – schaltet mittlere Kunden frei.',
+    uncleComment: 'Bei den Zahlen klopfen jetzt Hotels und Kantinen an. Mittlere Kunden – trau dich!',
+    check: (s) => monthlyRevenue(s) >= MEDIUM_UNLOCK_MONTHLY,
   },
   {
     id: 'first_medium',
@@ -420,12 +441,20 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
     check: (s) => s.customers.some((c) => c.active && c.type === 'medium'),
   },
   {
-    id: 'revenue_40k',
+    id: 'monthly_250k',
     emoji: '💰',
-    title: '€40.000 Umsatz in einer Woche',
-    description: 'Erreiche 40.000 € Umsatz in einer Woche.',
-    uncleComment: '40.000 € in einer einzigen Woche. Junge, ich bin sprachlos.',
-    check: (s) => s.reports.some((r) => r.revenue >= 40000),
+    title: '€250.000 Monatsumsatz',
+    description: 'Erreiche 250.000 € Monatsumsatz.',
+    uncleComment: 'Eine Viertelmillion im Monat. Ich muss mich erst mal setzen.',
+    check: (s) => monthlyRevenue(s) >= 250000,
+  },
+  {
+    id: 'monthly_600k',
+    emoji: '🎯',
+    title: '€600.000 Monatsumsatz',
+    description: 'Erreiche 600.000 € Monatsumsatz – schaltet große Kunden frei.',
+    uncleComment: '600.000 €?! Junge, jetzt reden die Supermarkt-Ketten über dich.',
+    check: (s) => monthlyRevenue(s) >= LARGE_UNLOCK_MONTHLY,
   },
   {
     id: 'first_large',

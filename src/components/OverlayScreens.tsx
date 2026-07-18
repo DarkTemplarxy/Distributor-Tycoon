@@ -8,21 +8,22 @@ import type { CustomerType } from '../game/types';
 // (TutorialLayer) — every fresh game now begins with the guided onboarding.
 
 /** The uncle's verdict — 4 tiers by milestones reached (gated on a profitable
- * year for the higher ones). No game over, only an honest, warm appraisal. */
+ * year for the higher ones). No game over, only an honest, warm appraisal.
+ * Tier bounds are fractions of the (grown) milestone list: ~25 % / 50 % / 75 %. */
 function uncleVerdict(profit: number, milestones: number): { emoji: string; text: string } {
-  if (profit < 0 || milestones < 3) {
+  if (profit < 0 || milestones < 4) {
     return {
       emoji: '🤗',
       text: 'Das erste Jahr ist das schwerste, Junge. Lass den Kopf nicht hängen – du hast eine Menge gelernt, und der Laden läuft noch.',
     };
   }
-  if (milestones < 6) {
+  if (milestones < 8) {
     return {
       emoji: '🙂',
       text: 'Solide gemacht! Der Laden steht auf eigenen Beinen. Nächstes Jahr legst du eine Schippe drauf.',
     };
   }
-  if (milestones < 9) {
+  if (milestones < 11) {
     return {
       emoji: '😄',
       text: 'Richtig stark. Ich hätte nicht gedacht, dass das kleine Geschäft so wachsen kann.',
