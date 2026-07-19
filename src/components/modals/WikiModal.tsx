@@ -252,16 +252,17 @@ const ENTRIES: WikiEntry[] = [
           kann sich übernehmen.
         </p>
         <p>
-          <b>🧑‍✈️ Standortleiter & Konzern-Cockpit:</b> Damit du bei mehreren Standorten nicht jedes
-          Regal von Hand baust, kannst du im 🗺️ <b>Konzern</b>-Cockpit einem Standort einen{' '}
-          <b>Standortleiter</b> zuweisen. Er <b>führt den Standort dann selbst</b>: stellt Lagerkräfte
-          nach Bedarf ein, baut Packtische/Regale/Kühlzone/Rampe aus und <b>trainiert die Crew</b> —
-          alles automatisch, im Hintergrund, auch wenn du gerade den anderen Standort ansiehst. Für
-          den <b>Nachschub sorgt weiterhin der Einkäufer</b> zentral, also gib einem delegierten
-          Standort auch genügend Einkäufer-Kapazität. Im Cockpit siehst du jeden Standort als
-          <b>KPI-Karte</b> (Kunden, Volumen, Personal, Service, Auslastung, Alarme); per <b>Betreten</b>{' '}
-          klickst du ins echte Lager. So wächst du vom Hands-on-Lager zum Konzern, ohne im
-          Mikromanagement zu ersticken.
+          <b>🧑‍✈️ Standortleiter & Konzern-Karte:</b> Der 🗺️ <b>Konzern</b>-Button öffnet eine eigene
+          <b>Karten-Ansicht</b>, die mit dir mitwächst: von der <b>Stadt</b> (deine Standorte Nord &
+          Süd) zoomst du später auf <b>Deutschland</b> (Städte) und <b>Europa</b> (Länder). Klick auf
+          einen Standort öffnet sein Panel – dort siehst du seine Kennzahlen (Kunden, Volumen, Personal,
+          Service, Auslastung, Alarme), <b>betrittst</b> das echte Lager oder setzt einen{' '}
+          <b>Standortleiter</b> ein. Der <b>führt den Standort dann selbst</b>: stellt Lagerkräfte nach
+          Bedarf ein, baut Packtische/Regale/Kühlzone/Rampe aus und <b>trainiert die Crew</b> — alles
+          automatisch im Hintergrund, auch wenn du gerade woanders bist. Für den <b>Nachschub sorgt
+          weiterhin der Einkäufer</b> zentral, also gib einem delegierten Standort genügend
+          Einkäufer-Kapazität. So wächst du vom Hands-on-Lager zum Konzern, ohne im Mikromanagement zu
+          ersticken.
         </p>
       </>
     ),
