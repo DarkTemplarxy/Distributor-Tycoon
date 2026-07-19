@@ -33,8 +33,12 @@
 import { createInitialState } from '../src/game/init.ts';
 import {
   advance,
+  branchOpen,
+  buyerCapacity,
   coldChainGap,
+  coldShelfCapacity,
   coldShelfFree,
+  equipmentLevel,
   freeCapacity,
   freeDesks,
   hallExpansionFrontier,
@@ -43,15 +47,19 @@ import {
   officeExpansionFrontier,
   orderOutlook,
   placementBlocksAccess,
+  shelfCapacity,
   shelfFree,
 } from '../src/game/simulation.ts';
 import {
   acceptInquiry,
+  acceptBigOrder,
+  addProduct,
   buildCoolZone,
   buildDesk,
   buildInboundSlot,
   buildShelf,
   buildTable,
+  buyEquipment,
   counterOffer,
   openBranch,
   expandHall,
@@ -60,18 +68,22 @@ import {
   placeWeeklyOrder,
   repriceCooldownLeft,
   setCustomerLinePrice,
+  trainEmployee,
 } from '../src/game/actions.ts';
 import {
   BRANCH_PRICE,
+  BUYER_PRODUCT_CAPACITY,
+  EQUIPMENT_DEFS,
   getProductDef,
   LARGE_UNLOCK_MONTHLY,
   MEDIUM_UNLOCK_MONTHLY,
   monthlyRevenue,
+  PRODUCT_DEFS,
 } from '../src/game/constants.ts';
 import { weekOf } from '../src/game/util.ts';
 import type { CustomerType, GameState } from '../src/game/types.ts';
 
-type Strategy = 'greedy' | 'passiv' | 'sinnvoll' | 'kam_spam' | 'kam_spam_plus';
+type Strategy = 'greedy' | 'passiv' | 'sinnvoll' | 'kam_spam' | 'kam_spam_plus' | 'maxeff';
 
 interface WeekRow {
   week: number;
@@ -268,6 +280,208 @@ function sinnvollReprice(s: GameState) {
   }
 }
 
+/** A free storage tile at a given site (branch-aware) for maxeff builds. */
+function freeStorageTileAt(s: GameState, site: 'hq' | 'sued'): { gx: number; gy: number } | null {
+  const w = site === 'sued' && s.branchWarehouse ? s.branchWarehouse : s.warehouse;
+  for (const t of w.tiles) {
+    if (t.zone !== 'storage') continue;
+    if (w.shelves.some((x) => x.gx === t.gx && x.gy === t.gy)) continue;
+    if (w.tables.some((x) => x.gx === t.gx && x.gy === t.gy)) continue;
+    if (placementBlocksAccess(s, t.gx, t.gy, site)) continue;
+    return t;
+  }
+  return null;
+}
+
+/** Ensure ONE free office desk exists (build or expand office). Office staff
+ * (KAM/Einkäufer/Sales) all sit centrally at HQ. */
+function ensureDesk(s: GameState) {
+  if (freeDesks(s) > 0) return;
+  const tile = freeOfficeTile(s);
+  if (tile) buildDesk(s, tile.gx, tile.gy);
+  else {
+    const blk = officeExpansionFrontier(s)[0];
+    if (blk) {
+      expandOffice(s, blk);
+      const t2 = freeOfficeTile(s);
+      if (t2) buildDesk(s, t2.gx, t2.gy);
+    }
+  }
+}
+
+/**
+ * MAX-EFFICIENCY bot — the optimal-play ceiling. Models how a perfect, NON-reckless
+ * operator scales, to measure whether the endgame trivialises. Two insights drive it:
+ *
+ *   • Survival first. It plays the proven sinnvoll reactive baseline throughout, so
+ *     the fragile early/mid game is nursed exactly like the healthy baseline bot.
+ *   • Throughput BEFORE demand. The binding constraint is warehouse throughput —
+ *     prep tables + equipment. sinnvoll self-caps at 8 tables and never buys gear, so
+ *     it plateaus ~120k/month. maxeff runs two tiers instead:
+ *       TIER 1 "scaling"   (modest health): raise the throughput ceiling — build prep
+ *                          tables past 8, buy prep equipment, staff/shelf/dock to volume.
+ *       TIER 2 "expansion" (fortress only): only from a throughput fortress does it ADD
+ *                          demand — breadth, sales reps, slot buffer, branch, big orders.
+ *     Adding demand before throughput is the over-extension trap the game punishes.
+ *
+ * Every discretionary spend respects a cash `reserve`, so it can never over-extend.
+ */
+function maxEff(s: GameState) {
+  const monthly = monthlyRevenue(s);
+  s.settings.buyerOrderBuffer = 0.15;
+
+  // Survival baseline (runs always): the proven sinnvoll reactive growth (HQ
+  // capacity/shelf/table/inbound + desk+KAM on a bind) plus the main-loop lager-on-
+  // lateness and cold-zone blocks (generalized to maxeff). This IS the healthy bot.
+  sinnvollGrowth(s);
+
+  const volAt = (site: 'hq' | 'sued') =>
+    s.customers
+      .filter((c) => c.active && (c.region ?? 'hq') === site)
+      .reduce((a, c) => a + c.lines.reduce((x, l) => x + l.volume, 0), 0);
+  const crewAt = (site: 'hq' | 'sued') =>
+    s.employees.filter((e) => e.role === 'lager' && (e.siteId ?? 'hq') === site).length;
+  const sites = () => (branchOpen(s) ? (['hq', 'sued'] as const) : (['hq'] as const));
+  const whOf = (site: 'hq' | 'sued') => (site === 'sued' && s.branchWarehouse ? s.branchWarehouse : s.warehouse);
+
+  // ============ TIER 1 — THROUGHPUT (raise the ceiling before adding demand) ============
+  // Modest health gate: a stable, mildly profitable operation. Everything here FIXES
+  // the bottleneck (more prep tables, faster gear, staff/space to match volume) → less
+  // lateness → better service → survival. Reserve kept low so it can build during the
+  // mid-game crunch, which is exactly when throughput needs raising.
+  const scaling = monthly > 25_000 && s.serviceStars >= 3.8;
+  if (scaling) {
+    // Reserve MUST exceed a week's inventory buy, or scaling spend starves the stock
+    // order → stockout → idle prep → late → churn (the year-2 death cliff). Tie it to
+    // turnover: a bigger operation buys more stock each week and needs a fatter cushion.
+    const reserve = Math.max(18_000, monthly * 0.35);
+    const afford = (cost: number) => s.cash - cost >= reserve;
+
+    for (const site of sites()) {
+      const crew = crewAt(site);
+      const vol = volAt(site);
+      const w = whOf(site);
+      // Proactive lager sized to volume (~180 units/worker/week), PER SITE.
+      if (crew < Math.min(18, Math.max(site === 'hq' ? 2 : 1, Math.ceil(vol / 180))) && afford(6_000)) {
+        hireEmployee(s, 'lager', site);
+      }
+      // Prep tables BEYOND sinnvoll's 8-cap — the real throughput lever. One per
+      // 2 lager, so headcount and prep stations grow together.
+      if (w.tables.length < Math.min(20, Math.floor(crewAt(site) / 1.5)) && afford(4_000)) {
+        const t = freeStorageTileAt(s, site);
+        if (t) buildTable(s, t.gx, t.gy, site);
+      }
+      // Cold + normal shelf headroom vs volume.
+      const carriesCold = s.products.some(
+        (p) => getProductDef(p.id).requiresCooling && supplierAtSite(p.id, site),
+      );
+      if (carriesCold && coldShelfFree(s, site) < 120 && afford(4_000)) {
+        const t = freeStorageTileAt(s, site);
+        if (t) { buildCoolZone(s, t.gx, t.gy, site); buildShelf(s, t.gx, t.gy, site); }
+      }
+      if (shelfFree(s, site) < Math.max(200, vol * 0.7) && afford(5_000)) {
+        const t = freeStorageTileAt(s, site);
+        if (t) buildShelf(s, t.gx, t.gy, site);
+        else {
+          const blk = hallExpansionFrontier(s, site)[0];
+          if (blk) expandHall(s, blk, site);
+        }
+      }
+      // Inbound dock so Monday deliveries don't jam.
+      if (inboundFree(s, site) < 80 && afford(8_000)) {
+        const ramp = w.tiles.find((t) => t.zone === 'ramp');
+        if (ramp) buildInboundSlot(s, ramp.gx, ramp.gy, site);
+      }
+    }
+
+    // Training: skill DIRECTLY multiplies prep speed — a fully-trained worker (skill
+    // 100) preps 2× as fast as a fresh skill-45 hire, for only ~1.4k total. It is by
+    // far the cheapest throughput lever and BOTH baseline bots ignore it, hiring slow
+    // bodies instead. Train the crew toward skill ~90, least-skilled first.
+    const lagerCrew = s.employees.filter((e) => e.role === 'lager');
+    const avgSkill = lagerCrew.reduce((a, e) => a + e.skill, 0) / (lagerCrew.length || 1);
+    if (avgSkill < 90) {
+      const trainee = lagerCrew.filter((e) => e.skill < 100).sort((a, b) => a.skill - b.skill)[0];
+      if (trainee && s.cash > 8_000) trainEmployee(s, trainee.id);
+    }
+
+    // Equipment: prep-speed / per-worker gear up to crew, facilities to max. This is
+    // the OTHER throughput lever sinnvoll never touches — it lifts the plateau.
+    const crewTotal = s.employees.filter((e) => e.role === 'lager').length;
+    for (const def of EQUIPMENT_DEFS) {
+      const owned = equipmentLevel(s, def.id);
+      if (owned >= def.max) continue;
+      const target = def.kind === 'perWorker' ? Math.min(def.max, crewTotal) : def.max;
+      if (owned < target && afford(def.price(owned + 1))) buyEquipment(s, def.id);
+    }
+
+    // One Einkäufer per BUYER_PRODUCT_CAPACITY groups (auto-order + reprice damping).
+    const buyersNeeded = Math.ceil(s.products.length / BUYER_PRODUCT_CAPACITY);
+    if (
+      s.products.length > BUYER_PRODUCT_CAPACITY &&
+      s.employees.filter((e) => e.role === 'einkaeufer').length < buyersNeeded &&
+      afford(12_000)
+    ) {
+      ensureDesk(s);
+      if (freeDesks(s) > 0) hireEmployee(s, 'einkaeufer');
+    }
+  }
+
+  // ============ TIER 2 — DEMAND (only from a throughput FORTRESS) ============
+  // Strong turnover AND healthy service, or a deep war-chest. Only now does the bot
+  // ADD demand: breadth, active acquisition, spare slots, the branch. Doing this on a
+  // shaky base is precisely the over-extension trap — sinnvoll survives the mid-game
+  // lateness wall *because* it never piles this on there.
+  const fortress = (monthly > 90_000 && s.serviceStars >= 4.2) || s.cash > 150_000;
+  if (!fortress) return;
+  // Even fatter cushion before ADDING demand — a new customer/product raises the
+  // weekly stock buy immediately, so keep well clear of the inventory-starve cliff.
+  const reserve = Math.max(35_000, monthly * 0.5);
+  const afford = (cost: number) => s.cash - cost >= reserve;
+
+  // Product breadth — ONE group at a time, only with healthy service and cold-shelf
+  // headroom (a new SKU needs stock + cold shelving before its orders land).
+  const coldTight = s.products.some((p) => getProductDef(p.id).requiresCooling) && coldShelfFree(s) < 80;
+  if (s.serviceStars >= 4.3 && !coldTight) {
+    for (const def of PRODUCT_DEFS) {
+      if (s.products.some((p) => p.id === def.id)) continue;
+      if (def.exclusiveSite === 'sued' && !branchOpen(s)) continue;
+      if (weekOf(s.totalDays) < def.unlockWeek) continue;
+      if (afford(def.listingFee + 30_000)) { addProduct(s, def.id); break; }
+    }
+  }
+
+  // Sales reps enlarge the reachable market (diminishing returns → cap at 2).
+  if (s.employees.filter((e) => e.role === 'sales').length < 2 && afford(15_000)) {
+    ensureDesk(s);
+    if (freeDesks(s) > 0) hireEmployee(s, 'sales');
+  }
+
+  // Proactive customer-slot buffer so no inquiry is refused for lack of capacity.
+  const wantMed = monthly >= MEDIUM_UNLOCK_MONTHLY;
+  const wantLarge = monthly >= LARGE_UNLOCK_MONTHLY;
+  const slotShort =
+    freeCapacity(s, 'small') < 3 ||
+    (wantMed && freeCapacity(s, 'medium') < 2) ||
+    (wantLarge && freeCapacity(s, 'large') < 1);
+  if (slotShort && afford(10_000)) {
+    ensureDesk(s);
+    if (freeDesks(s) > 0) hireEmployee(s, 'kam');
+  }
+
+  // Branch: open once affordable with a fat buffer (opening + ramp-up cost real cash).
+  if (!branchOpen(s) && afford(BRANCH_PRICE + 30_000)) openBranch(s);
+}
+
+/** Does the supplier deliver this product to this site (mirror of the game rule,
+ * kept local to avoid another import churn)? */
+function supplierAtSite(id: GameState['products'][number]['id'], site: 'hq' | 'sued'): boolean {
+  const def = getProductDef(id);
+  if (def.exclusiveSite) return def.exclusiveSite === site;
+  if (id === 'fisch') return site === 'hq';
+  return true;
+}
+
 function runSim(strategy: Strategy, weeks: number): RunResult {
   const s = createInitialState();
   s.tutorial = null; // skip onboarding — isolate the steady-state economy
@@ -300,9 +514,19 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     if (strategy !== 'passiv') {
       for (const inq of s.inquiries.filter((i) => i.status === 'open')) {
         // Großaufträge (Paket 5) are a one-off BET on being able to fulfil in
-        // time — a blind bot can't judge that, so it declines them (a sensible
-        // operator would too). They stay out of the baseline economy measurement.
-        if (inq.bigOrder) continue;
+        // time — a blind bot can't judge that, so the baseline bots decline them
+        // (a sensible operator would too). The maxeff ceiling-bot, by contrast,
+        // builds capacity far ahead of demand and takes every big-order bet — it
+        // measures the upside a perfect operator captures.
+        if (inq.bigOrder) {
+          // The maxeff ceiling-bot takes big-order bets, but only from a FORTRESS
+          // (robust turnover + healthy service, or a deep war-chest) — a big
+          // commitment on a fragile base is the over-extension trap, not optimal
+          // play. Mirrors the `fortress` gate in maxEff(). Others always decline.
+          const est = (monthlyRevenue(s) > 90_000 && s.serviceStars >= 4.2) || s.cash > 150_000;
+          if (strategy === 'maxeff' && est) acceptBigOrder(s, inq.id);
+          continue;
+        }
         // New customers need free capacity; expansions of existing ones don't.
         if (!inq.existingCustomerId && freeCapacity(s, inq.type) <= 0) continue;
         if (strategy === 'greedy') {
@@ -312,14 +536,15 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
           // of existing small customers — they're annehmbar and add volume).
           if (inq.type === 'small') acceptInquiry(s, inq.id);
         } else {
-          // sinnvoll: reject clear lowballs, secure the target margin on the rest —
-          // accept if the wish already meets it, else counter up to it (may be
-          // rejected → irregular, earned growth). Def-based lookup: the inquiry
-          // may target a product that isn't listed yet (accepting auto-lists it).
+          // sinnvoll & maxeff: reject clear lowballs, secure the target margin on
+          // the rest — accept if the wish already meets it, else counter up to it
+          // (may be rejected → irregular, earned growth). Def-based lookup: the
+          // inquiry may target a product that isn't listed yet (accepting auto-lists it).
           const p = getProductDef(inq.preferredProduct);
           // A new product (not yet listed) means paying its listing fee AND tying
           // up cash in expensive stock. A sensible operator paces that expansion:
-          // only list when there's a healthy cash buffer beyond the fee.
+          // only list when there's a healthy cash buffer beyond the fee. (maxeff
+          // pre-lists its whole assortment proactively once established, in maxEff().)
           const alreadyListed = s.products.some((pp) => pp.id === p.id);
           if (!alreadyListed && s.cash < p.listingFee + 20000) continue;
           const wishMargin = inq.targetPrice > 0 ? ((inq.targetPrice - p.einkaufspreis) / inq.targetPrice) * 100 : 0;
@@ -349,7 +574,7 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     // cold-chain product (Käse/Tiefkühl/Feinkost) — the ware can ONLY be stored
     // in shelves on cool tiles; without one it spoils fast in inbound. Also
     // extend the zone when cold shelf space runs low. ---
-    if (strategy === 'sinnvoll') {
+    if (strategy === 'sinnvoll' || strategy === 'maxeff') {
       const needsColdSpace =
         coldChainGap(s) ||
         (s.products.some((p) => getProductDef(p.id).requiresCooling) && coldShelfFree(s) < 40);
@@ -367,9 +592,12 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
 
     // --- bot: sinnvoll (and the supported spam) hire a warehouse worker when
     // deliveries slip ---
-    if ((strategy === 'sinnvoll' || strategy === 'kam_spam_plus') && s.stats.lateOrders > lastLate) {
+    if ((strategy === 'sinnvoll' || strategy === 'kam_spam_plus' || strategy === 'maxeff') && s.stats.lateOrders > lastLate) {
       const lager = s.employees.filter((e) => e.role === 'lager').length;
-      if (lager < 12) hireEmployee(s, 'lager');
+      // maxeff builds prep tables past 8, so more lager can actually prep; the
+      // reactive baselines keep their proven 12-cap.
+      const cap = strategy === 'maxeff' ? 16 : 12;
+      if (lager < cap) hireEmployee(s, 'lager');
     }
     lastLate = s.stats.lateOrders;
 
@@ -379,6 +607,13 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
 
     // --- bot: sinnvoll earns its margin through service-backed renegotiation ---
     if (strategy === 'sinnvoll') sinnvollReprice(s);
+
+    // --- bot: maxeff plays every lever proactively (list/hire/build/equip/branch)
+    // and pushes prices to target margin — the optimal-play ceiling measurement ---
+    if (strategy === 'maxeff') {
+      maxEff(s);
+      sinnvollReprice(s);
+    }
 
     // --- bot: the spam bots hire KAMs aggressively (naked kam_spam trails the
     // warehouse only per-week, see the report block below — deliberately too
