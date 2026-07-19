@@ -18,6 +18,8 @@ import {
   marketShare,
   playerRank,
   marketRanking,
+  siteRenown,
+  nationalRenown,
 } from '../game/simulation';
 import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundKonzern } from '../game/actions';
 import {
@@ -51,6 +53,7 @@ const PIN_XY: Record<SiteId, { x: number; y: number }> = {
 
 interface Kpis {
   customers: number;
+  renown: number;
   pending: number;
   vol: number;
   crew: number;
@@ -78,7 +81,7 @@ function siteKpis(state: GameState, site: SiteId): Kpis {
   if (shelfFree(state, site) < Math.max(120, vol * 0.4)) alarms.push('📦 Regalplatz knapp');
   if (site === 'hq' && coldChainGap(state)) alarms.push('❄️ kein Kühlregal');
   if (regionCust.length > 0 && crew.length === 0) alarms.push('👷 keine Lagerkraft');
-  return { customers: regionCust.length, pending: ordersHere.length, vol, crew: crew.length, tables: w.tables.length, avgSkill, service, shelfPct, alarms };
+  return { customers: regionCust.length, renown: siteRenown(state, site), pending: ordersHere.length, vol, crew: crew.length, tables: w.tables.length, avgSkill, service, shelfPct, alarms };
 }
 
 /** A KPI figure with a label. */
@@ -259,6 +262,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
               🏢 Regionalbüro
             </button>
           )}
+          <span className="pill">📣 Ruf {nationalRenown(state).toFixed(0)}</span>
           <span className="pill">Marktanteil {(share * 100).toFixed(1)}% · Platz {rank}/{totalRanks}</span>
           <span className="km-money">💶 {eur(state.cash)}</span>
         </div>
@@ -385,6 +389,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                   </p>
                   <div className="km-kpis">
                     <Kpi label="Kunden" value={String(k.customers)} />
+                    <Kpi label="📣 Ruf" value={k.renown.toFixed(0)} tone={k.renown >= 60 ? 'good' : undefined} />
                     <Kpi label="Volumen/Wo." value={eur(k.vol)} />
                     <Kpi label="Lager" value={String(k.crew)} />
                     <Kpi label="Packtische" value={String(k.tables)} />

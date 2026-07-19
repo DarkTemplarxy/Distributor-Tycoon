@@ -270,6 +270,13 @@ const ENTRIES: WikiEntry[] = [
           Regionalbüros). So wächst du vom Hands-on-Lager zum Konzern, ohne im Mikromanagement zu
           ersticken.
         </p>
+        <p>
+          <b>📣 Ruf (Renown):</b> Jeder Standort baut mit <b>gutem Service</b> und vielen zufriedenen
+          Kunden über die Zeit einen <b>Ruf</b> (0–100) auf – ein bekannter Name zieht schneller
+          Neukunden an. Der Clou: ein <b>neu eröffneter Standort erbt einen Teil des Landes-Rufs</b> und
+          <b>wächst dadurch schneller</b> als dein erster (der bei Null anfing). Den Ruf siehst du in der
+          🗺️ Konzern-Ansicht; der Marketing-Vorstand wird ihn später zusätzlich beschleunigen.
+        </p>
       </>
     ),
   },

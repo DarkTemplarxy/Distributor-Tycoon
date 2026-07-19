@@ -43,6 +43,7 @@ import {
   EXPANSION_MAX_PER_WEEK,
   EXPANSION_MIN_LOYALTY,
   INQUIRY_BASE_CHANCE,
+  RENOWN,
   INQUIRY_MARKET,
   INQUIRY_DAY_OF_WEEK,
   SALES_MARKET_PER_REP,
@@ -66,7 +67,6 @@ import {
   SITE_META,
   BRANCH_RENT,
   BRANCH_MARKET_BONUS,
-  BRANCH_INQUIRY_SHARE,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
   REPRICE_ACCEPT_FLOOR,
@@ -2022,7 +2022,9 @@ export function typeInquiryChance(state: GameState, type: CustomerType): number 
   const regionFactor = branchOpen(state) ? BRANCH_MARKET_BONUS : 1;
   const market =
     (INQUIRY_MARKET[type] + salesAcquisitionPower(state) * SALES_MARKET_PER_REP) * regionFactor;
-  return INQUIRY_BASE_CHANCE[type] * (market / (market + count));
+  // Landes-Ruf hebt die gesamte Neukunden-Rate (bekannte Marke = mehr Anfragen).
+  const renownBoost = 1 + (nationalRenown(state) / RENOWN.MAX) * RENOWN.ACQUISITION_BOOST;
+  return INQUIRY_BASE_CHANCE[type] * (market / (market + count)) * renownBoost;
 }
 
 /** Expected new-customer inquiries per week across all unlocked tiers that have
@@ -2038,10 +2040,9 @@ function generateNewInquiry(state: GameState, type: CustomerType): void {
   const week = weekOf(state.totalDays);
   const preferred = pickInquiryProduct(state);
   const product = inquiryProductInfo(state, preferred);
-  // Region: mit offenem Standort Süd stammt ein Teil der Anfragen aus der neuen
-  // Region — nur der dortige Standort kann sie beliefern.
-  const region: SiteId =
-    branchOpen(state) && Math.random() < BRANCH_INQUIRY_SHARE ? 'sued' : 'hq';
+  // Region: nach Ruf gewichtet — ein bekannter Standort (auch der neu eröffnete,
+  // der einen Teil des Landes-Rufs geerbt hat) zieht mehr Neukunden an.
+  const region: SiteId = pickInquiryRegion(state);
   const inquiry: Inquiry = {
     id: uid('inq'),
     name: uniqueCustomerName(state, type),
@@ -2192,6 +2193,57 @@ export function totalMarketStrength(state: GameState): number {
 export function marketShare(state: GameState): number {
   const total = totalMarketStrength(state);
   return total > 0 ? playerMarketStrength(state) / total : 0;
+}
+
+// --- Renown / Ruf (Mid-Game-Wachstumsmotor) ---------------------------------
+
+/** Ruf (0..100) eines Standorts. Fehlend = 0. */
+export function siteRenown(state: GameState, site: SiteId = 'hq'): number {
+  return state.renownBySite?.[site] ?? 0;
+}
+/** Landes-Ruf: kunden-gewichteter Mittelwert der Standort-Rufe (der große, etablierte
+ * Standort prägt die Marke stärker). Basis, die ein neuer Standort erbt. */
+export function nationalRenown(state: GameState): number {
+  let wSum = 0;
+  let rSum = 0;
+  for (const s of activeSites(state)) {
+    const cust = state.customers.filter((c) => c.active && (c.region ?? 'hq') === s).length;
+    const w = 1 + cust;
+    wSum += w;
+    rSum += w * siteRenown(state, s);
+  }
+  return wSum > 0 ? rSum / wSum : 0;
+}
+/** Zielwert, dem sich der Ruf eines Standorts nähert: mehr zufriedene Kunden +
+ * Service über 3★ → höherer Ruf. */
+function renownTargetForSite(state: GameState, site: SiteId): number {
+  const cust = state.customers.filter((c) => c.active && (c.region ?? 'hq') === site);
+  const n = cust.length;
+  const svc = n ? cust.reduce((a, c) => a + c.serviceRating, 0) / n : 3;
+  return clamp(n * RENOWN.PER_CUSTOMER + Math.max(0, svc - 3) * RENOWN.SERVICE_BONUS, 0, RENOWN.MAX);
+}
+/** Wöchentlich: jeder Standort-Ruf nähert sich (träge) seinem Zielwert. */
+function runRenownWeek(state: GameState): void {
+  if (!state.renownBySite) state.renownBySite = {};
+  for (const site of activeSites(state)) {
+    const cur = siteRenown(state, site);
+    const target = renownTargetForSite(state, site);
+    state.renownBySite[site] = clamp(cur + (target - cur) * RENOWN.EASE, 0, RENOWN.MAX);
+  }
+}
+/** Region einer neuen Anfrage — nach Ruf gewichtet: ein bekannter (auch neu
+ * eröffneter, geerbter) Standort zieht mehr Neukunden. */
+function pickInquiryRegion(state: GameState): SiteId {
+  const sites = activeSites(state);
+  if (sites.length <= 1) return sites[0] ?? 'hq';
+  const weights = sites.map((s) => RENOWN.REGION_BASE + siteRenown(state, s));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < sites.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return sites[i];
+  }
+  return sites[sites.length - 1];
 }
 
 export interface RankRow {
@@ -2777,6 +2829,7 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   // berechnen, ggf. einen verwundbaren Kunden abwerben (Loyalitäts-Schlag →
   // speist den bestehenden Abwanderungs-Pfad direkt darunter).
   runMarketWeek(state, newWeek);
+  runRenownWeek(state);
 
   // 5c. Loyalty with teeth: deeply unhappy customers (below the threshold) may
   // quit — but NEVER without warning. Crossing the threshold raises the warning

@@ -31,6 +31,7 @@ import {
   SLOT_COST,
   SHELF_SLOTS,
   KONZERN_FOUND_COST,
+  RENOWN,
   STANDORTLEITER_AUTO,
   STRATEGY_COOLDOWN_WEEKS,
   supplierDeliversTo,
@@ -64,6 +65,7 @@ import {
   isFrontierBlock,
   isInAssortment,
   managers,
+  nationalRenown,
   notify,
   placementBlocksAccess,
   shelfFree,
@@ -803,6 +805,10 @@ export function openBranch(state: GameState): ActionResult {
   spend(state, BRANCH_PRICE);
   state.branchWarehouse = makeBranchWarehouse();
   state.branchOpenedWeek = weekOf(state.totalDays);
+  // Renown-Vorsprung: der neue Standort erbt einen Teil des Landes-Rufs und zieht
+  // dadurch von Anfang an schneller Neukunden an als der erste Standort damals.
+  if (!state.renownBySite) state.renownBySite = {};
+  state.renownBySite.sued = RENOWN.NEW_SITE_INHERIT * nationalRenown(state);
   notify(
     state,
     `🎉 ${SITE_META.sued.name} eröffnet (${BRANCH_PRICE}€)! Neue Region: Süd-Kunden fragen bald an, 🍷 Wein & 🫒 Oliven sind dort listbar. Lagerkräfte einstellen (Personal → Standort Süd) und bestellen nicht vergessen.`,

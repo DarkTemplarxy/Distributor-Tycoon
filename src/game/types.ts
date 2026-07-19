@@ -496,6 +496,12 @@ export interface GameState {
   /** Zuletzt berechneter Marktanteil des Spielers (0..1). */
   marketShare?: number;
 
+  /** Ruf (Renown, 0..100) je Standort — Bekanntheit der Marke. Baut sich aus Service
+   * & Kundenzahl auf und zieht schneller Neukunden an. Ein neuer Standort erbt einen
+   * Teil des Landes-Rufs (Summe/Mittel der Standorte) und wächst dadurch schneller.
+   * Optional → kein SAVE-Bump; fehlend = 0. */
+  renownBySite?: Partial<Record<SiteId, number>>;
+
   /** Standort Süd (L3): eigene Halle, wenn eröffnet. Undefined = nicht eröffnet.
    * Gleiche Struktur wie `warehouse` — alle Bau-/Kapazitäts-Helfer laufen über
    * warehouseOf(state, siteId). */

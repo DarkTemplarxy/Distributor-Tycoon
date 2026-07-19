@@ -450,6 +450,34 @@ export const SEASONAL_TREND: Record<ProductId, [number, number, number, number]>
 
 export const QUARTER_LABEL = ['Q1 · Winter', 'Q2 · Frühjahr', 'Q3 · Sommer', 'Q4 · Herbst'];
 
+/**
+ * Renown (Ruf, 0..100) — die Bekanntheit deiner Marke, PRO STANDORT aufgebaut und
+ * PRO LAND aggregiert. Guter Service und viele zufriedene Kunden bauen den Ruf eines
+ * Standorts über die Zeit auf; hoher Ruf zieht schneller Neukunden an. Der Clou für
+ * das Mid-Game: ein neu eröffneter Standort ERBT einen Teil des Landes-Rufs und
+ * wächst dadurch schneller als der erste (der bei Null anfing). Der Marketing-Manager
+ * (Konzern-Rolle) wird den Aufbau später zusätzlich beschleunigen.
+ */
+export const RENOWN = {
+  MAX: 100,
+  /** Ruf nähert sich seinem Zielwert je Woche um diesen Anteil (träge – baut sich auf). */
+  EASE: 0.06,
+  /** Zielwert-Beitrag je aktivem Kunden am Standort. */
+  PER_CUSTOMER: 3.5,
+  /** Zielwert-Bonus je Stern Service über 3★. */
+  SERVICE_BONUS: 14,
+  /** Ein neuer Standort startet mit diesem Anteil des aktuellen Landes-Rufs. */
+  NEW_SITE_INHERIT: 0.7,
+  /** Landes-Ruf hebt die GESAMT-Neukunden-Rate nur sanft (ein bekannter Name zieht
+   *  etwas mehr an) — der eigentliche „neue Standorte wachsen schneller"-Effekt kommt
+   *  aus der ruf-gewichteten Regions-Verteilung (bilanzneutral), nicht aus mehr
+   *  Gesamtwachstum, das sonst nur die Durchsatzwand früher auslöst. */
+  ACQUISITION_BOOST: 0.18,
+  /** Basis-Gewicht je Region bei der Anfrage-Verteilung (damit auch ein Standort
+   *  mit 0 Ruf noch Anfragen bekommt); der Ruf kommt additiv oben drauf. */
+  REGION_BASE: 12,
+};
+
 /** Pools of flavour names for procedurally generated inquiries. */
 export const CUSTOMER_NAME_POOL: Record<CustomerType, string[]> = {
   small: [
