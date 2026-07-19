@@ -38,7 +38,17 @@ export interface Transfer {
 
 export type CustomerType = 'small' | 'medium' | 'large';
 
-export type Role = 'lager' | 'einkaeufer' | 'kam' | 'sales' | 'admin' | 'standortleiter';
+export type Role =
+  | 'lager'
+  | 'einkaeufer'
+  | 'kam'
+  | 'sales'
+  | 'admin'
+  | 'standortleiter'
+  // Regionalbüro-Rollen (Konzern, ab 2 Standorten): sitzen im abstrakten Regionalbüro
+  // des Landes (kein physischer Schreibtisch), werden über Hürden freigeschaltet.
+  | 'marketing' // Marketing-Manager: beschleunigt den Ruf (Renown), vor allem initial.
+  | 'regionalkam'; // Regional-KAM: betreut die landesweiten Großkunden (bis zu 3 je Kopf).
 
 /** Buyable capital upgrades (Paket 2). */
 export type EquipmentId = 'forklift' | 'packstation' | 'cooling' | 'truck';

@@ -13,6 +13,7 @@ import {
   CHEF_MANAGER_ID,
   MANAGER_SLOTS,
   SLOT_COST,
+  REGIONAL_KAM_LARGE_SLOTS,
   PREP_HOURS_PER_UNIT,
   PUTAWAY_HOURS_PER_UNIT,
   CARRY_CAPACITY,
@@ -664,22 +665,48 @@ export function managers(state: GameState): ManagerInfo[] {
   });
 }
 
-/** The manager who should take a new customer of `type`: managers are filled
- * SEQUENTIALLY — the most-utilised manager that still fits the customer gets it,
- * so one book is topped up completely before the next one starts (instead of
- * spreading customers evenly). Side benefit: the other managers keep whole free
- * slot-blocks for large customers. Ties go to the earlier manager (Chef first,
- * then KAMs in hire order). Null when NO single manager has room — pooled
- * leftovers don't count (fragmentation is intended). */
-export function bestManagerFor(state: GameState, type: CustomerType): ManagerInfo | null {
+/** Regional-KAMs (Konzern, Regionalbüro): jeder betreut bis zu REGIONAL_KAM_LARGE_SLOTS
+ * GROSSKUNDEN (Landeskunden). Eigener Kapazitäts-Topf, getrennt vom zentralen Slot-System
+ * — Großkunden werden bewusst aus der Einzel-Standort-Sicht herausgenommen und hier
+ * geführt. Fehlt ein Regional-KAM, gibt es keine Großkunden-Kapazität (harte Hürde). */
+export interface RegionalKamInfo { id: string; name: string; used: number; free: number }
+export function regionalKams(state: GameState): RegionalKamInfo[] {
+  return state.employees
+    .filter((e) => e.role === 'regionalkam')
+    .map((e) => {
+      const used = state.customers.filter((c) => c.active && c.managerId === e.id).length;
+      return { id: e.id, name: e.name, used, free: Math.max(0, REGIONAL_KAM_LARGE_SLOTS - used) };
+    });
+}
+/** Freie Großkunden-Plätze über alle Regional-KAMs. */
+export function regionalKamFreeLarge(state: GameState): number {
+  return regionalKams(state).reduce((s, k) => s + k.free, 0);
+}
+/** Der Regional-KAM, der einen neuen Großkunden übernimmt (fullest-fitting, wie zentral). */
+function bestRegionalKamFor(state: GameState): Pick<ManagerInfo, 'id' | 'name' | 'isChef'> | null {
+  const fitting = regionalKams(state).filter((k) => k.free >= 1);
+  if (fitting.length === 0) return null;
+  const best = fitting.reduce((a, b) => (b.free < a.free ? b : a));
+  return { id: best.id, name: best.name, isChef: false };
+}
+
+/** The manager who should take a new customer of `type`: for small/medium the
+ * central managers are filled SEQUENTIALLY — the most-utilised manager that still
+ * fits gets it (one book is topped up completely before the next starts). GROSSKUNDEN
+ * gehen NICHT ins zentrale Slot-System, sondern an einen Regional-KAM (Regionalbüro).
+ * Null when NO single manager/KAM has room — pooled leftovers don't count. */
+export function bestManagerFor(state: GameState, type: CustomerType): Pick<ManagerInfo, 'id' | 'name' | 'isChef'> | null {
+  if (type === 'large') return bestRegionalKamFor(state);
   const fitting = managers(state).filter((m) => m.free >= SLOT_COST[type]);
   if (fitting.length === 0) return null;
   return fitting.reduce((a, b) => (b.free < a.free ? b : a));
 }
 
-/** How many MORE customers of `type` could be taken right now, honoring the
- * per-manager slot check (a fragmented 3+3 yields 0 for a large customer). */
+/** How many MORE customers of `type` could be taken right now. Small/medium honor
+ * the per-manager central slot check (a fragmented 3+3 yields 0 for their cost);
+ * large customers count the separate Regional-KAM capacity. */
 export function freeCapacity(state: GameState, type: CustomerType): number {
+  if (type === 'large') return regionalKamFreeLarge(state);
   return managers(state).reduce((s, m) => s + Math.floor(m.free / SLOT_COST[type]), 0);
 }
 
@@ -2011,6 +2038,15 @@ export function salesAcquisitionPower(state: GameState): number {
     .reduce((sum, e) => sum + 0.5 + 0.5 * (e.skill / 100), 0);
 }
 
+/** Skill-weighted power of the Marketing-Manager team (same 0.5 + 0.5×Skill/100
+ * shape as Vertrieb). Beschleunigt den Ruf-Aufbau (siehe runRenownWeek) — mehr
+ * Bekanntheit, schneller. */
+export function marketingPower(state: GameState): number {
+  return state.employees
+    .filter((e) => e.role === 'marketing')
+    .reduce((sum, e) => sum + 0.5 + 0.5 * (e.skill / 100), 0);
+}
+
 /** Weekly chance of a NEW-customer inquiry of a given size: a per-tier
  * saturation curve, BASE × market/(market + Kunden dieser Größe), whose market
  * is enlarged by the Vertrieb team. Each tier saturates against its OWN count,
@@ -2222,13 +2258,18 @@ function renownTargetForSite(state: GameState, site: SiteId): number {
   const svc = n ? cust.reduce((a, c) => a + c.serviceRating, 0) / n : 3;
   return clamp(n * RENOWN.PER_CUSTOMER + Math.max(0, svc - 3) * RENOWN.SERVICE_BONUS, 0, RENOWN.MAX);
 }
-/** Wöchentlich: jeder Standort-Ruf nähert sich (träge) seinem Zielwert. */
+/** Wöchentlich: jeder Standort-Ruf nähert sich (träge) seinem Zielwert. Der
+ * Marketing-Manager beschleunigt das Tempo (schnellere Annäherung) — weil der Ruf
+ * sich nur um EASE annähert, ist der absolute Wochen-Gewinn dort am größten, wo der
+ * Abstand zum Ziel groß ist, also am jungen Standort: „Kunden werden vor allem
+ * initial schneller aufmerksam." */
 function runRenownWeek(state: GameState): void {
   if (!state.renownBySite) state.renownBySite = {};
+  const ease = Math.min(RENOWN.MAX_EASE, RENOWN.EASE * (1 + marketingPower(state) * RENOWN.MARKETING_SPEED));
   for (const site of activeSites(state)) {
     const cur = siteRenown(state, site);
     const target = renownTargetForSite(state, site);
-    state.renownBySite[site] = clamp(cur + (target - cur) * RENOWN.EASE, 0, RENOWN.MAX);
+    state.renownBySite[site] = clamp(cur + (target - cur) * ease, 0, RENOWN.MAX);
   }
 }
 /** Region einer neuen Anfrage — nach Ruf gewichtet: ein bekannter (auch neu
@@ -2601,13 +2642,15 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
     return;
   }
 
-  // Slot check per manager: the new customer needs SLOT_COST[type] free slots
-  // at ONE manager (auto-assigned to the one with the most room).
+  // Slot check per manager: small/medium need SLOT_COST[type] free slots at ONE
+  // central manager; GROSSKUNDEN brauchen einen freien Platz bei einem Regional-KAM.
   const mgr = bestManagerFor(state, inq.type);
   if (!mgr) {
     notify(
       state,
-      `❌ Kein Manager hat ${SLOT_COST[inq.type]} freie Slots für ${inq.name} – stelle einen KAM ein oder verteile Kunden um.`,
+      inq.type === 'large'
+        ? `❌ Kein Regional-KAM hat noch Platz für ${inq.name} (Großkunde) – stelle im Regionalbüro einen Regional-KAM ein (betreut bis zu ${REGIONAL_KAM_LARGE_SLOTS}).`
+        : `❌ Kein Manager hat ${SLOT_COST[inq.type]} freie Slots für ${inq.name} – stelle einen KAM ein oder verteile Kunden um.`,
       'warn',
     );
     return;

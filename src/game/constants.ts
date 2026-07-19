@@ -159,6 +159,8 @@ export const ROLE_SALARY: Record<Role, number> = {
   sales: 550,
   admin: 500,
   standortleiter: 1000,
+  marketing: 750,
+  regionalkam: 900,
 };
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -168,6 +170,8 @@ export const ROLE_LABEL: Record<Role, string> = {
   sales: 'Vertriebsmitarbeiter',
   admin: 'Admin',
   standortleiter: 'Standortleiter',
+  marketing: 'Marketing-Manager',
+  regionalkam: 'Regional-KAM',
 };
 
 export const ROLE_EMOJI: Record<Role, string> = {
@@ -177,6 +181,8 @@ export const ROLE_EMOJI: Record<Role, string> = {
   sales: '📞',
   admin: '🗂️',
   standortleiter: '🧑‍✈️',
+  marketing: '📣',
+  regionalkam: '🏬',
 };
 
 /**
@@ -189,29 +195,110 @@ export const ROLE_EMOJI: Record<Role, string> = {
  * nie leer räumt.
  */
 /**
- * Konzern gründen (ab 2 Standorten): der Übergang vom einzelnen Betrieb zur
- * Unternehmensgruppe. Die Gründung kostet einmalig und etabliert die zweistufige
- * Konzern-Struktur — die KONZERNZENTRALE (global, C-Level) an der Spitze und
- * darunter je Land ein REGIONALBÜRO mit eigenen Führungskräften. Ihre konkrete
- * Wirkung wird in einem späteren Paket definiert.
+ * Konzern (ab 2 Standorten): der Übergang vom einzelnen Betrieb zur Unternehmens-
+ * gruppe. Er entsteht AUTOMATISCH mit dem zweiten Standort (kein separater, bezahlter
+ * Gründungsschritt mehr) und etabliert die zweistufige Struktur — die KONZERNZENTRALE
+ * (global, C-Level, ab dem 2. Land) an der Spitze und darunter je Land ein
+ * REGIONALBÜRO mit eigenen Führungskräften (siehe REGIONAL_OFFICE_ROLES).
  */
-export const KONZERN_FOUND_COST = 50_000;
+
+/**
+ * Monthly-revenue thresholds that unlock bigger customers (Entscheidungen R2/R3).
+ * "Monatsumsatz" is the ROLLING sum of the last 4 completed weeks, re-checked
+ * every week — unlocking can happen any week, not just at month end. (Hier oben
+ * definiert, weil die Regionalbüro-Hürden unten darauf verweisen.)
+ */
+export const MEDIUM_UNLOCK_MONTHLY = 120_000;
+export const LARGE_UNLOCK_MONTHLY = 600_000;
+
+/** Rolling monthly revenue: sum of the last 4 completed weekly reports. */
+export function monthlyRevenue(state: GameState): number {
+  return state.reports.slice(-4).reduce((s, r) => s + r.revenue, 0);
+}
 
 export interface OfficeRole { emoji: string; title: string; blurb: string }
 
-/** Regionalbüro (je Land): HIER sitzt die operative Führung eines Landes — inklusive
- * der KAMs (auch die, die die landesweit belieferten Großkunden betreuen) und der
- * Einkäufer. Das erste Land bekommt sein Regionalbüro beim Gründen des Konzerns.
- * (Platzhalter — Mechanik folgt.) */
-export const REGIONAL_OFFICE_ROLES: OfficeRole[] = [
-  { emoji: '🧑‍💼', title: 'Regionaldirektor', blurb: 'Führt alle Standorte des Landes.' },
-  { emoji: '🏬', title: 'Key-Account-Manager', blurb: 'Betreut die Großkunden – landesweit übers Verteilzentrum beliefert.' },
-  { emoji: '🤝', title: 'Kundenbetreuer', blurb: 'Betreut kleine & mittlere Kunden der Region.' },
-  { emoji: '🛒', title: 'Einkaufsleiter', blurb: 'Bündelt die Beschaffung des ganzen Landes.' },
-  { emoji: '🚚', title: 'Logistikleiter', blurb: 'Automatisiert Transfers & Großkunden-Konsolidierung.' },
-  { emoji: '📣', title: 'Vertriebsleiter', blurb: 'Aktive Akquise & Marktausbau der Region.' },
-  { emoji: '👥', title: 'Personalleiter', blurb: 'Rekrutierung & Training landesweit.' },
+/**
+ * Freischalt-Hürden der Regionalbüro-Rollen. Das Regionalbüro entsteht AUTOMATISCH
+ * mit dem 2. Standort, seine Mitarbeiter schalten aber gestaffelt frei — jede Rolle
+ * genau dann, wenn man den Engpass, den sie löst, gerade spürt. So wird der neue
+ * Standort schrittweise „wieder aufgebaut": man wächst in die Führungscrew hinein,
+ * statt sie auf einen Schlag zu bekommen.
+ */
+export const REGIONAL_UNLOCK = {
+  /** Kundenbetreuer: ab so vielen aktiven Kunden am neuen Standort (Süd). */
+  KUNDENBETREUER_CUSTOMERS: 5,
+  /** Einkaufsleiter: ab so vielen gelisteten Produktgruppen (breite Beschaffung). */
+  EINKAUFSLEITER_PRODUCTS: 6,
+  /** Personalleiter: ab so vielen Mitarbeitern insgesamt (Organisation braucht HR). */
+  PERSONALLEITER_HEADCOUNT: 12,
+} as const;
+
+/**
+ * Regionalbüro (je Land): HIER sitzt die operative Führung eines Landes — die
+ * Marketing-, Kunden-, Einkaufs- und Logistik-Leitung und der Regional-KAM für die
+ * landesweit belieferten Großkunden. Jede Rolle nennt ihre Hürde; `role` markiert die
+ * bereits mit Mechanik hinterlegten (einstellbaren) Rollen, der Rest ist Vorschau.
+ */
+export interface RegionalRoleDef extends OfficeRole {
+  /** Gesetzt = einstellbar (Mechanik aktiv). Fehlt = Vorschau (Mechanik folgt). */
+  role?: Role;
+  /** Kurztext der Freischalt-Hürde (immer sichtbar – die „Design-Vorschau"). */
+  hurdle: string;
+  /** Ist die Hürde erfüllt (Rolle bereit bzw. einstellbar)? */
+  unlocked: (state: GameState) => boolean;
+  /** Optionaler Live-Fortschritt zur Hürde („3/5 Kunden"). */
+  progress?: (state: GameState) => string;
+}
+
+const suedCustomers = (s: GameState) => s.customers.filter((c) => c.active && (c.region ?? 'hq') === 'sued').length;
+
+export const REGIONAL_OFFICE_ROLES: RegionalRoleDef[] = [
+  {
+    emoji: '🧑‍💼', title: 'Regionaldirektor', blurb: 'Führt alle Standorte des Landes.',
+    hurdle: 'Kommt mit dem Regionalbüro.',
+    unlocked: (s) => !!s.branchWarehouse,
+  },
+  {
+    emoji: '📣', title: 'Marketing-Manager', role: 'marketing',
+    blurb: 'Beschleunigt den Ruf – neue Kunden werden schneller aufmerksam, vor allem am jungen Standort.',
+    hurdle: 'Sofort verfügbar – der Bootstrap fürs Mid-Game.',
+    unlocked: (s) => !!s.branchWarehouse,
+  },
+  {
+    emoji: '🤝', title: 'Kundenbetreuer', blurb: 'Betreut kleine & mittlere Kunden der Region automatisch.',
+    hurdle: `Ab ${REGIONAL_UNLOCK.KUNDENBETREUER_CUSTOMERS} Kunden am neuen Standort.`,
+    unlocked: (s) => suedCustomers(s) >= REGIONAL_UNLOCK.KUNDENBETREUER_CUSTOMERS,
+    progress: (s) => `${Math.min(suedCustomers(s), REGIONAL_UNLOCK.KUNDENBETREUER_CUSTOMERS)}/${REGIONAL_UNLOCK.KUNDENBETREUER_CUSTOMERS} Kunden Süd`,
+  },
+  {
+    emoji: '🛒', title: 'Einkaufsleiter', blurb: 'Bündelt die Beschaffung des ganzen Landes.',
+    hurdle: `Ab ${REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS} gelisteten Produktgruppen.`,
+    unlocked: (s) => s.products.length >= REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS,
+    progress: (s) => `${Math.min(s.products.length, REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS)}/${REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS} Gruppen`,
+  },
+  {
+    emoji: '🚚', title: 'Logistikleiter', blurb: 'Automatisiert Transfers & Großkunden-Konsolidierung übers Verteilzentrum.',
+    hurdle: 'Sobald Waren-Transfers zwischen den Standorten zur Routine werden.',
+    unlocked: () => false,
+  },
+  {
+    emoji: '🏬', title: 'Regional-KAM', role: 'regionalkam',
+    blurb: `Betreut die landesweiten Großkunden – bis zu ${3} je Kopf, standortübergreifend beliefert.`,
+    hurdle: `Ab ${Math.round(LARGE_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz (Großkunden werden relevant).`,
+    unlocked: (s) => monthlyRevenue(s) >= LARGE_UNLOCK_MONTHLY,
+    progress: (s) => `${Math.round(monthlyRevenue(s) / 1000)}k / ${Math.round(LARGE_UNLOCK_MONTHLY / 1000)}k €`,
+  },
+  {
+    emoji: '👥', title: 'Personalleiter', blurb: 'Rekrutierung & Training landesweit.',
+    hurdle: `Ab ${REGIONAL_UNLOCK.PERSONALLEITER_HEADCOUNT} Mitarbeitern.`,
+    unlocked: (s) => s.employees.length >= REGIONAL_UNLOCK.PERSONALLEITER_HEADCOUNT,
+    progress: (s) => `${Math.min(s.employees.length, REGIONAL_UNLOCK.PERSONALLEITER_HEADCOUNT)}/${REGIONAL_UNLOCK.PERSONALLEITER_HEADCOUNT} MA`,
+  },
 ];
+
+/** Ein Regional-KAM betreut bis zu so viele Großkunden (Landeskunden). */
+export const REGIONAL_KAM_LARGE_SLOTS = 3;
 
 /** Konzernzentrale: die C-Level-Führung ÜBER mehreren Ländern. Wird erst mit dem
  * ZWEITEN Land freigeschaltet – mit nur einem Land wäre sie redundant zum
@@ -271,19 +358,6 @@ export const SLOT_COST: Record<CustomerType, number> = {
 };
 /** Sentinel manager id for the player themself. */
 export const CHEF_MANAGER_ID = 'chef';
-
-/**
- * Monthly-revenue thresholds that unlock bigger customers (Entscheidungen R2/R3).
- * "Monatsumsatz" is the ROLLING sum of the last 4 completed weeks, re-checked
- * every week — unlocking can happen any week, not just at month end.
- */
-export const MEDIUM_UNLOCK_MONTHLY = 120_000;
-export const LARGE_UNLOCK_MONTHLY = 600_000;
-
-/** Rolling monthly revenue: sum of the last 4 completed weekly reports. */
-export function monthlyRevenue(state: GameState): number {
-  return state.reports.slice(-4).reduce((s, r) => s + r.revenue, 0);
-}
 
 export const CUSTOMER_LEAD_WEEKS: Record<CustomerType, number> = {
   small: 1,
@@ -476,6 +550,13 @@ export const RENOWN = {
   /** Basis-Gewicht je Region bei der Anfrage-Verteilung (damit auch ein Standort
    *  mit 0 Ruf noch Anfragen bekommt); der Ruf kommt additiv oben drauf. */
   REGION_BASE: 12,
+  /** Marketing-Manager: jede Einheit Marketing-Kraft (skill-gewichtet, wie Vertrieb)
+   *  beschleunigt die wöchentliche Ruf-Annäherung um diesen Faktor. Da der Ruf sich
+   *  seinem Ziel nur um EASE nähert, wirkt ein höheres Tempo absolut am stärksten,
+   *  wenn der Abstand groß ist — also am jungen Standort, „vor allem initial". */
+  MARKETING_SPEED: 0.7,
+  /** Deckel für das beschleunigte Tempo (sonst würde der Ruf schlagartig springen). */
+  MAX_EASE: 0.22,
 };
 
 /** Pools of flavour names for procedurally generated inquiries. */

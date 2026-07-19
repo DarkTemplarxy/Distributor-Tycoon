@@ -1,8 +1,8 @@
 // ============================================================================
 // Konzern-Karte — die Vogelperspektive als eigener Vollbild-Screen. Die Interaktions-
-// höhe steigt mit dem Wachstum: du zoomst von der STADT (deine Standorte Nord & Süd)
-// hinaus auf DEUTSCHLAND (Städte) und EUROPA (Länder). Aus dem Lagersimulator wird
-// ein Konzern. Ein Klick auf einen Standort führt zurück ins echte Lager.
+// höhe steigt mit dem Wachstum: du zoomst von der STADT-Ebene (deine zwei Städte Nord
+// & Süd) hinaus auf DEUTSCHLAND (Städte) und EUROPA (Länder). Aus dem Lagersimulator
+// wird ein Konzern. Ein Klick auf einen Standort führt zurück ins echte Lager.
 // ============================================================================
 
 import { useState } from 'react';
@@ -20,35 +20,38 @@ import {
   marketRanking,
   siteRenown,
   nationalRenown,
+  regionalKams,
 } from '../game/simulation';
-import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundKonzern } from '../game/actions';
+import { siteManager, siteWeeklyVolume, hireEmployee, transferStock } from '../game/actions';
 import {
   SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT, BRANCH_UNLOCK_MONTHLY,
   TRANSFER_DAYS, TRANSFER_COST_PER_PALLET, PALETTE_SIZE,
-  KONZERN_FOUND_COST, KONZERN_C_LEVEL, REGIONAL_OFFICE_ROLES,
+  KONZERN_C_LEVEL, REGIONAL_OFFICE_ROLES, REGIONAL_KAM_LARGE_SLOTS,
 } from '../game/constants';
 import type { OfficeRole } from '../game/constants';
 import {
   GERMANY_VIEWBOX, GERMANY_PATH, GERMANY_SEAT, GERMANY_CITIES,
   EUROPE_VIEWBOX, EUROPE_PATH, EUROPE_DE, EUROPE_COUNTRIES,
 } from './mapPaths';
-import type { GameState, ProductId, SiteId } from '../game/types';
+import type { GameState, ProductId, Role, SiteId } from '../game/types';
 
 const eur = (n: number) => Math.round(n).toLocaleString('de-DE');
 const LEITER_UPFRONT = ROLE_SALARY.standortleiter * HIRE_WEEKS_UPFRONT;
 
 type Level = 'stadt' | 'land' | 'kontinent';
 const LEVELS: { id: Level; icon: string; label: string }[] = [
-  { id: 'stadt', icon: '🏙️', label: 'Stadt' },
+  { id: 'stadt', icon: '🏙️', label: 'Städte' },
   { id: 'land', icon: '🇩🇪', label: 'Deutschland' },
   { id: 'kontinent', icon: '🌍', label: 'Europa' },
 ];
 
 /** Feste Bildschirm-Positionen der Standort-Pins auf der Stadtkarte (viewBox 1000×640).
- * Route und LKW nutzen dieselben Punkte, damit alles deckungsgleich sitzt. */
+ * Route und LKW nutzen dieselben Punkte, damit alles deckungsgleich sitzt. Die zwei
+ * Städte liegen bewusst weit auseinander (Land dazwischen) — es sind ZWEI Städte, keine
+ * Bezirke einer Stadt. */
 const PIN_XY: Record<SiteId, { x: number; y: number }> = {
-  hq: { x: 300, y: 230 },
-  sued: { x: 690, y: 410 },
+  hq: { x: 300, y: 235 },
+  sued: { x: 700, y: 420 },
 };
 
 interface Kpis {
@@ -91,6 +94,30 @@ function Kpi({ label, value, tone }: { label: string; value: string; tone?: 'goo
       <div className="km-kpi-val" style={{ color: tone === 'bad' ? 'var(--bad)' : tone === 'good' ? 'var(--good)' : undefined }}>{value}</div>
       <div className="km-kpi-lbl">{label}</div>
     </div>
+  );
+}
+
+/** Ein Stadt-Cluster (Häuserblöcke + Straßen) rund um einen Standort-Pin. Zwei davon
+ * bilden die zwei Städte des Landes; das Land dazwischen bleibt frei. */
+function CityCluster({ x, y, name, dim }: { x: number; y: number; name: string; dim?: boolean }) {
+  const W = 300, H = 210;
+  const ox = x - W / 2, oy = y - H / 2;
+  const streetsX = [ox + 70, ox + 150, ox + 230];
+  const streetsY = [oy + 60, oy + 130];
+  const blocks: [number, number][] = [
+    [ox + 24, oy + 20], [ox + 104, oy + 22], [ox + 190, oy + 18],
+    [ox + 30, oy + 150], [ox + 118, oy + 152], [ox + 206, oy + 148],
+  ];
+  return (
+    <g opacity={dim ? 0.4 : 1}>
+      <rect x={ox} y={oy} width={W} height={H} rx={20} fill="var(--bg-panel-2)" stroke="var(--border)" strokeWidth={2} opacity={0.75} />
+      {streetsX.map((sx) => <line key={`sx${sx}`} x1={sx} y1={oy + 12} x2={sx} y2={oy + H - 12} stroke="var(--border)" strokeWidth={3} opacity={0.5} />)}
+      {streetsY.map((sy) => <line key={`sy${sy}`} x1={ox + 12} y1={sy} x2={ox + W - 12} y2={sy} stroke="var(--border)" strokeWidth={3} opacity={0.5} />)}
+      {blocks.map(([bx, by], i) => (
+        <rect key={i} x={bx} y={by} width={58} height={44} rx={6} fill="var(--bg-panel)" stroke="var(--border)" opacity={0.8} />
+      ))}
+      <text x={ox + 8} y={oy - 10} fontSize={20} fill="var(--text-faint)" fontWeight={800} letterSpacing={2}>STADT {name.toUpperCase()}</text>
+    </g>
   );
 }
 
@@ -179,16 +206,15 @@ function FutureNode({ x, y, label }: { x: number; y: number; label: string }) {
   );
 }
 
-/** Ein Büro mit seinen Führungsrollen — genutzt für die Konzernzentrale (C-Level)
- * und für das Regionalbüro je Land. Rollen sind Platzhalter (Mechanik folgt). */
-function OfficePanel({ icon, title, subtitle, intro, roles, onBack }: {
-  icon: string; title: string; subtitle: string; intro: string; roles: OfficeRole[]; onBack: () => void;
+/** Die Konzernzentrale (C-Level) — Platzhalter-Rollen, Mechanik folgt mit dem 2. Land. */
+function CLevelPanel({ title, subtitle, intro, roles, onBack }: {
+  title: string; subtitle: string; intro: string; roles: OfficeRole[]; onBack: () => void;
 }) {
   return (
     <div className="konzern-zentrale">
       <div className="km-zentrale-head">
         <div>
-          <div className="km-side-title">{icon} {title}</div>
+          <div className="km-side-title">🏛️ {title}</div>
           <div className="sub">{subtitle}</div>
         </div>
         <button className="btn ghost" onClick={onBack}>← Zur Karte</button>
@@ -210,6 +236,78 @@ function OfficePanel({ icon, title, subtitle, intro, roles, onBack }: {
   );
 }
 
+/** Das Regionalbüro eines Landes: die Führungscrew als Freischalt-Ladder. Jede Rolle
+ * nennt ihre Hürde; freigeschaltete Rollen mit Mechanik lassen sich hier einstellen,
+ * der Rest ist Vorschau. So wächst man beim „Wiederaufbau" des neuen Standorts Schritt
+ * für Schritt in die eigene Regional-Organisation hinein. */
+function RegionalOfficePanel({ state, foundedWeek, onHire, onBack }: {
+  state: GameState; foundedWeek: number; onHire: (role: Role) => void; onBack: () => void;
+}) {
+  const largeUsed = regionalKams(state).reduce((s, k) => s + k.used, 0);
+  return (
+    <div className="konzern-zentrale">
+      <div className="km-zentrale-head">
+        <div>
+          <div className="km-side-title">🏢 Regionalbüro Deutschland</div>
+          <div className="sub">Automatisch mit dem 2. Standort entstanden (Woche {foundedWeek}) · führt alle Standorte in Deutschland</div>
+        </div>
+        <button className="btn ghost" onClick={onBack}>← Zur Karte</button>
+      </div>
+      <p className="hint">
+        Die Crew schaltet <b>gestaffelt</b> frei – jede Rolle dann, wenn du den Engpass, den sie löst, gerade spürst.
+        So baust du den neuen Standort Schritt für Schritt zur eigenständigen Region aus, statt alles auf einmal zu bekommen.
+      </p>
+      <div className="km-roles">
+        {REGIONAL_OFFICE_ROLES.map((r) => {
+          const unlocked = r.unlocked(state);
+          const progress = r.progress?.(state);
+          if (r.role) {
+            const count = state.employees.filter((e) => e.role === r.role).length;
+            const cost = ROLE_SALARY[r.role] * HIRE_WEEKS_UPFRONT;
+            const canAfford = state.cash >= cost;
+            return (
+              <div key={r.title} className={`km-role${unlocked ? '' : ' locked'}`}>
+                <div className="km-role-emoji">{r.emoji}</div>
+                <div className="grow">
+                  <div className="km-role-title">
+                    {r.title}
+                    {count > 0 && <span className="pill good" style={{ marginLeft: 6 }}>{count}× angestellt</span>}
+                  </div>
+                  <div className="sub">{r.blurb}</div>
+                  {r.role === 'regionalkam' && count > 0 && (
+                    <div className="sub">Großkunden betreut: {largeUsed}/{count * REGIONAL_KAM_LARGE_SLOTS}</div>
+                  )}
+                  {!unlocked && <div className="sub" style={{ opacity: 0.85 }}>🔒 {r.hurdle}{progress ? ` (${progress})` : ''}</div>}
+                </div>
+                {unlocked ? (
+                  <button className="btn primary small" disabled={!canAfford} onClick={() => onHire(r.role!)}
+                    title={!canAfford ? `Kostet ${eur(cost)}€ Vorkasse` : `4 Wochen im Voraus: ${eur(cost)}€`}>
+                    Einstellen · {eur(ROLE_SALARY[r.role])}€/Wo.
+                  </button>
+                ) : (
+                  <span className="pill" title={r.hurdle}>🔒 {progress ?? 'gesperrt'}</span>
+                )}
+              </div>
+            );
+          }
+          // Vorschau-Rolle (Mechanik folgt) — zeigt trotzdem ihre geplante Hürde.
+          return (
+            <div key={r.title} className="km-role">
+              <div className="km-role-emoji">{r.emoji}</div>
+              <div className="grow">
+                <div className="km-role-title">{r.title}</div>
+                <div className="sub">{r.blurb}</div>
+                <div className="sub" style={{ opacity: 0.85 }}>Hürde: {r.hurdle}</div>
+              </div>
+              <span className="pill" title={r.hurdle}>{unlocked ? '✅ bereit · folgt' : progress ? `🔒 ${progress}` : '🔒 folgt'}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEnterSite: (site: SiteId) => void }) {
   const { state, mutate } = useGame();
   const branchOpen = !!state.branchWarehouse;
@@ -222,8 +320,10 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   // Welches Büro ist geöffnet? Konzernzentrale (global, C-Level) oder ein Regionalbüro.
   const [office, setOffice] = useState<null | 'konzern' | 'regional-de'>(null);
 
-  const konzern = state.konzern;
-  const foundKonzernNow = () => mutate((s) => foundKonzern(s));
+  // Das Regionalbüro entsteht automatisch mit dem 2. Standort — kein Gründungsschritt
+  // mehr. Für den Panel-Text den Gründungszeitpunkt defensiv ableiten (alte Spielstände).
+  const regionalOpen = branchOpen;
+  const foundedWeek = state.konzern?.foundedWeek ?? state.branchOpenedWeek ?? 0;
   // Länder, in denen der Konzern tätig ist. Aktuell nur Deutschland — die
   // Konzernzentrale (C-Level) schaltet erst mit dem ZWEITEN Land frei.
   const countries = 1;
@@ -234,6 +334,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   const totalRanks = marketRanking(state).length;
 
   const hireLeiter = (site: SiteId) => mutate((s) => hireEmployee(s, 'standortleiter', site));
+  const hireRegional = (role: Role) => mutate((s) => hireEmployee(s, role));
   const enter = (site: SiteId) => { onEnterSite(site); onClose(); };
 
   const sel = selected && (selected === 'hq' || branchOpen) ? selected : null;
@@ -257,7 +358,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
           ))}
         </div>
         <div className="konzern-cash">
-          {konzern && (
+          {regionalOpen && (
             <button className={`konzern-crumb${office === 'regional-de' ? ' active' : ''}`} onClick={() => setOffice((o) => (o === 'regional-de' ? null : 'regional-de'))}>
               🏢 Regionalbüro
             </button>
@@ -268,33 +369,27 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
         </div>
       </header>
 
-      {branchOpen && !konzern && (
+      {branchOpen && (
         <div className="konzern-banner">
-          <span>🏛️ <b>Zwei Standorte!</b> Gründe deinen Konzern – dein Land bekommt ein <b>Regionalbüro</b>, das alle Standorte führt.</span>
-          <button className="btn primary" disabled={state.cash < KONZERN_FOUND_COST} onClick={foundKonzernNow}
-            title={state.cash < KONZERN_FOUND_COST ? `Kostet ${eur(KONZERN_FOUND_COST)}€` : undefined}>
-            Konzern gründen ({eur(KONZERN_FOUND_COST)}€)
-          </button>
+          <span>🏢 <b>Regionalbüro Deutschland</b> ist mit deinem 2. Standort entstanden. Seine Mitarbeiter (Marketing-Manager, Regional-KAM …) schalten gestaffelt frei.</span>
+          <button className="btn primary" onClick={() => { setOffice('regional-de'); }}>Regionalbüro öffnen</button>
         </div>
       )}
 
       <div className="konzern-body">
-        {office === 'konzern' && konzern && zentraleUnlocked ? (
-          <OfficePanel
-            icon="🏛️"
-            title={`Konzernzentrale · ${konzern.name}`}
+        {office === 'konzern' && zentraleUnlocked ? (
+          <CLevelPanel
+            title="Konzernzentrale"
             subtitle="Steuert den Konzern über alle Länder"
             intro="Die C-Level-Führung über allen Ländern. Diese Vorstands­rollen werden in einem kommenden Update mit Leben gefüllt – hier besetzt du sie dann."
             roles={KONZERN_C_LEVEL}
             onBack={() => setOffice(null)}
           />
-        ) : office === 'regional-de' && konzern ? (
-          <OfficePanel
-            icon="🏢"
-            title="Regionalbüro Deutschland"
-            subtitle={`Gegründet in Woche ${konzern.foundedWeek} · führt alle Standorte in Deutschland`}
-            intro="Das Regionalbüro führt dein Land: hier sitzen Einkäufer (Landes-Beschaffung), Kundenbetreuer und die Key-Account-Manager der Großkunden. Jedes weitere Land bekommt sein eigenes Regionalbüro. Die Rollen-Mechanik folgt in einem kommenden Update."
-            roles={REGIONAL_OFFICE_ROLES}
+        ) : office === 'regional-de' && regionalOpen ? (
+          <RegionalOfficePanel
+            state={state}
+            foundedWeek={foundedWeek}
+            onHire={hireRegional}
             onBack={() => setOffice(null)}
           />
         ) : (
@@ -302,26 +397,24 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
         <div className="konzern-map">
           {level === 'stadt' && (
             <svg viewBox="0 0 1000 640" className="km-svg" preserveAspectRatio="xMidYMid meet">
-              {/* Stadtgebiet */}
-              <rect x={40} y={40} width={920} height={560} rx={24} fill="var(--bg-panel)" stroke="var(--border)" strokeWidth={2} />
-              {/* Fluss */}
-              <path d="M120,60 C300,180 260,360 520,420 C720,470 780,560 900,600" fill="none" stroke="var(--accent)" strokeWidth={14} opacity={0.25} strokeLinecap="round" />
-              {/* Straßen */}
-              {[160, 340, 520, 700].map((y) => <line key={`h${y}`} x1={70} y1={y} x2={930} y2={y} stroke="var(--border)" strokeWidth={3} opacity={0.5} />)}
-              {[220, 430, 640, 830].map((x) => <line key={`v${x}`} x1={x} y1={70} x2={x} y2={570} stroke="var(--border)" strokeWidth={3} opacity={0.5} />)}
-              {/* Häuserblöcke */}
-              {[[110,110],[300,120],[560,130],[770,110],[130,470],[330,500],[560,500],[820,480],[820,250]].map(([bx, by], i) => (
-                <rect key={i} x={bx} y={by} width={70} height={54} rx={6} fill="var(--bg-panel-2)" stroke="var(--border)" opacity={0.7} />
-              ))}
-              {/* Bezirks-Labels */}
-              <text x={250} y={95} fontSize={22} fill="var(--text-faint)" fontWeight={700}>NORD</text>
-              <text x={650} y={560} fontSize={22} fill="var(--text-faint)" fontWeight={700}>SÜD</text>
+              {/* Land / Umland */}
+              <rect x={20} y={20} width={960} height={600} rx={24} fill="var(--bg-panel)" stroke="var(--border)" strokeWidth={2} />
+              {/* Fluss, der durchs Land mäandert */}
+              <path d="M90,70 C300,190 250,360 500,410 C720,455 780,560 910,600" fill="none" stroke="var(--accent)" strokeWidth={14} opacity={0.18} strokeLinecap="round" />
 
-              {/* Transfer-Route Nord↔Süd (erst mit offenem Standort Süd) */}
+              {/* Verbindungs-Autobahn zwischen den zwei Städten (erst mit offenem Süd) */}
               {branchOpen && (
-                <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={PIN_XY.sued.x} y2={PIN_XY.sued.y}
-                  stroke="var(--accent)" strokeWidth={3} strokeDasharray="10 8" opacity={0.45} />
+                <>
+                  <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={PIN_XY.sued.x} y2={PIN_XY.sued.y}
+                    stroke="var(--border)" strokeWidth={9} opacity={0.7} strokeLinecap="round" />
+                  <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={PIN_XY.sued.x} y2={PIN_XY.sued.y}
+                    stroke="var(--accent)" strokeWidth={3} strokeDasharray="12 10" opacity={0.7} />
+                </>
               )}
+
+              {/* Zwei Städte */}
+              <CityCluster x={PIN_XY.hq.x} y={PIN_XY.hq.y} name={SITE_META.hq.short} />
+              <CityCluster x={PIN_XY.sued.x} y={PIN_XY.sued.y} name={SITE_META.sued.short} dim={!branchOpen} />
 
               {/* Standort Nord (immer) */}
               {(() => {
@@ -353,7 +446,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
             <svg viewBox={GERMANY_VIEWBOX} className="km-svg" preserveAspectRatio="xMidYMid meet">
               <path d={GERMANY_PATH} fill="var(--bg-panel)" stroke="var(--accent)" strokeWidth={1.5} opacity={0.95} strokeLinejoin="round" />
               {GERMANY_CITIES.map((c) => <FutureNode key={c.name} x={c.x} y={c.y} label={c.name} />)}
-              <SeatNode x={GERMANY_SEAT[0]} y={GERMANY_SEAT[1]} emoji="🏙️" label="Deine Stadt" />
+              <SeatNode x={GERMANY_SEAT[0]} y={GERMANY_SEAT[1]} emoji="🏙️" label="Deine Städte" />
             </svg>
           )}
 
@@ -413,9 +506,9 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
               );
             })() : (
               <div className="km-hint">
-                <p><b>Standort Süd noch nicht eröffnet.</b></p>
-                <p className="sub">Ab {Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz kannst du ihn über <b>🏢 Ausbau</b> eröffnen – dann erscheint er hier auf der Karte.</p>
-                <button className="btn" onClick={() => setSelected('hq')}>Hauptlager Nord ansehen</button>
+                <p><b>Zweite Stadt (Süd) noch nicht eröffnet.</b></p>
+                <p className="sub">Ab {Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz eröffnest du sie über <b>🏢 Ausbau</b> – dann erscheint sie hier auf der Karte, mit eigenem Regionalbüro.</p>
+                <button className="btn" onClick={() => setSelected('hq')}>Stadt Nord ansehen</button>
               </div>
             )}
             {branchOpen && (
@@ -454,16 +547,16 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                   ? 'Später expandierst du in weitere Städte in ganz Deutschland – jede mit eigenem Kundenstamm und eigener Konkurrenz. Die gesperrten Marker zeigen künftige Standorte.'
                   : 'Und schließlich lieferst du in ganz Europa – Land für Land, jedes mit eigenem Markt. Der Konzern wächst über die Landesgrenzen hinaus.'}
               </p>
-              {konzern && level === 'land' && (
+              {regionalOpen && level === 'land' && (
                 <button className="btn primary" onClick={() => setOffice('regional-de')}>🏢 Regionalbüro Deutschland</button>
               )}
-              {konzern && level === 'kontinent' && (
+              {level === 'kontinent' && (
                 zentraleUnlocked
                   ? <button className="btn primary" onClick={() => setOffice('konzern')}>🏛️ Konzernzentrale</button>
                   : <button className="btn" disabled title="Schaltet mit dem zweiten Land frei">🔒 Konzernzentrale – ab dem 2. Land</button>
               )}
-              {!konzern && (
-                <p className="sub"><i>Ab zwei Standorten gründest du deinen Konzern – dein Land bekommt dann ein Regionalbüro. Die Konzernzentrale (C-Level) folgt mit dem zweiten Land.</i></p>
+              {!regionalOpen && (
+                <p className="sub"><i>Ab dem zweiten Standort bekommt dein Land automatisch ein Regionalbüro. Die Konzernzentrale (C-Level) folgt mit dem zweiten Land.</i></p>
               )}
               <p className="sub" style={{ marginTop: 10 }}><i>Diese Ausbaustufe folgt – dein Sitz ist bereits markiert.</i></p>
             </div>

@@ -26,6 +26,8 @@ import {
   BRANCH_PRICE,
   BRANCH_RENT,
   BRANCH_UNLOCK_MONTHLY,
+  REGIONAL_UNLOCK,
+  REGIONAL_KAM_LARGE_SLOTS,
   BUYER_PRODUCT_CAPACITY,
   COMPETITOR_DEFS,
   LOYALTY_CHURN_THRESHOLD,
@@ -263,19 +265,30 @@ const ENTRIES: WikiEntry[] = [
           weiterhin der Einkäufer</b> zentral, also gib einem delegierten Standort genügend
           Einkäufer-Kapazität. Auf der Stadt-Karte kannst du außerdem <b>Waren per Klick zwischen Nord
           & Süd transferieren</b> (laufende Transfers fahren als 🚚 auf der Route), und ab zwei
-          Standorten <b>deinen Konzern gründen</b>. Dein Land bekommt dann ein <b>Regionalbüro</b>
-          (auf der Deutschland-Ebene): hier sitzen Einkäufer, Kundenbetreuer und die
-          <b>Key-Account-Manager der Großkunden</b>. Eine <b>Konzernzentrale mit C-Level</b> kommt
-          erst hinzu, wenn du ein <b>zweites Land</b> erschließt (dann steuert sie mehrere
-          Regionalbüros). So wächst du vom Hands-on-Lager zum Konzern, ohne im Mikromanagement zu
-          ersticken.
+          Standorten entsteht <b>automatisch</b> ein <b>Regionalbüro Deutschland</b> (kein separater
+          Gründungsschritt mehr). Seine Führungscrew schaltet <b>gestaffelt über eigene Hürden</b> frei –
+          jede Rolle dann, wenn du den Engpass, den sie löst, gerade spürst: der <b>📣 Marketing-Manager</b>
+          ist sofort da, <b>Kundenbetreuer</b> ab {REGIONAL_UNLOCK.KUNDENBETREUER_CUSTOMERS} Kunden am neuen
+          Standort, <b>Einkaufsleiter</b> ab {REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS} Produktgruppen, der{' '}
+          <b>🏬 Regional-KAM</b> (betreut die Großkunden) ab {Math.round(LARGE_UNLOCK_MONTHLY / 1000)}k €
+          Monatsumsatz, der <b>Personalleiter</b> ab {REGIONAL_UNLOCK.PERSONALLEITER_HEADCOUNT} Mitarbeitern.
+          So baust du den neuen Standort Schritt für Schritt zur eigenständigen Region aus. Eine{' '}
+          <b>Konzernzentrale mit C-Level</b> kommt erst hinzu, wenn du ein <b>zweites Land</b> erschließt.
+        </p>
+        <p>
+          <b>🏬 Großkunden (Landeskunden):</b> Supermarkt-Ketten werden aus der Einzel-Standort-Sicht
+          herausgenommen und im <b>Regionalbüro</b> geführt: ein <b>Regional-KAM betreut bis zu{' '}
+          {REGIONAL_KAM_LARGE_SLOTS} Großkunden</b>. Ohne Regional-KAM gibt es keine Großkunden – stelle
+          ihn also ein, sobald die Ketten anklopfen.
         </p>
         <p>
           <b>📣 Ruf (Renown):</b> Jeder Standort baut mit <b>gutem Service</b> und vielen zufriedenen
           Kunden über die Zeit einen <b>Ruf</b> (0–100) auf – ein bekannter Name zieht schneller
           Neukunden an. Der Clou: ein <b>neu eröffneter Standort erbt einen Teil des Landes-Rufs</b> und
-          <b>wächst dadurch schneller</b> als dein erster (der bei Null anfing). Den Ruf siehst du in der
-          🗺️ Konzern-Ansicht; der Marketing-Vorstand wird ihn später zusätzlich beschleunigen.
+          <b>wächst dadurch schneller</b> als dein erster (der bei Null anfing). Der{' '}
+          <b>📣 Marketing-Manager</b> im Regionalbüro <b>beschleunigt den Ruf-Aufbau</b> – am stärksten
+          am jungen Standort („Kunden werden vor allem initial schneller aufmerksam"). Den Ruf siehst du
+          in der 🗺️ Konzern-Ansicht.
         </p>
       </>
     ),

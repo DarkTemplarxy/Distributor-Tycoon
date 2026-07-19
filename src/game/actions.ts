@@ -30,7 +30,8 @@ import {
   SHELF_PRICE,
   SLOT_COST,
   SHELF_SLOTS,
-  KONZERN_FOUND_COST,
+  REGIONAL_OFFICE_ROLES,
+  REGIONAL_KAM_LARGE_SLOTS,
   RENOWN,
   STANDORTLEITER_AUTO,
   STRATEGY_COOLDOWN_WEEKS,
@@ -65,6 +66,7 @@ import {
   isFrontierBlock,
   isInAssortment,
   managers,
+  regionalKams,
   nationalRenown,
   notify,
   placementBlocksAccess,
@@ -267,13 +269,25 @@ export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'):
   const salary = ROLE_SALARY[role];
   const upfront = salary * HIRE_WEEKS_UPFRONT;
   // Site-bound roles work AT a location: warehouse workers, and the Standortleiter
-  // who runs it. Central office roles (KAM/Einkäufer/Vertrieb) sit at HQ and need a
-  // desk (Konzern-Verwaltung im Hauptlager, L3).
+  // who runs it. Regionalbüro roles (Marketing-Manager, Regional-KAM) sit in the
+  // abstract Regionalbüro of the country — no physical desk, gated by konzern + a
+  // per-role unlock hurdle. Central office roles (KAM/Einkäufer/Vertrieb) sit at HQ
+  // and need a desk (Konzern-Verwaltung im Hauptlager, L3).
   const siteBound = role === 'lager' || role === 'standortleiter';
-  if (!siteBound && freeDesks(state) <= 0) {
+  const isRegionalRole = role === 'marketing' || role === 'regionalkam';
+  if (isRegionalRole) {
+    if (!state.branchWarehouse) {
+      return { ok: false, message: 'Das Regionalbüro entsteht erst mit dem 2. Standort.' };
+    }
+    const def = REGIONAL_OFFICE_ROLES.find((r) => r.role === role);
+    if (def && !def.unlocked(state)) {
+      return { ok: false, message: `Noch gesperrt: ${def.hurdle}` };
+    }
+  }
+  if (!siteBound && !isRegionalRole && freeDesks(state) <= 0) {
     return { ok: false, message: 'Kein freier Arbeitsplatz – baue erst einen Schreibtisch im Büro.' };
   }
-  if (!siteBound && site !== 'hq') {
+  if (!siteBound && !isRegionalRole && site !== 'hq') {
     return { ok: false, message: 'Büro-Personal sitzt zentral im Hauptlager.' };
   }
   if (site === 'sued' && !state.branchWarehouse) {
@@ -296,8 +310,9 @@ export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'):
     name,
     role,
     salary,
-    // A manager starts more capable than a fresh floor hire.
-    skill: role === 'standortleiter' ? 60 : 45,
+    // A manager starts more capable than a fresh floor hire; Regionalbüro leads are
+    // seasoned (they run a country's function).
+    skill: role === 'standortleiter' ? 60 : isRegionalRole ? 55 : 45,
     siteId: role === 'standortleiter' ? site : role === 'lager' && site === 'sued' ? 'sued' : undefined,
   });
   if (role === 'standortleiter') {
@@ -305,6 +320,13 @@ export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'):
     return { ok: true };
   }
   notify(state, `🧑‍💼 ${name} eingestellt (${salary}€/Woche, ${upfront}€ Vorkasse).`, 'success');
+
+  if (role === 'marketing') {
+    notify(state, `📣 ${name} kurbelt den Ruf an – neue Kunden werden ab jetzt schneller auf deine Standorte aufmerksam, vor allem den jungen.`, 'info');
+  }
+  if (role === 'regionalkam') {
+    notify(state, `🏬 ${name} betreut die landesweiten Großkunden (bis zu ${REGIONAL_KAM_LARGE_SLOTS}). Erst jetzt können Großkunden gewonnen werden.`, 'info');
+  }
 
   // A newly hired Einkäufer takes over the weekly Monday order: from now on the
   // recommended quantities are ordered automatically (the player can still
@@ -360,6 +382,28 @@ function redistributeCustomers(state: GameState, managerId: string): boolean {
   return true;
 }
 
+/** Move a departing Regional-KAM's Großkunden to the OTHER Regional-KAMs (each up
+ * to REGIONAL_KAM_LARGE_SLOTS). Plans first, applies only if every customer fits. */
+function redistributeRegionalCustomers(state: GameState, managerId: string): boolean {
+  const others = regionalKams(state).filter((k) => k.id !== managerId);
+  const free = new Map(others.map((k) => [k.id, k.free]));
+  const moving = state.customers.filter((c) => c.active && c.managerId === managerId);
+  const plan: [string, string][] = [];
+  for (const c of moving) {
+    let best: string | null = null;
+    for (const [id, f] of free) {
+      if (f >= 1 && (best === null || f > free.get(best)!)) best = id;
+    }
+    if (best === null) return false;
+    free.set(best, free.get(best)! - 1);
+    plan.push([c.id, best]);
+  }
+  for (const [cid, mid] of plan) {
+    state.customers.find((c) => c.id === cid)!.managerId = mid;
+  }
+  return true;
+}
+
 export function fireEmployee(state: GameState, employeeId: string): ActionResult {
   const emp = state.employees.find((e) => e.id === employeeId);
   if (!emp) return { ok: false, message: 'Mitarbeiter nicht gefunden.' };
@@ -372,6 +416,16 @@ export function fireEmployee(state: GameState, employeeId: string): ActionResult
     return {
       ok: false,
       message: 'Die Kunden dieses KAM haben bei niemandem Platz – erst Kunden umverteilen oder einen KAM einstellen.',
+    };
+  }
+  // A departing Regional-KAM's Großkunden move to the other Regional-KAMs — if they
+  // don't all fit, block the dismissal (a large customer is never dropped).
+  const hadRegionalCustomers =
+    emp.role === 'regionalkam' && state.customers.some((c) => c.active && c.managerId === emp.id);
+  if (hadRegionalCustomers && !redistributeRegionalCustomers(state, emp.id)) {
+    return {
+      ok: false,
+      message: 'Die Großkunden dieses Regional-KAM haben bei keinem anderen Platz – erst umverteilen oder einen weiteren Regional-KAM einstellen.',
     };
   }
   // A running task is released cleanly (order back to the queue, goods
@@ -402,6 +456,16 @@ export function assignCustomerManager(state: GameState, customerId: string, mana
   const cust = state.customers.find((c) => c.id === customerId);
   if (!cust) return { ok: false, message: 'Kunde nicht gefunden.' };
   if (cust.managerId === managerId) return { ok: true };
+  // Großkunden gehören zu einem Regional-KAM (Regionalbüro), nicht ins zentrale
+  // Slot-System — daher der eigene Kapazitäts-Topf.
+  if (cust.type === 'large') {
+    const rk = regionalKams(state).find((k) => k.id === managerId);
+    if (!rk) return { ok: false, message: 'Großkunden können nur einem Regional-KAM zugewiesen werden.' };
+    if (rk.free < 1) return { ok: false, message: `${rk.name} betreut bereits ${REGIONAL_KAM_LARGE_SLOTS} Großkunden.` };
+    cust.managerId = managerId;
+    notify(state, `🔀 ${cust.name} wird jetzt von ${rk.name} betreut.`, 'info');
+    return { ok: true };
+  }
   const target = managers(state).find((m) => m.id === managerId);
   if (!target) return { ok: false, message: 'Manager nicht gefunden.' };
   const cost = SLOT_COST[cust.type];
@@ -809,9 +873,15 @@ export function openBranch(state: GameState): ActionResult {
   // dadurch von Anfang an schneller Neukunden an als der erste Standort damals.
   if (!state.renownBySite) state.renownBySite = {};
   state.renownBySite.sued = RENOWN.NEW_SITE_INHERIT * nationalRenown(state);
+  // Regionalbüro entsteht AUTOMATISCH mit dem zweiten Standort — kein separater
+  // Gründungsschritt mehr. Seine Mitarbeiter (Marketing-Manager, Regional-KAM …)
+  // schalten gestaffelt über eigene Hürden frei (siehe REGIONAL_OFFICE_ROLES).
+  if (!state.konzern) {
+    state.konzern = { foundedWeek: weekOf(state.totalDays), name: 'Deine Unternehmensgruppe' };
+  }
   notify(
     state,
-    `🎉 ${SITE_META.sued.name} eröffnet (${BRANCH_PRICE}€)! Neue Region: Süd-Kunden fragen bald an, 🍷 Wein & 🫒 Oliven sind dort listbar. Lagerkräfte einstellen (Personal → Standort Süd) und bestellen nicht vergessen.`,
+    `🎉 ${SITE_META.sued.name} eröffnet (${BRANCH_PRICE}€)! Neue Region: Süd-Kunden fragen bald an, 🍷 Wein & 🫒 Oliven sind dort listbar. Dein Land bekommt jetzt ein 🏢 Regionalbüro (über die Konzern-Karte) – der Marketing-Manager ist sofort verfügbar und beschleunigt den Ruf des neuen Standorts.`,
     'success',
   );
   return { ok: true };
@@ -1016,29 +1086,6 @@ export function expandOffice(state: GameState, block: { gx: number; gy: number }
 // läuft pro Sim-Tick aus dem Treiber (GameProvider / Harness), ganz ohne UI — genau
 // so, wie die ganze Wirtschaft schon headless im Balancing-Harness läuft.
 // ============================================================================
-
-/**
- * Konzern gründen — ab 2 Standorten macht der Spieler aus seinen Betrieben eine
- * Unternehmensgruppe mit eigener Zentrale. Einmalige Kosten; danach stehen (in
- * späteren Paketen) konzernweite Führungsrollen bereit. Idempotent-sicher.
- */
-export function foundKonzern(state: GameState): ActionResult {
-  if (state.konzern) return { ok: false, message: 'Dein Konzern besteht bereits.' };
-  if (!branchOpen(state)) {
-    return { ok: false, message: 'Du brauchst mindestens 2 Standorte, um einen Konzern zu gründen.' };
-  }
-  if (state.cash + availableCredit(state) < KONZERN_FOUND_COST) {
-    return { ok: false, message: `Die Gründung kostet ${KONZERN_FOUND_COST.toLocaleString('de-DE')}€.` };
-  }
-  spend(state, KONZERN_FOUND_COST);
-  state.konzern = { foundedWeek: weekOf(state.totalDays), name: 'Deine Unternehmensgruppe' };
-  notify(
-    state,
-    `🏛️ Konzern gegründet! Dein Land bekommt ein Regionalbüro (Einkäufer, Kundenbetreuer, Key-Account-Manager …) – öffne es über die Konzern-Karte. Die Konzernzentrale mit C-Level folgt, sobald du ein zweites Land erschließt.`,
-    'success',
-  );
-  return { ok: true };
-}
 
 /** Der Standortleiter eines Standorts (führt ihn automatisch), falls vorhanden. */
 export function siteManager(state: GameState, site: SiteId): GameState['employees'][number] | undefined {

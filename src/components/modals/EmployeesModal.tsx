@@ -28,7 +28,7 @@ import type { Role } from '../../game/types';
 
 const HIREABLE: { role: Role; benefit: string }[] = [
   { role: 'lager', benefit: 'Richtet Ware her – mehr Personal = schnellere Palettenvorbereitung.' },
-  { role: 'kam', benefit: `+${MANAGER_SLOTS} Kunden-Slots (klein=${SLOT_COST.small}, mittel=${SLOT_COST.medium}, groß=${SLOT_COST.large} Slots) – Kapazität gilt PRO Manager.` },
+  { role: 'kam', benefit: `+${MANAGER_SLOTS} Kunden-Slots für kleine & mittlere Kunden (klein=${SLOT_COST.small}, mittel=${SLOT_COST.medium}) – Kapazität gilt PRO Manager. Großkunden betreut der Regional-KAM im Regionalbüro.` },
   { role: 'sales', benefit: 'Wirbt aktiv neue Kunden an: erhöht die wöchentliche Neukunden-Chance (mit abnehmendem Grenzertrag, steigt mit Skill). Zum Abschließen braucht es freie KAM-Slots.' },
   { role: 'einkaeufer', benefit: `Übernimmt Auto-Nachbestellung & verhandelt Preiserhöhungen – betreut max. ${BUYER_PRODUCT_CAPACITY} Produktgruppen pro Kopf. Breites Sortiment braucht mehrere.` },
 ];

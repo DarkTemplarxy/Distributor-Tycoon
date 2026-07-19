@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { assignCustomerManager, repriceCooldownLeft, setCustomerLinePrice, setDiscount } from '../../game/actions';
-import { freeCapacity, managers, notify, repriceAcceptChance } from '../../game/simulation';
-import { demandUpliftFromDiscount, getProductDef, MANAGER_SLOTS, SLOT_COST } from '../../game/constants';
+import { freeCapacity, managers, regionalKams, notify, repriceAcceptChance } from '../../game/simulation';
+import { demandUpliftFromDiscount, getProductDef, MANAGER_SLOTS, REGIONAL_KAM_LARGE_SLOTS, SLOT_COST } from '../../game/constants';
 import type { Customer, CustomerLine, CustomerType, Product } from '../../game/types';
 import { weekOf } from '../../game/util';
 import { CustomerTypeFilter, Stars, PRODUCT_COLOR, useCustomerTypeFilter } from '../shared';
@@ -240,24 +240,36 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
               {isOpen && (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 26 }}>
-                    <span className="sub">Betreuender Manager</span>
+                    <span className="sub">{c.type === 'large' ? 'Regional-KAM' : 'Betreuender Manager'}</span>
                     <select
                       className="num-input"
                       style={{ width: 'auto', padding: '1px 4px', fontSize: 12 }}
                       value={c.managerId}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => mutate((s) => assignCustomerManager(s, c.id, e.target.value))}
-                      title={`Belegt ${SLOT_COST[c.type]} Slot(s) beim betreuenden Manager`}
+                      title={c.type === 'large'
+                        ? `Großkunde – betreut von einem Regional-KAM (bis zu ${REGIONAL_KAM_LARGE_SLOTS})`
+                        : `Belegt ${SLOT_COST[c.type]} Slot(s) beim betreuenden Manager`}
                     >
-                      {managers(state).map((m) => {
-                        const here = m.id === c.managerId;
-                        const fits = here || m.free >= SLOT_COST[c.type];
-                        return (
-                          <option key={m.id} value={m.id} disabled={!fits}>
-                            {m.name} ({here ? 'aktuell' : `${m.free} frei`})
-                          </option>
-                        );
-                      })}
+                      {c.type === 'large'
+                        ? regionalKams(state).map((k) => {
+                            const here = k.id === c.managerId;
+                            const fits = here || k.free >= 1;
+                            return (
+                              <option key={k.id} value={k.id} disabled={!fits}>
+                                {k.name} ({here ? 'aktuell' : `${k.free} frei`})
+                              </option>
+                            );
+                          })
+                        : managers(state).map((m) => {
+                            const here = m.id === c.managerId;
+                            const fits = here || m.free >= SLOT_COST[c.type];
+                            return (
+                              <option key={m.id} value={m.id} disabled={!fits}>
+                                {m.name} ({here ? 'aktuell' : `${m.free} frei`})
+                              </option>
+                            );
+                          })}
                     </select>
                   </div>
 
