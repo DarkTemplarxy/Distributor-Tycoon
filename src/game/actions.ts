@@ -1028,7 +1028,7 @@ export function foundKonzern(state: GameState): ActionResult {
   state.konzern = { foundedWeek: weekOf(state.totalDays), name: 'Deine Unternehmensgruppe' };
   notify(
     state,
-    `🏛️ Konzern gegründet! Es entsteht eine Konzernzentrale (C-Level) und pro Land ein Regionalbüro. Öffne beides über die Konzern-Karte – die Führungsrollen folgen bald.`,
+    `🏛️ Konzern gegründet! Dein Land bekommt ein Regionalbüro (Einkäufer, Kundenbetreuer, Key-Account-Manager …) – öffne es über die Konzern-Karte. Die Konzernzentrale mit C-Level folgt, sobald du ein zweites Land erschließt.`,
     'success',
   );
   return { ok: true };

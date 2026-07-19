@@ -221,6 +221,10 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
 
   const konzern = state.konzern;
   const foundKonzernNow = () => mutate((s) => foundKonzern(s));
+  // Länder, in denen der Konzern tätig ist. Aktuell nur Deutschland — die
+  // Konzernzentrale (C-Level) schaltet erst mit dem ZWEITEN Land frei.
+  const countries = 1;
+  const zentraleUnlocked = countries >= 2;
 
   const share = marketShare(state);
   const rank = playerRank(state);
@@ -251,8 +255,8 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
         </div>
         <div className="konzern-cash">
           {konzern && (
-            <button className={`konzern-crumb${office === 'konzern' ? ' active' : ''}`} onClick={() => setOffice((o) => (o === 'konzern' ? null : 'konzern'))}>
-              🏛️ Konzernzentrale
+            <button className={`konzern-crumb${office === 'regional-de' ? ' active' : ''}`} onClick={() => setOffice((o) => (o === 'regional-de' ? null : 'regional-de'))}>
+              🏢 Regionalbüro
             </button>
           )}
           <span className="pill">Marktanteil {(share * 100).toFixed(1)}% · Platz {rank}/{totalRanks}</span>
@@ -262,7 +266,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
 
       {branchOpen && !konzern && (
         <div className="konzern-banner">
-          <span>🏛️ <b>Zwei Standorte!</b> Mach aus deinen Betrieben eine Unternehmensgruppe mit eigener Zentrale.</span>
+          <span>🏛️ <b>Zwei Standorte!</b> Gründe deinen Konzern – dein Land bekommt ein <b>Regionalbüro</b>, das alle Standorte führt.</span>
           <button className="btn primary" disabled={state.cash < KONZERN_FOUND_COST} onClick={foundKonzernNow}
             title={state.cash < KONZERN_FOUND_COST ? `Kostet ${eur(KONZERN_FOUND_COST)}€` : undefined}>
             Konzern gründen ({eur(KONZERN_FOUND_COST)}€)
@@ -271,12 +275,12 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
       )}
 
       <div className="konzern-body">
-        {office === 'konzern' && konzern ? (
+        {office === 'konzern' && konzern && zentraleUnlocked ? (
           <OfficePanel
             icon="🏛️"
             title={`Konzernzentrale · ${konzern.name}`}
-            subtitle={`Gegründet in Woche ${konzern.foundedWeek} · steuert den ganzen Konzern`}
-            intro="Die C-Level-Führung des Konzerns. Diese Vorstands­rollen werden in einem kommenden Update mit Leben gefüllt – hier besetzt du sie dann."
+            subtitle="Steuert den Konzern über alle Länder"
+            intro="Die C-Level-Führung über allen Ländern. Diese Vorstands­rollen werden in einem kommenden Update mit Leben gefüllt – hier besetzt du sie dann."
             roles={KONZERN_C_LEVEL}
             onBack={() => setOffice(null)}
           />
@@ -284,8 +288,8 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
           <OfficePanel
             icon="🏢"
             title="Regionalbüro Deutschland"
-            subtitle="Führt alle Standorte in Deutschland"
-            intro="Jedes Land bekommt ein eigenes Regionalbüro mit diesen Führungskräften. Sie steuern die Standorte des Landes – ihre Mechanik folgt in einem kommenden Update."
+            subtitle={`Gegründet in Woche ${konzern.foundedWeek} · führt alle Standorte in Deutschland`}
+            intro="Das Regionalbüro führt dein Land: hier sitzen Einkäufer (Landes-Beschaffung), Kundenbetreuer und die Key-Account-Manager der Großkunden. Jedes weitere Land bekommt sein eigenes Regionalbüro. Die Rollen-Mechanik folgt in einem kommenden Update."
             roles={REGIONAL_OFFICE_ROLES}
             onBack={() => setOffice(null)}
           />
@@ -449,10 +453,12 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                 <button className="btn primary" onClick={() => setOffice('regional-de')}>🏢 Regionalbüro Deutschland</button>
               )}
               {konzern && level === 'kontinent' && (
-                <button className="btn primary" onClick={() => setOffice('konzern')}>🏛️ Konzernzentrale</button>
+                zentraleUnlocked
+                  ? <button className="btn primary" onClick={() => setOffice('konzern')}>🏛️ Konzernzentrale</button>
+                  : <button className="btn" disabled title="Schaltet mit dem zweiten Land frei">🔒 Konzernzentrale – ab dem 2. Land</button>
               )}
               {!konzern && (
-                <p className="sub"><i>Ab zwei Standorten gründest du deinen Konzern – dann bekommt jedes Land ein Regionalbüro und der Konzern eine Zentrale.</i></p>
+                <p className="sub"><i>Ab zwei Standorten gründest du deinen Konzern – dein Land bekommt dann ein Regionalbüro. Die Konzernzentrale (C-Level) folgt mit dem zweiten Land.</i></p>
               )}
               <p className="sub" style={{ marginTop: 10 }}><i>Diese Ausbaustufe folgt – dein Sitz ist bereits markiert.</i></p>
             </div>
