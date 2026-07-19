@@ -28,6 +28,7 @@ import {
   BRANCH_UNLOCK_MONTHLY,
   REGIONAL_UNLOCK,
   REGIONAL_KAM_LARGE_SLOTS,
+  REGIONAL_OFFICE_FOUND_COST,
   BUYER_PRODUCT_CAPACITY,
   COMPETITOR_DEFS,
   LOYALTY_CHURN_THRESHOLD,
@@ -265,8 +266,9 @@ const ENTRIES: WikiEntry[] = [
           weiterhin der Einkäufer</b> zentral, also gib einem delegierten Standort genügend
           Einkäufer-Kapazität. Auf der Stadt-Karte kannst du außerdem <b>Waren per Klick zwischen Nord
           & Süd transferieren</b> (laufende Transfers fahren als 🚚 auf der Route), und ab zwei
-          Standorten entsteht <b>automatisch</b> ein <b>Regionalbüro Deutschland</b> (kein separater
-          Gründungsschritt mehr). Seine Führungscrew schaltet <b>gestaffelt über eigene Hürden</b> frei –
+          Standorten kannst du (als bezahlten zweiten Schritt nach dem Standort-Kauf) ein{' '}
+          <b>Regionalbüro Deutschland gründen</b> ({REGIONAL_OFFICE_FOUND_COST.toLocaleString('de-DE')}€,
+          auf der 🗺️ Konzern-Karte). Seine Führungscrew schaltet danach <b>gestaffelt über eigene Hürden</b> frei –
           jede Rolle dann, wenn du den Engpass, den sie löst, gerade spürst: der <b>📣 Marketing-Manager</b>
           ist sofort da, <b>Kundenbetreuer</b> ab {REGIONAL_UNLOCK.KUNDENBETREUER_CUSTOMERS} Kunden am neuen
           Standort, <b>Einkaufsleiter</b> ab {REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS} Produktgruppen, der{' '}

@@ -195,12 +195,14 @@ export const ROLE_EMOJI: Record<Role, string> = {
  * nie leer räumt.
  */
 /**
- * Konzern (ab 2 Standorten): der Übergang vom einzelnen Betrieb zur Unternehmens-
- * gruppe. Er entsteht AUTOMATISCH mit dem zweiten Standort (kein separater, bezahlter
- * Gründungsschritt mehr) und etabliert die zweistufige Struktur — die KONZERNZENTRALE
- * (global, C-Level, ab dem 2. Land) an der Spitze und darunter je Land ein
- * REGIONALBÜRO mit eigenen Führungskräften (siehe REGIONAL_OFFICE_ROLES).
+ * Regionalbüro gründen (nach dem 2. Standort): der Übergang vom einzelnen Betrieb zur
+ * Unternehmensgruppe. Erst kaufst du den zweiten Standort (BRANCH_PRICE), DANN gründest
+ * du dafür ein REGIONALBÜRO — ein bewusster, bezahlter zweiter Schritt. Es etabliert die
+ * zweistufige Struktur: je Land ein Regionalbüro mit eigenen Führungskräften (siehe
+ * REGIONAL_OFFICE_ROLES), darüber später (ab dem 2. Land) die KONZERNZENTRALE (C-Level).
+ * Die Führungscrew des Büros schaltet danach gestaffelt über eigene Hürden frei.
  */
+export const REGIONAL_OFFICE_FOUND_COST = 50_000;
 
 /**
  * Monthly-revenue thresholds that unlock bigger customers (Entscheidungen R2/R3).
@@ -256,14 +258,14 @@ const suedCustomers = (s: GameState) => s.customers.filter((c) => c.active && (c
 export const REGIONAL_OFFICE_ROLES: RegionalRoleDef[] = [
   {
     emoji: '🧑‍💼', title: 'Regionaldirektor', blurb: 'Führt alle Standorte des Landes.',
-    hurdle: 'Kommt mit dem Regionalbüro.',
-    unlocked: (s) => !!s.branchWarehouse,
+    hurdle: 'Kommt mit der Gründung des Regionalbüros.',
+    unlocked: (s) => !!s.konzern,
   },
   {
     emoji: '📣', title: 'Marketing-Manager', role: 'marketing',
     blurb: 'Beschleunigt den Ruf – neue Kunden werden schneller aufmerksam, vor allem am jungen Standort.',
-    hurdle: 'Sofort verfügbar – der Bootstrap fürs Mid-Game.',
-    unlocked: (s) => !!s.branchWarehouse,
+    hurdle: 'Sofort nach der Gründung verfügbar – der Bootstrap fürs Mid-Game.',
+    unlocked: (s) => !!s.konzern,
   },
   {
     emoji: '🤝', title: 'Kundenbetreuer', blurb: 'Betreut kleine & mittlere Kunden der Region automatisch.',

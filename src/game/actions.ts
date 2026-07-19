@@ -30,6 +30,7 @@ import {
   SHELF_PRICE,
   SLOT_COST,
   SHELF_SLOTS,
+  REGIONAL_OFFICE_FOUND_COST,
   REGIONAL_OFFICE_ROLES,
   REGIONAL_KAM_LARGE_SLOTS,
   RENOWN,
@@ -276,8 +277,8 @@ export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'):
   const siteBound = role === 'lager' || role === 'standortleiter';
   const isRegionalRole = role === 'marketing' || role === 'regionalkam';
   if (isRegionalRole) {
-    if (!state.branchWarehouse) {
-      return { ok: false, message: 'Das Regionalbüro entsteht erst mit dem 2. Standort.' };
+    if (!state.konzern) {
+      return { ok: false, message: 'Gründe erst dein Regionalbüro (auf der Konzern-Karte).' };
     }
     const def = REGIONAL_OFFICE_ROLES.find((r) => r.role === role);
     if (def && !def.unlocked(state)) {
@@ -873,15 +874,33 @@ export function openBranch(state: GameState): ActionResult {
   // dadurch von Anfang an schneller Neukunden an als der erste Standort damals.
   if (!state.renownBySite) state.renownBySite = {};
   state.renownBySite.sued = RENOWN.NEW_SITE_INHERIT * nationalRenown(state);
-  // Regionalbüro entsteht AUTOMATISCH mit dem zweiten Standort — kein separater
-  // Gründungsschritt mehr. Seine Mitarbeiter (Marketing-Manager, Regional-KAM …)
-  // schalten gestaffelt über eigene Hürden frei (siehe REGIONAL_OFFICE_ROLES).
-  if (!state.konzern) {
-    state.konzern = { foundedWeek: weekOf(state.totalDays), name: 'Deine Unternehmensgruppe' };
-  }
   notify(
     state,
-    `🎉 ${SITE_META.sued.name} eröffnet (${BRANCH_PRICE}€)! Neue Region: Süd-Kunden fragen bald an, 🍷 Wein & 🫒 Oliven sind dort listbar. Dein Land bekommt jetzt ein 🏢 Regionalbüro (über die Konzern-Karte) – der Marketing-Manager ist sofort verfügbar und beschleunigt den Ruf des neuen Standorts.`,
+    `🎉 ${SITE_META.sued.name} eröffnet (${BRANCH_PRICE}€)! Neue Region: Süd-Kunden fragen bald an, 🍷 Wein & 🫒 Oliven sind dort listbar. Nächster Schritt: Auf der 🗺️ Konzern-Karte kannst du jetzt für dein Land ein 🏢 Regionalbüro gründen – dann schalten Marketing-Manager, Regional-KAM & Co. frei.`,
+    'success',
+  );
+  return { ok: true };
+}
+
+/**
+ * Regionalbüro gründen — der bezahlte zweite Schritt nach dem Kauf des 2. Standorts:
+ * du machst aus deinen Betrieben eine Unternehmensgruppe mit einer eigenen Landes-Führung.
+ * Einmalige Kosten; danach schaltet die Führungscrew des Büros gestaffelt frei
+ * (Marketing-Manager sofort, Regional-KAM ab 600k € usw.). Idempotent-sicher.
+ */
+export function foundRegionalOffice(state: GameState): ActionResult {
+  if (state.konzern) return { ok: false, message: 'Dein Regionalbüro besteht bereits.' };
+  if (!branchOpen(state)) {
+    return { ok: false, message: 'Erst den 2. Standort eröffnen – dann kannst du das Regionalbüro gründen.' };
+  }
+  if (state.cash + availableCredit(state) < REGIONAL_OFFICE_FOUND_COST) {
+    return { ok: false, message: `Die Gründung kostet ${REGIONAL_OFFICE_FOUND_COST.toLocaleString('de-DE')}€.` };
+  }
+  spend(state, REGIONAL_OFFICE_FOUND_COST);
+  state.konzern = { foundedWeek: weekOf(state.totalDays), name: 'Deine Unternehmensgruppe' };
+  notify(
+    state,
+    `🏢 Regionalbüro Deutschland gegründet (${REGIONAL_OFFICE_FOUND_COST.toLocaleString('de-DE')}€)! Deine Landes-Führung steht: Der 📣 Marketing-Manager ist sofort einstellbar und beschleunigt den Ruf, weitere Rollen (Regional-KAM für Großkunden …) schalten über eigene Hürden frei.`,
     'success',
   );
   return { ok: true };

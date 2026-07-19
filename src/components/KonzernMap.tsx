@@ -22,11 +22,12 @@ import {
   nationalRenown,
   regionalKams,
 } from '../game/simulation';
-import { siteManager, siteWeeklyVolume, hireEmployee, transferStock } from '../game/actions';
+import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundRegionalOffice } from '../game/actions';
 import {
   SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT, BRANCH_UNLOCK_MONTHLY,
   TRANSFER_DAYS, TRANSFER_COST_PER_PALLET, PALETTE_SIZE,
   KONZERN_C_LEVEL, REGIONAL_OFFICE_ROLES, REGIONAL_KAM_LARGE_SLOTS,
+  REGIONAL_OFFICE_FOUND_COST,
 } from '../game/constants';
 import type { OfficeRole } from '../game/constants';
 import {
@@ -320,10 +321,12 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   // Welches Büro ist geöffnet? Konzernzentrale (global, C-Level) oder ein Regionalbüro.
   const [office, setOffice] = useState<null | 'konzern' | 'regional-de'>(null);
 
-  // Das Regionalbüro entsteht automatisch mit dem 2. Standort — kein Gründungsschritt
-  // mehr. Für den Panel-Text den Gründungszeitpunkt defensiv ableiten (alte Spielstände).
-  const regionalOpen = branchOpen;
-  const foundedWeek = state.konzern?.foundedWeek ?? state.branchOpenedWeek ?? 0;
+  // Das Regionalbüro ist der bezahlte zweite Schritt nach dem 2. Standort: erst kaufst
+  // du den Standort, dann gründest du das Büro. „Offen" = gegründet (state.konzern).
+  const konzern = state.konzern;
+  const regionalOpen = !!konzern;
+  const foundedWeek = konzern?.foundedWeek ?? 0;
+  const foundRegionalNow = () => mutate((s) => foundRegionalOffice(s));
   // Länder, in denen der Konzern tätig ist. Aktuell nur Deutschland — die
   // Konzernzentrale (C-Level) schaltet erst mit dem ZWEITEN Land frei.
   const countries = 1;
@@ -369,9 +372,18 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
         </div>
       </header>
 
-      {branchOpen && (
+      {branchOpen && !regionalOpen && (
         <div className="konzern-banner">
-          <span>🏢 <b>Regionalbüro Deutschland</b> ist mit deinem 2. Standort entstanden. Seine Mitarbeiter (Marketing-Manager, Regional-KAM …) schalten gestaffelt frei.</span>
+          <span>🏢 <b>Zwei Standorte!</b> Gründe jetzt dein <b>Regionalbüro Deutschland</b> – deine Landes-Führung mit Marketing-Manager, Regional-KAM & Co. (schalten danach gestaffelt frei).</span>
+          <button className="btn primary" disabled={state.cash < REGIONAL_OFFICE_FOUND_COST} onClick={foundRegionalNow}
+            title={state.cash < REGIONAL_OFFICE_FOUND_COST ? `Kostet ${eur(REGIONAL_OFFICE_FOUND_COST)}€` : undefined}>
+            Regionalbüro gründen ({eur(REGIONAL_OFFICE_FOUND_COST)}€)
+          </button>
+        </div>
+      )}
+      {regionalOpen && (
+        <div className="konzern-banner">
+          <span>🏢 <b>Regionalbüro Deutschland</b> ist gegründet. Seine Mitarbeiter (Marketing-Manager, Regional-KAM …) schalten über eigene Hürden frei.</span>
           <button className="btn primary" onClick={() => { setOffice('regional-de'); }}>Regionalbüro öffnen</button>
         </div>
       )}
@@ -507,7 +519,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
             })() : (
               <div className="km-hint">
                 <p><b>Zweite Stadt (Süd) noch nicht eröffnet.</b></p>
-                <p className="sub">Ab {Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz eröffnest du sie über <b>🏢 Ausbau</b> – dann erscheint sie hier auf der Karte, mit eigenem Regionalbüro.</p>
+                <p className="sub">Ab {Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz eröffnest du sie über <b>🏢 Ausbau</b> – dann erscheint sie hier auf der Karte, und du kannst dafür ein <b>Regionalbüro gründen</b>.</p>
                 <button className="btn" onClick={() => setSelected('hq')}>Stadt Nord ansehen</button>
               </div>
             )}
@@ -556,7 +568,9 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                   : <button className="btn" disabled title="Schaltet mit dem zweiten Land frei">🔒 Konzernzentrale – ab dem 2. Land</button>
               )}
               {!regionalOpen && (
-                <p className="sub"><i>Ab dem zweiten Standort bekommt dein Land automatisch ein Regionalbüro. Die Konzernzentrale (C-Level) folgt mit dem zweiten Land.</i></p>
+                <p className="sub"><i>{branchOpen
+                  ? `Gründe für dein Land ein Regionalbüro (${eur(REGIONAL_OFFICE_FOUND_COST)}€) – oben im Banner. Die Konzernzentrale (C-Level) folgt mit dem zweiten Land.`
+                  : 'Nach dem zweiten Standort gründest du für dein Land ein Regionalbüro. Die Konzernzentrale (C-Level) folgt mit dem zweiten Land.'}</i></p>
               )}
               <p className="sub" style={{ marginTop: 10 }}><i>Diese Ausbaustufe folgt – dein Sitz ist bereits markiert.</i></p>
             </div>
