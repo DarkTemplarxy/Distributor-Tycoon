@@ -64,9 +64,13 @@ export function OrdersPanel() {
       return { customerId, orders, late, minDue, type };
     })
     .sort((a, b) => Number(b.late) - Number(a.late) || a.minDue - b.minDue);
-  // The k/m/g filter is display-only; show it once the list gets long.
-  const cards = allCards.filter((c) => filter.matches(c.type));
+  // The k/m/g filter is display-only; show it once the list gets long. It is
+  // ONLY applied while its chips are visible — otherwise a stale selection (e.g.
+  // "Klein" turned off in a previous run, kept because a new game doesn't remount
+  // this panel) would silently hide orders the player can't reveal, e.g. the
+  // tutorial's Herrichten order.
   const showFilter = allCards.length > 4 || allCards.some((c) => c.type !== 'small');
+  const cards = showFilter ? allCards.filter((c) => filter.matches(c.type)) : allCards;
 
   return (
     <div className="panel">
