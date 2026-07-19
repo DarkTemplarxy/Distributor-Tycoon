@@ -14,7 +14,8 @@ const STATUS_LABEL: Record<Order['status'], string> = {
 };
 
 const STATUS_HINT: Record<Order['status'], string> = {
-  pending: 'Wartet auf Regal-Bestand und eine freie Lagerkraft mit Tisch.',
+  pending:
+    'Wartet auf Regal-Bestand und eine freie Lagerkraft mit Tisch. Abgearbeitet wird in der Reihenfolge dieser Liste (verspätet zuerst, dann früheste Fälligkeit) – ein dringlicher Auftrag reserviert seinen Bestand, damit kleinere Bestellungen ihn nicht wegschnappen.',
   preparing: 'Eine Lagerkraft pickt und packt am Vorbereitungstisch.',
   ready: 'Palette steht in der Abholzone – der LKW kommt täglich um 18 Uhr.',
   delivered: 'Abgeholt. Kleine Kunden zahlen bar, mittlere/große nach Zahlungsziel.',

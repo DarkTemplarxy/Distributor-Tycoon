@@ -1119,16 +1119,39 @@ function autoAssignWork(state: GameState): void {
   // One assignment round: prep due orders first (revenue, needs a free table),
   // then put remaining idle workers on put-away. `strict` restricts each step to
   // workers who prioritise that task type (used by the first pass).
+  const capacity = shelfCapacity(state);
   const round = (strict: boolean) => {
     let idle = idleCount();
+    // Serve orders in the SAME order the Aufträge-Panel shows them: late first,
+    // then earliest due week, then oldest. This makes the visible list the actual
+    // service order instead of a hidden due-week-only rule.
     const pending = state.orders
       .filter((o) => o.status === 'pending')
-      .sort((a, b) => a.dueWeek - b.dueWeek || a.createdDay - b.createdDay);
+      .sort(
+        (a, b) =>
+          Number(b.late) - Number(a.late) ||
+          a.dueWeek - b.dueWeek ||
+          a.createdDay - b.createdDay,
+      );
+    // Per-product stock claim: a higher-priority order that is still short on
+    // shelf stock RESERVES what's there, so a stream of smaller same-product
+    // orders can no longer drain the stock a big order is waiting to accumulate.
+    // The freed workers fall through to put-away below → the reserved order fills
+    // up faster. Reservation is per product (unrelated products stay servable) and
+    // only for orders the warehouse could actually hold (no permanent dead-block).
+    const avail: Record<string, number> = {};
+    for (const p of state.products) avail[p.id] = shelfStock(p);
     for (const order of pending) {
       if (idle === 0 || freeTables(state) <= 0) break;
-      const product = getProduct(state, order.productId);
-      if (shelfStock(product) < order.quantity) continue;
-      if (tryPrepareOrder(state, order, { strictTask: strict }) === null) idle -= 1;
+      const have = avail[order.productId] ?? 0;
+      if (have < order.quantity) {
+        if (order.quantity <= capacity) avail[order.productId] = 0;
+        continue;
+      }
+      if (tryPrepareOrder(state, order, { strictTask: strict }) === null) {
+        avail[order.productId] = have - order.quantity;
+        idle -= 1;
+      }
     }
     while (idle > 0 && shelfFree(state) > 0) {
       const free = state.employees.filter((e) => e.role === 'lager' && !e.task);

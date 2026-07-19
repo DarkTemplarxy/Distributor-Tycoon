@@ -286,6 +286,15 @@ const ENTRIES: WikiEntry[] = [
           Wege und dauern entsprechend länger. Der Wagen halbiert also die Wege UND packt schneller.
         </p>
         <p>
+          <b>In welcher Reihenfolge werden Aufträge herrichtet?</b> Genau so, wie sie in der{' '}
+          <b>Aufträge-Liste</b> rechts stehen: <b>verspätete zuerst</b>, dann nach{' '}
+          <b>frühester Fälligkeit</b>, dann die ältesten. Wichtig für Großkunden: Reicht der
+          Regal-Bestand für einen dringlichen Auftrag noch nicht, <b>reserviert</b> er den
+          vorhandenen Bestand – kleinere Bestellungen desselben Produkts müssen warten, statt ihm
+          die Ware wegzuschnappen. Die frei werdenden Kräfte lagern derweil Nachschub ein, sodass
+          der große Auftrag <i>schneller</i> vollläuft, statt zu verhungern.
+        </p>
+        <p>
           Beim Bauen gilt die <b>Begehbarkeits-Regel</b>: Jedes Objekt braucht eine freie
           Nachbarseite und darf keinem Nachbarn die letzte nehmen – nichts einmauern. Mit dem{' '}
           <b>🧹 Abreißen</b>-Werkzeug entfernst du Regale, Tische und Arbeitsplätze wieder und
