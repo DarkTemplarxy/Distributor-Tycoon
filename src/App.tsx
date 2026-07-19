@@ -5,6 +5,7 @@ import { TopBar } from './components/TopBar';
 import { Modal } from './components/Modal';
 import { IsometricWarehouse, type BuildTool } from './components/IsometricWarehouse';
 import { BuildBar } from './components/BuildBar';
+import { OpsCockpit } from './components/OpsCockpit';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
 import { buildShelf, buildTable, buildInboundSlot, buildDesk, expandHall, expandOffice } from './game/actions';
@@ -267,6 +268,9 @@ export function App() {
                 : undefined
             }
           />
+          {!buildMode && isFeatureUnlocked(state.tutorial, 'build') && (
+            <OpsCockpit onOpen={openModal} onBuild={enterBuild} />
+          )}
         </div>
         <div className="col-right">
           <OrdersPanel />

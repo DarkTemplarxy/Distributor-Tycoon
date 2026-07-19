@@ -285,6 +285,33 @@ const ENTRIES: WikiEntry[] = [
     ),
   },
   {
+    icon: '📊',
+    title: 'Betriebs-Cockpit (Auslastung)',
+    keywords: 'cockpit auslastung engpass personal lagerplatz slots liquidität warnung kapazität überlastet',
+    body: (
+      <>
+        <p>
+          Oben in der Halle zeigt das <b>Cockpit</b> vier Auslastungs-Anzeigen, damit du einen
+          Engpass <i>kommen</i> siehst statt ihn plötzlich zu treffen:
+        </p>
+        <p>
+          <b>👷 Personal</b> = wöchentlich anfallende Handling-Stunden (Herrichten {'&'} Einlagern)
+          geteilt durch die Stunden, die deine Lagerkräfte leisten. Ab <b>75 %</b> gelb
+          („bald einstellen"), ab <b>95 %</b> rot – dann stauen sich die Aufträge.
+          <b> 📦 Lagerplatz</b> = belegte vs. verfügbare Regal-Einheiten.
+          <b> 🤝 Kunden-Slots</b> = belegte vs. freie Betreuungs-Slots.
+          <b> 💰 Liquidität</b> = Reserve (Kasse + freier Kredit) gegen die wöchentlichen Fixkosten.
+        </p>
+        <p>
+          Wird eine Anzeige gelb/rot, erscheint darunter ein <b>Hinweis, was zu tun ist</b>. Ein
+          Klick auf eine Anzeige öffnet direkt den passenden Bereich (Personal, Bauen, Kunden,
+          Finanzen). Tipp: schulen macht Lagerkräfte schneller – das senkt die Personal-Auslastung
+          genauso wie ein neuer Mitarbeiter.
+        </p>
+      </>
+    ),
+  },
+  {
     icon: '🛒',
     title: 'Einkauf, Express & Lieferant',
     keywords: 'bestellen einkäufer empfehlung express nachbestellen ek erhöhung quartal saison verhandeln',

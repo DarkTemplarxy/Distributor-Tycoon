@@ -99,6 +99,7 @@ import type {
 import {
   clamp,
   dayOfWeek,
+  euro,
   pick,
   quarterOf,
   randInt,
@@ -553,6 +554,161 @@ export function weeklyDemand(state: GameState, productId: ProductId): number {
   return sum;
 }
 
+/** Total contracted units per week across all products (what the crew must
+ * handle: prepare for pickup AND put away when delivered). */
+export function totalWeeklyDemand(state: GameState): number {
+  return state.products.reduce((s, p) => s + weeklyDemand(state, p.id), 0);
+}
+
+// --- Operations cockpit (Betriebs-Status) -----------------------------------
+// Forward-looking utilisation gauges so the player can SEE a bottleneck coming
+// (staff overload, shelves filling, slots running out, thin liquidity) instead
+// of hitting it blind. Everything is derived from live state — no new fields.
+
+/** Clock hours a single worker is on shift per week (6–20, seven days). */
+const WORK_HOURS_PER_WEEK = (WORK_END_HOUR - WORK_START_HOUR) * 7;
+
+export type OpsLevel = 'ok' | 'warn' | 'crit';
+
+export interface OpsGauge {
+  key: 'labor' | 'storage' | 'slots' | 'cash';
+  label: string;
+  icon: string;
+  /** Fill fraction for the bar (0..1, clamped for display). */
+  fill: number;
+  /** Headline value, e.g. "82 %" or "156 k€". */
+  value: string;
+  level: OpsLevel;
+  /** One-line context under the value. */
+  detail: string;
+  /** Actionable hint, present when level is warn/crit. */
+  hint?: string;
+  /** Modal the chip jumps to when clicked. */
+  target: 'employees' | 'build' | 'customers' | 'finance';
+}
+
+export interface OpsStatus {
+  gauges: OpsGauge[];
+  worst: OpsLevel;
+  /** Aggregated actionable hints (warn/crit gauges), worst first. */
+  alerts: { level: OpsLevel; text: string }[];
+}
+
+const worseLevel = (a: OpsLevel, b: OpsLevel): OpsLevel =>
+  a === 'crit' || b === 'crit' ? 'crit' : a === 'warn' || b === 'warn' ? 'warn' : 'ok';
+
+/** Live operations dashboard: labour load, storage, customer slots, liquidity. */
+export function opsStatus(state: GameState): OpsStatus {
+  const gauges: OpsGauge[] = [];
+
+  // 1) Personal (Lager) — weekly handling hours demanded vs. crew hours supplied.
+  const weeklyUnits = totalWeeklyDemand(state);
+  const handlingHours = weeklyUnits * (PREP_HOURS_PER_UNIT + PUTAWAY_HOURS_PER_UNIT);
+  const lager = state.employees.filter((e) => e.role === 'lager');
+  const laborHours = lager.reduce((s, e) => s + WORK_HOURS_PER_WEEK / skillSpeedFactor(e.skill), 0);
+  const laborPct = laborHours > 0 ? handlingHours / laborHours : weeklyUnits > 0 ? Infinity : 0;
+  const laborLevel: OpsLevel = laborPct >= 0.95 ? 'crit' : laborPct >= 0.75 ? 'warn' : 'ok';
+  const tables = state.warehouse.tables.length;
+  const tableShort = lager.length > tables;
+  gauges.push({
+    key: 'labor',
+    label: 'Personal',
+    icon: '👷',
+    fill: Math.min(1, laborPct),
+    value: Number.isFinite(laborPct) ? `${Math.round(laborPct * 100)} %` : '∞',
+    level: tableShort && laborLevel === 'ok' ? 'warn' : laborLevel,
+    detail: `${lager.length} Lagerkräfte · ${Math.round(handlingHours)}/${Math.round(laborHours)} h/Wo`,
+    hint:
+      laborLevel === 'crit'
+        ? 'Team überlastet – Aufträge stauen sich. Jetzt einen Lagermitarbeiter einstellen (oder schulen).'
+        : laborLevel === 'warn'
+          ? 'Bald einen Lagermitarbeiter einstellen oder das Team schulen.'
+          : tableShort
+            ? `Nur ${tables} Herricht-Tische für ${lager.length} Kräfte – ein paar können nicht gleichzeitig herrichten.`
+            : undefined,
+    target: 'employees',
+  });
+
+  // 2) Lagerplatz — shelf units used vs. capacity.
+  const used = shelfUsed(state);
+  const cap = shelfCapacity(state);
+  const storagePct = cap > 0 ? used / cap : 1;
+  const storageLevel: OpsLevel = storagePct >= 0.92 ? 'crit' : storagePct >= 0.8 ? 'warn' : 'ok';
+  gauges.push({
+    key: 'storage',
+    label: 'Lagerplatz',
+    icon: '📦',
+    fill: Math.min(1, storagePct),
+    value: `${Math.round(storagePct * 100)} %`,
+    level: storageLevel,
+    detail: `${used}/${cap} Einheiten belegt`,
+    hint:
+      storageLevel === 'crit'
+        ? 'Lager fast voll – bald blockiert das Einlagern. Ein Regal im Bau-Modus ergänzen.'
+        : storageLevel === 'warn'
+          ? 'Lager füllt sich – demnächst ein Regal bauen.'
+          : undefined,
+    target: 'build',
+  });
+
+  // 3) Kunden-Slots — occupied vs. total across all managers.
+  const ms = managers(state);
+  const slotsUsed = ms.reduce((s, m) => s + m.used, 0);
+  const slotsTotal = ms.length * MANAGER_SLOTS;
+  const slotPct = slotsTotal > 0 ? slotsUsed / slotsTotal : 1;
+  const slotLevel: OpsLevel = slotsUsed >= slotsTotal ? 'crit' : slotPct >= 0.85 ? 'warn' : 'ok';
+  gauges.push({
+    key: 'slots',
+    label: 'Kunden-Slots',
+    icon: '🤝',
+    fill: Math.min(1, slotPct),
+    value: `${slotsUsed}/${slotsTotal}`,
+    level: slotLevel,
+    detail: `${ms.length} Manager · ${slotsTotal - slotsUsed} Slots frei`,
+    hint:
+      slotLevel === 'crit'
+        ? 'Keine Kunden-Slots frei – ein KAM bringt mehr Kapazität für neue Kunden.'
+        : slotLevel === 'warn'
+          ? 'Wenige Slots frei – für weiteres Wachstum bald einen KAM einstellen.'
+          : undefined,
+    target: 'customers',
+  });
+
+  // 4) Liquidität — reserves (cash + free credit) vs. weekly fixed cost.
+  const payroll = state.employees.reduce((s, e) => s + e.salary, 0);
+  const weeklyFixed = payroll + currentMonthlyRent(state) / WEEKS_PER_MONTH;
+  const liquidity = state.cash + availableCredit(state);
+  const weeksCovered = weeklyFixed > 0 ? liquidity / weeklyFixed : Infinity;
+  const cashLevel: OpsLevel = liquidity < 0 || weeksCovered < 2 ? 'crit' : weeksCovered < 4 ? 'warn' : 'ok';
+  gauges.push({
+    key: 'cash',
+    label: 'Liquidität',
+    icon: '💰',
+    // Bar fills as the reserve shrinks toward one month of fixed cost.
+    fill: Math.min(1, weeklyFixed > 0 ? (weeklyFixed * 4) / Math.max(liquidity, 1) : 0),
+    value: euro(liquidity),
+    level: cashLevel,
+    detail: `Fixkosten ${euro(Math.round(weeklyFixed))}/Wo · Reserve deckt ${
+      Number.isFinite(weeksCovered) ? Math.floor(weeksCovered) : '∞'
+    } Wo`,
+    hint:
+      cashLevel === 'crit'
+        ? 'Reserve dünn – Ausgaben bremsen oder Umsatz sichern, sonst droht die Insolvenz.'
+        : cashLevel === 'warn'
+          ? 'Reserve unter einem Monat Fixkosten – neue Investitionen mit Bedacht.'
+          : undefined,
+    target: 'finance',
+  });
+
+  const worst = gauges.reduce<OpsLevel>((w, g) => worseLevel(w, g.level), 'ok');
+  const alerts = gauges
+    .filter((g) => g.hint && g.level !== 'ok')
+    .map((g) => ({ level: g.level, text: g.hint! }))
+    .sort((a, b) => (a.level === 'crit' ? -1 : b.level === 'crit' ? 1 : 0));
+
+  return { gauges, worst, alerts };
+}
+
 /** Best (highest) skill among warehouse workers, or 0 if none. */
 function bestNegotiationSkill(state: GameState): number {
   const buyers = state.employees.filter((e) => e.role === 'einkaeufer');
@@ -602,7 +758,7 @@ export function computeYearStats(state: GameState, completedYearIndex: number): 
 
 /** Skill speed multiplier: every point above the baseline is 1 % faster. Skill
  * 50 → ×1.0, skill 100 → ×0.5, below 50 → slower. Clamped so it can't hit ≤0. */
-function skillSpeedFactor(skill: number): number {
+export function skillSpeedFactor(skill: number): number {
   return clamp(1 - SKILL_SPEED_PER_POINT * (skill - SKILL_SPEED_BASELINE), 0.3, 2);
 }
 
