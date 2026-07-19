@@ -456,8 +456,12 @@ const ENTRIES: WikiEntry[] = [
           ))}
         </p>
         <p>
-          <b>Lagermitarbeiter</b> richten Ware her. <b>Key Account Manager</b> geben Betreuungs-Slots
-          für mehr Kunden. <b>Vertriebsmitarbeiter</b> vergrößern deinen Markt und bringen so mehr
+          <b>Lagermitarbeiter</b> richten Ware her. Jeder Kraft kannst du eine{' '}
+          <b>Produkt-Priorität</b> geben (z. B. 🐟 Fisch): Aufgaben mit diesem Produkt übernimmt sie
+          zuerst – beim Herrichten UND Einlagern; ohne passende Arbeit hilft sie normal überall.{' '}
+          <b>Key Account Manager</b> geben Betreuungs-Slots für mehr Kunden – neue Kunden füllen die
+          Manager <b>nacheinander</b> (der vollste zuerst), sodass die übrigen ganze Slot-Blöcke für
+          große Kunden freihalten. <b>Vertriebsmitarbeiter</b> vergrößern deinen Markt und bringen so mehr
           Neukunden-Anfragen (je mehr Reps und je höher ihr Skill, desto größer der Markt – mit
           abnehmendem Grenzertrag, weil dieselbe Sättigung greift; Spam lohnt nicht). Zum
           Abschließen brauchst du weiterhin freie KAM-Slots. <b>Einkäufer</b>{' '}

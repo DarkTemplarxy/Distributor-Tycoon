@@ -124,7 +124,7 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
       <h3>Belegschaft</h3>
       <div className="rows">
         {state.employees.map((e) => (
-          <div key={e.id} className="row">
+          <div key={e.id} className="row" style={{ flexWrap: 'wrap' }}>
             <span style={{ fontSize: 22 }}>{ROLE_EMOJI[e.role]}</span>
             <div className="grow">
               <div className="title">{e.name}</div>
@@ -152,6 +152,35 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
             >
               Entlassen
             </button>
+            {e.role === 'lager' && (
+              <div
+                style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}
+                title="Anweisung: Aufgaben mit diesem Produkt übernimmt diese Kraft zuerst (Herrichten UND Einlagern). Gibt es gerade keine passende Arbeit, packt sie ganz normal überall mit an."
+              >
+                <span className="sub" style={{ minWidth: 116 }}>📋 Produkt-Priorität:</span>
+                <button
+                  className={`btn small${!e.preferredProduct ? ' primary' : ' ghost'}`}
+                  onClick={() => mutate((s) => {
+                    const emp = s.employees.find((x) => x.id === e.id);
+                    if (emp) emp.preferredProduct = undefined;
+                  })}
+                >
+                  Alle
+                </button>
+                {state.products.map((p) => (
+                  <button
+                    key={p.id}
+                    className={`btn small${e.preferredProduct === p.id ? ' primary' : ' ghost'}`}
+                    onClick={() => mutate((s) => {
+                      const emp = s.employees.find((x) => x.id === e.id);
+                      if (emp) emp.preferredProduct = p.id;
+                    })}
+                  >
+                    {p.emoji} {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>

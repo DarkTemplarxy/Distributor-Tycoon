@@ -540,13 +540,17 @@ export function managers(state: GameState): ManagerInfo[] {
   });
 }
 
-/** The manager who should take a new customer of `type`: the one with the most
- * free slots that still fits it. Null when NO single manager has room — pooled
+/** The manager who should take a new customer of `type`: managers are filled
+ * SEQUENTIALLY — the most-utilised manager that still fits the customer gets it,
+ * so one book is topped up completely before the next one starts (instead of
+ * spreading customers evenly). Side benefit: the other managers keep whole free
+ * slot-blocks for large customers. Ties go to the earlier manager (Chef first,
+ * then KAMs in hire order). Null when NO single manager has room — pooled
  * leftovers don't count (fragmentation is intended). */
 export function bestManagerFor(state: GameState, type: CustomerType): ManagerInfo | null {
   const fitting = managers(state).filter((m) => m.free >= SLOT_COST[type]);
   if (fitting.length === 0) return null;
-  return fitting.reduce((a, b) => (b.free > a.free ? b : a));
+  return fitting.reduce((a, b) => (b.free < a.free ? b : a));
 }
 
 /** How many MORE customers of `type` could be taken right now, honoring the
@@ -900,7 +904,13 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
   const product = getProduct(state, order.productId);
   if (shelfStock(product) < order.quantity) return 'Nicht genug Regal-Bestand.';
   if (freeTables(state) <= 0) return 'Kein freier Vorbereitungstisch.';
-  const worker = state.employees.find((e) => e.role === 'lager' && !e.task);
+  // Product priority: a worker who prioritises THIS product takes it first, then
+  // workers without a preference, then anyone (priority, not exclusivity).
+  const free = state.employees.filter((e) => e.role === 'lager' && !e.task);
+  const worker =
+    free.find((e) => e.preferredProduct === order.productId) ??
+    free.find((e) => !e.preferredProduct) ??
+    free[0];
   if (!worker) return 'Kein freier Lagermitarbeiter.';
 
   deductInventory(product, order.quantity);
@@ -983,7 +993,12 @@ function updateEmployees(state: GameState, deltaDays: number): void {
  * leaves the inbound zone immediately (carried in transit) so two workers can't
  * grab the same goods. Returns true if a task was started. */
 function assignPutaway(state: GameState, product: Product): boolean {
-  const worker = state.employees.find((e) => e.role === 'lager' && !e.task);
+  // Same priority rule as prep: matching preference first, then no preference.
+  const free = state.employees.filter((e) => e.role === 'lager' && !e.task);
+  const worker =
+    free.find((e) => e.preferredProduct === product.id) ??
+    free.find((e) => !e.preferredProduct) ??
+    free[0];
   if (!worker) return false;
   const qty = Math.min(PALETTE_SIZE, inboundStock(product), shelfFree(state));
   if (qty <= 0) return false;
@@ -1090,9 +1105,13 @@ function autoAssignWork(state: GameState): void {
     if (tryPrepareOrder(state, order) === null) idle -= 1;
   }
 
-  // 2. Put remaining idle workers on put-away (no table needed).
+  // 2. Put remaining idle workers on put-away (no table needed). Products a free
+  // worker has prioritised are shelved first, then anything in the inbound zone.
   while (idle > 0 && shelfFree(state) > 0) {
-    const product = state.products.find((p) => inboundStock(p) > 0);
+    const free = state.employees.filter((e) => e.role === 'lager' && !e.task);
+    const product =
+      state.products.find((p) => inboundStock(p) > 0 && free.some((w) => w.preferredProduct === p.id)) ??
+      state.products.find((p) => inboundStock(p) > 0);
     if (!product || !assignPutaway(state, product)) break;
     idle -= 1;
   }

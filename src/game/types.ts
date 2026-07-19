@@ -232,6 +232,11 @@ export interface Employee {
   role: Role;
   salary: number; // per week
   skill: number; // 0-100
+  /** Instruction (Lager only): which product this worker prioritises. When work
+   * is assigned, matching tasks go to them first; without matching work they
+   * take anything (priority, not exclusivity). Undefined = no preference.
+   * Optional for save compatibility. */
+  preferredProduct?: ProductId;
   task?: WorkerTask;
 }
 

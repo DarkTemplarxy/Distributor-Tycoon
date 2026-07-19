@@ -91,6 +91,8 @@ interface WorkerAnim {
   bob: number;
   moving: boolean;
   carrying: boolean;
+  /** Product currently being carried — colours the visible load. */
+  carryProduct: ProductId | null;
   /** Physical device this worker is currently using (Paket 2) — drawn under them. */
   device: 'forklift' | 'cart' | null;
 }
@@ -508,7 +510,7 @@ function updateAnim(dt: number, state: GameState, anim: Anim) {
     seen.add(e.id);
     let a = anim.workers[e.id];
     if (!a) {
-      a = { gx: b.minGx + 1, gy: aisleGy, bob: Math.random() * 6, moving: false, carrying: false, device: null };
+      a = { gx: b.minGx + 1, gy: aisleGy, bob: Math.random() * 6, moving: false, carrying: false, carryProduct: null, device: null };
       anim.workers[e.id] = a;
     }
     // Which physical device (if any) this worker is using right now.
@@ -518,8 +520,18 @@ function updateAnim(dt: number, state: GameState, anim: Anim) {
         : e.task?.kind === 'prep' && e.task.usesCart
           ? 'cart'
           : null;
+    // What product the visible load is (colours the carried box).
+    a.carryProduct =
+      e.task?.kind === 'putaway'
+        ? e.task.productId
+        : e.task?.kind === 'prep'
+          ? (state.orders.find((o) => o.id === (e.task as { orderId: string }).orderId)?.productId ?? null)
+          : null;
     let tgt: { gx: number; gy: number };
     let carrying = false;
+    // On the prep shuttle the load must be visible WHILE walking back to the
+    // table (not only after arriving) — that's the whole point of carrying.
+    let carryWhileMoving = false;
     if (e.task?.kind === 'prep') {
       // The task carries its exclusive table index — each prepping worker stands
       // at their OWN table, stably (no re-shuffling when the working set changes).
@@ -542,6 +554,7 @@ function updateAnim(dt: number, state: GameState, anim: Anim) {
       const fetching = frac < 0.5; // first half: go to shelf; second half: to table
       tgt = fetching ? shelfPos : tablePos;
       carrying = !fetching; // only carrying goods on the return leg
+      carryWhileMoving = true; // load stays visible during the walk
     } else if (e.task?.kind === 'putaway') {
       // Same for the inbound slot the putaway task works at.
       const t = inbound[e.task.slotIndex ?? 0] ?? inbound[0] ?? { gx: b.minGx, gy: b.maxGy };
@@ -552,7 +565,7 @@ function updateAnim(dt: number, state: GameState, anim: Anim) {
       idleIdx++;
     }
     const arrived = moveToward(a, tgt.gx, tgt.gy, WALK_SPEED * dt);
-    a.carrying = carrying && arrived;
+    a.carrying = carrying && (arrived || carryWhileMoving);
     a.bob += dt * (a.moving ? 9 : 2.2);
   });
   for (const id of Object.keys(anim.workers)) if (!seen.has(id)) delete anim.workers[id];
@@ -769,9 +782,20 @@ function worker(ctx: CanvasRenderingContext2D, v: View, a: WorkerAnim, shirt: st
   ctx.fillStyle = C.hat;
   ctx.fill();
   if (a.carrying) {
-    ctx.fillStyle = '#c79a5b';
-    roundRect(ctx, sx - 4 * s, baseY - 16 * s, 8 * s, 7 * s, 1.5 * s);
+    // The load, coloured by product so you SEE what is being moved.
+    const load = a.carryProduct ? PROD_HEX[a.carryProduct] : '#c79a5b';
+    roundRect(ctx, sx - 5 * s, baseY - 17 * s, 10 * s, 8 * s, 1.5 * s);
+    ctx.fillStyle = load;
     ctx.fill();
+    ctx.strokeStyle = shade(load, 0.6);
+    ctx.lineWidth = 1 * s;
+    ctx.stroke();
+    // With a cart the goods also sit visibly in the basket.
+    if (a.device === 'cart') {
+      ctx.fillStyle = load;
+      roundRect(ctx, sx - 6 * s, sy - 13 * s, 9 * s, 6 * s, 1 * s);
+      ctx.fill();
+    }
   }
   if (progress !== null) {
     const bw = 16 * s;
