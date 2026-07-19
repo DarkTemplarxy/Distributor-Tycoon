@@ -20,6 +20,10 @@ import {
 } from '../game/simulation';
 import { siteManager, siteWeeklyVolume, hireEmployee } from '../game/actions';
 import { SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT, BRANCH_UNLOCK_MONTHLY } from '../game/constants';
+import {
+  GERMANY_VIEWBOX, GERMANY_PATH, GERMANY_SEAT, GERMANY_CITIES,
+  EUROPE_VIEWBOX, EUROPE_PATH, EUROPE_DE, EUROPE_COUNTRIES,
+} from './mapPaths';
 import type { GameState, SiteId } from '../game/types';
 
 const eur = (n: number) => Math.round(n).toLocaleString('de-DE');
@@ -90,6 +94,30 @@ function CityPin({
         <rect x={-58} y={-16} width={116} height={26} rx={8} fill="var(--bg-panel)" stroke="var(--border)" />
         <text y={2} textAnchor="middle" fontSize={15} fill="var(--text)" fontWeight={600}>{name}</text>
       </g>
+    </g>
+  );
+}
+
+/** Dein aktueller Sitz (Stadt bzw. Land) — grün hervorgehoben. */
+function SeatNode({ x, y, emoji, label }: { x: number; y: number; emoji: string; label: string }) {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <circle r={20} fill="var(--bg-elev)" stroke="var(--good)" strokeWidth={4} />
+      <text y={7} textAnchor="middle" fontSize={20}>{emoji}</text>
+      <g transform="translate(0,38)">
+        <rect x={-72} y={-15} width={144} height={24} rx={7} fill="var(--bg-panel)" stroke="var(--border)" />
+        <text y={2} textAnchor="middle" fontSize={13} fill="var(--text)" fontWeight={600}>{label}</text>
+      </g>
+    </g>
+  );
+}
+/** Ein künftiger, noch gesperrter Standort/Markt. */
+function FutureNode({ x, y, label }: { x: number; y: number; label: string }) {
+  return (
+    <g transform={`translate(${x},${y})`} opacity={0.6}>
+      <circle r={14} fill="var(--bg-panel-2)" stroke="var(--text-faint)" strokeWidth={2.5} strokeDasharray="4 4" />
+      <text y={5} textAnchor="middle" fontSize={13}>🔒</text>
+      <text y={29} textAnchor="middle" fontSize={11} fill="var(--text-faint)" fontWeight={600}>{label}</text>
     </g>
   );
 }
@@ -167,43 +195,18 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
           )}
 
           {level === 'land' && (
-            <svg viewBox="0 0 700 640" className="km-svg" preserveAspectRatio="xMidYMid meet">
-              <path d="M330,50 L390,70 L375,130 L430,150 L410,215 L470,250 L440,320 L480,400 L420,440 L430,510 L360,575 L330,540 L300,580 L250,545 L275,470 L215,420 L250,340 L200,285 L250,220 L225,150 L295,130 L285,65 Z"
-                fill="var(--bg-panel)" stroke="var(--accent)" strokeWidth={3} opacity={0.95} />
-              <text x={350} y={30} textAnchor="middle" fontSize={22} fill="var(--text)" fontWeight={700}>🇩🇪 Deutschland</text>
-              {/* Dein Sitz */}
-              <g transform="translate(330,300)">
-                <circle r={22} fill="var(--bg-elev)" stroke="var(--good)" strokeWidth={4} />
-                <text y={8} textAnchor="middle" fontSize={22}>🏙️</text>
-                <g transform="translate(0,42)"><rect x={-90} y={-16} width={180} height={26} rx={8} fill="var(--bg-panel)" stroke="var(--border)" /><text y={2} textAnchor="middle" fontSize={14} fill="var(--text)" fontWeight={600}>Deine Stadt (Sitz)</text></g>
-              </g>
-              {/* Künftige Städte */}
-              {[[440,180],[250,470],[430,430]].map(([x, y], i) => (
-                <g key={i} transform={`translate(${x},${y})`} opacity={0.5}>
-                  <circle r={18} fill="var(--bg-panel-2)" stroke="var(--text-faint)" strokeWidth={3} strokeDasharray="4 4" />
-                  <text y={6} textAnchor="middle" fontSize={16}>🔒</text>
-                </g>
-              ))}
+            <svg viewBox={GERMANY_VIEWBOX} className="km-svg" preserveAspectRatio="xMidYMid meet">
+              <path d={GERMANY_PATH} fill="var(--bg-panel)" stroke="var(--accent)" strokeWidth={1.5} opacity={0.95} strokeLinejoin="round" />
+              {GERMANY_CITIES.map((c) => <FutureNode key={c.name} x={c.x} y={c.y} label={c.name} />)}
+              <SeatNode x={GERMANY_SEAT[0]} y={GERMANY_SEAT[1]} emoji="🏙️" label="Deine Stadt" />
             </svg>
           )}
 
           {level === 'kontinent' && (
-            <svg viewBox="0 0 900 640" className="km-svg" preserveAspectRatio="xMidYMid meet">
-              <path d="M120,120 L260,90 L360,140 L470,110 L560,150 L690,120 L780,180 L740,270 L800,340 L720,400 L760,500 L640,540 L520,500 L470,560 L360,520 L300,570 L210,520 L250,430 L160,380 L210,300 L140,240 Z"
-                fill="var(--bg-panel)" stroke="var(--border)" strokeWidth={2} opacity={0.9} />
-              <text x={450} y={40} textAnchor="middle" fontSize={22} fill="var(--text)" fontWeight={700}>🌍 Europa</text>
-              {/* Deutschland hervorgehoben */}
-              <g transform="translate(430,300)">
-                <circle r={26} fill="var(--bg-elev)" stroke="var(--good)" strokeWidth={4} />
-                <text y={9} textAnchor="middle" fontSize={24}>🇩🇪</text>
-                <g transform="translate(0,48)"><rect x={-80} y={-16} width={160} height={26} rx={8} fill="var(--bg-panel)" stroke="var(--border)" /><text y={2} textAnchor="middle" fontSize={14} fill="var(--text)" fontWeight={600}>Deutschland</text></g>
-              </g>
-              {[[220,220],[600,200],[300,440],[650,420],[520,150]].map(([x, y], i) => (
-                <g key={i} transform={`translate(${x},${y})`} opacity={0.5}>
-                  <circle r={18} fill="var(--bg-panel-2)" stroke="var(--text-faint)" strokeWidth={3} strokeDasharray="4 4" />
-                  <text y={6} textAnchor="middle" fontSize={16}>🔒</text>
-                </g>
-              ))}
+            <svg viewBox={EUROPE_VIEWBOX} className="km-svg" preserveAspectRatio="xMidYMid meet">
+              <path d={EUROPE_PATH} fill="var(--bg-panel)" stroke="var(--border)" strokeWidth={1.5} opacity={0.92} strokeLinejoin="round" />
+              {EUROPE_COUNTRIES.map((c) => <FutureNode key={c.name} x={c.x} y={c.y} label={c.name} />)}
+              <SeatNode x={EUROPE_DE[0]} y={EUROPE_DE[1]} emoji="🇩🇪" label="Deutschland" />
             </svg>
           )}
         </div>
