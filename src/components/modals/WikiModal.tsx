@@ -30,6 +30,8 @@ import {
   MONTHLY_RENT,
   NIGHT_SPEED,
   OFFICE_EXPANSION_BASE,
+  CARRY_CAPACITY,
+  CARRY_CAPACITY_CART,
   PALETTE_SIZE,
   PAYMENT_DELAY_DAYS_BY_TYPE,
   PO_LEAD_DAYS,
@@ -278,8 +280,17 @@ const ENTRIES: WikiEntry[] = [
           Fertige Paletten warten in der Abholzone auf den 18-Uhr-LKW.
         </p>
         <p>
+          Beim Herrichten wird die Ware <b>physisch vom Regal zum Packtisch getragen</b>. Eine
+          Kraft trägt max. <b>{CARRY_CAPACITY} Einheiten pro Weg</b> (mit{' '}
+          <b>🛒 Kommissionierwagen {CARRY_CAPACITY_CART}</b>) – größere Aufträge brauchen mehrere
+          Wege und dauern entsprechend länger. Der Wagen halbiert also die Wege UND packt schneller.
+        </p>
+        <p>
           Beim Bauen gilt die <b>Begehbarkeits-Regel</b>: Jedes Objekt braucht eine freie
-          Nachbarseite und darf keinem Nachbarn die letzte nehmen – nichts einmauern.
+          Nachbarseite und darf keinem Nachbarn die letzte nehmen – nichts einmauern. Mit dem{' '}
+          <b>🧹 Abreißen</b>-Werkzeug entfernst du Regale, Tische und Arbeitsplätze wieder und
+          bekommst die Hälfte des Preises zurück (nur wenn sie leer bzw. gerade nicht in Benutzung
+          sind).
         </p>
       </>
     ),

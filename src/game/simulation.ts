@@ -15,6 +15,9 @@ import {
   SLOT_COST,
   PREP_HOURS_PER_UNIT,
   PUTAWAY_HOURS_PER_UNIT,
+  CARRY_CAPACITY,
+  CARRY_CAPACITY_CART,
+  CARRY_TRIP_DAYS,
   SKILL_SPEED_BASELINE,
   SKILL_SPEED_PER_POINT,
   COUNTER_ACCEPT_SLOPE,
@@ -858,10 +861,25 @@ export function skillSpeedFactor(skill: number): number {
 /** Game-days to prepare an order of `quantity` units at `skill`. Quantity-linear
  * (0.3 h/unit at the baseline skill, reduced by the Kommissionier-Station), longer
  * for multi-article customer bundles. */
+/** Units a worker can carry per trip shelf→table (doubled with a picking cart). */
+export function carryCapacity(usesCart: boolean): number {
+  return usesCart ? CARRY_CAPACITY_CART : CARRY_CAPACITY;
+}
+/** Carry trips an order of `quantity` needs — ceil(qty / carry capacity). */
+export function carryLoads(quantity: number, usesCart: boolean): number {
+  return Math.max(1, Math.ceil(quantity / carryCapacity(usesCart)));
+}
+
 function prepDaysFor(quantity: number, skill: number, bundleSize = 1, usesCart = false): number {
   const bundleFactor = 1 + Math.max(0, bundleSize - 1) * PER_ARTICLE_PREP_FACTOR;
   const perUnit = PREP_HOURS_PER_UNIT * (usesCart ? 1 - PACKSTATION_PREP_SPEED : 1);
-  return ((quantity * perUnit) / 24) * skillSpeedFactor(skill) * bundleFactor;
+  const packDays = ((quantity * perUnit) / 24) * skillSpeedFactor(skill) * bundleFactor;
+  // Physical carrying: goods are fetched from the shelf in loads. Only trips
+  // BEYOND the first cost extra walking time, so normal small orders stay at
+  // baseline speed while orders exceeding the carry capacity pay for the extra
+  // runs. A cart doubles capacity → fewer extra trips for big orders.
+  const walkDays = Math.max(0, carryLoads(quantity, usesCart) - 1) * CARRY_TRIP_DAYS;
+  return packDays + walkDays;
 }
 
 /** Workers currently preparing (each occupies one prep table). */
@@ -917,7 +935,8 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
   );
   let tableIndex = 0;
   while (usedTables.has(tableIndex)) tableIndex += 1;
-  worker.task = { kind: 'prep', orderId: order.id, tableIndex, usesCart, totalDays: days, remainingDays: days };
+  const loads = carryLoads(order.quantity, usesCart);
+  worker.task = { kind: 'prep', orderId: order.id, tableIndex, usesCart, loads, totalDays: days, remainingDays: days };
   return null;
 }
 

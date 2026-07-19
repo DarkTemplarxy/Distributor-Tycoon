@@ -206,6 +206,9 @@ export type WorkerTask =
       tableIndex?: number;
       /** This task is using a picking cart (Paket 2) — faster + rendered with one. */
       usesCart?: boolean;
+      /** Number of carry trips shelf→table this order needs (ceil(qty/capacity)),
+       * drives the shuttle animation. */
+      loads?: number;
       totalDays: number;
       remainingDays: number;
     }

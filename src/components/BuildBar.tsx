@@ -95,8 +95,32 @@ export function BuildBar({
           </button>
         );
       })}
+      <button
+        title="Abreißen: Regal/Tisch/Arbeitsplatz anklicken – 50 % des Preises zurück."
+        onClick={() => onSelect(tool === 'demolish' ? null : 'demolish')}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 1,
+          minWidth: 92,
+          padding: '5px 8px',
+          borderRadius: 8,
+          cursor: 'pointer',
+          color: 'var(--text)',
+          background: tool === 'demolish' ? 'rgba(240,109,109,0.24)' : 'rgba(255,255,255,0.05)',
+          border: tool === 'demolish' ? '1px solid var(--bad)' : '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        <span style={{ fontSize: 15 }}>🧹 Abreißen</span>
+        <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>50 % zurück</span>
+      </button>
       <span style={{ fontSize: 12, color: 'var(--text-dim)', marginLeft: 'auto' }}>
-        {tool ? 'Grüne Kachel anklicken zum Platzieren' : 'Werkzeug wählen'}
+        {tool === 'demolish'
+          ? 'Rot markiertes Objekt anklicken zum Abreißen'
+          : tool
+            ? 'Grüne Kachel anklicken zum Platzieren'
+            : 'Werkzeug wählen'}
       </span>
       <button className="btn small" onClick={onExit}>
         Fertig

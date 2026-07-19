@@ -24,6 +24,9 @@ export const INBOUND_SLOT_PRICE = 500;
 /** An office desk (Arbeitsplatz) — seats one office employee. */
 export const DESK_PRICE = 600;
 
+/** Tearing a structure down refunds this fraction of its build price. */
+export const DEMOLISH_REFUND = 0.5;
+
 /** Hall expansion is the only scaling cost: base price for one 2×2 (4-tile)
  * block, rising one step for every 10 expansions bought. */
 export const HALL_EXPANSION_BASE = 2500;
@@ -129,6 +132,20 @@ export const SKILL_SPEED_PER_POINT = 0.01;
 /** Extra prep time per additional article in the same customer order: a bundle of
  * N articles takes (1 + (N-1) * this) longer to prepare. */
 export const PER_ARTICLE_PREP_FACTOR = 0.2;
+
+/**
+ * Physical carry limit: to prepare an order the worker fetches goods from the
+ * shelf in loads. A worker carries at most CARRY_CAPACITY units per trip on foot,
+ * doubled to CARRY_CAPACITY_CART with a Kommissionierwagen. A bigger order needs
+ * more trips (ceil(qty / capacity)), each adding CARRY_TRIP_DAYS of walking — so
+ * the cart both speeds packing AND halves the trips for large orders.
+ */
+export const CARRY_CAPACITY = 80;
+export const CARRY_CAPACITY_CART = 160;
+/** Game-days added per EXTRA carry trip (beyond the first): an order within one
+ * carry costs nothing extra; only orders that exceed the capacity pay for the
+ * additional shelf runs. Keeps normal small orders at baseline speed. */
+export const CARRY_TRIP_DAYS = 0.07;
 
 /** Cost of a single training session. */
 export const TRAINING_COST = 250;

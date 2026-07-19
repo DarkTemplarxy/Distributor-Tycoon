@@ -23,13 +23,15 @@ import { PALETTE_SIZE, SHELF_SLOTS, WORK_END_HOUR, WORK_START_HOUR } from '../ga
 import { dayName, formatClock, hourOf } from '../game/util';
 import type { GameState, ProductId } from '../game/types';
 
-export type BuildTool = 'shelf' | 'table' | 'inbound' | 'expand' | 'desk' | 'officeExpand';
+export type BuildTool = 'shelf' | 'table' | 'inbound' | 'expand' | 'desk' | 'officeExpand' | 'demolish';
 export interface BuildProps {
   tool: BuildTool | null;
   /** Place a single-tile object (shelf/table/inbound) at a grid tile. */
   onPlaceTile: (gx: number, gy: number) => void;
   /** Expand the hall by a 2×2 block (its 4 tiles). */
   onExpand: (block: { gx: number; gy: number }[]) => void;
+  /** Tear down the shelf/table/desk on a grid tile (refund). */
+  onDemolish: (gx: number, gy: number) => void;
 }
 
 // --- Palette ---------------------------------------------------------------
@@ -67,6 +69,8 @@ const C = {
   buildOk: 'rgba(90,210,120,0.42)',
   buildOkEdge: 'rgba(120,240,150,0.9)',
   buildHover: 'rgba(120,240,150,0.7)',
+  demolishHi: 'rgba(240,109,109,0.42)',
+  demolishEdge: 'rgba(255,150,150,0.95)',
 };
 
 const OFFICE_SHIRT: Record<string, string> = {
@@ -214,6 +218,16 @@ function validBuildTiles(state: GameState, tool: BuildTool): { gx: number; gy: n
       }
     }
   }
+  return out;
+}
+
+/** Tiles carrying a tear-down-able structure (shelf, table or desk) — highlighted
+ * red under the demolish tool. */
+function demolishableTiles(state: GameState): { gx: number; gy: number }[] {
+  const out: { gx: number; gy: number }[] = [];
+  for (const s of state.warehouse.shelves) out.push({ gx: s.gx, gy: s.gy });
+  for (const t of state.warehouse.tables) out.push({ gx: t.gx, gy: t.gy });
+  for (const d of state.warehouse.desks) out.push({ gx: d.gx, gy: d.gy });
   return out;
 }
 
@@ -405,6 +419,10 @@ export function IsometricWarehouse({
         const blocks = b.tool === 'expand' ? hallExpansionFrontier(stateRef.current) : officeExpansionFrontier(stateRef.current);
         const block = blocks.find((blk) => blk.some((c) => c.gx === gx && c.gy === gy));
         if (block) b.onExpand(block);
+      } else if (b.tool === 'demolish') {
+        // Forward any click on a structure; the action validates (in use? holds
+        // stock?) and reports why a tear-down is refused.
+        if (demolishableTiles(stateRef.current).some((t) => t.gx === gx && t.gy === gy)) b.onDemolish(gx, gy);
       } else if (zoneMatchesTool(stateRef.current, b.tool, gx, gy)) {
         // Forward every in-zone click — the action validates and reports why an
         // invalid placement fails (no silent refusal).
@@ -506,8 +524,24 @@ function updateAnim(dt: number, state: GameState, anim: Anim) {
       // The task carries its exclusive table index — each prepping worker stands
       // at their OWN table, stably (no re-shuffling when the working set changes).
       const t = tables[e.task.tableIndex ?? 0] ?? { gx: b.minGx + 2, gy: b.maxGy - 1 };
-      tgt = { gx: t.gx + 0.1, gy: t.gy + 0.7 };
-      carrying = true;
+      const tablePos = { gx: t.gx + 0.1, gy: t.gy + 0.7 };
+      // Physical warenfluss: the worker shuttles between the nearest shelf (fetch)
+      // and their table (pack), once per carry load. Empty on the way to the
+      // shelf, carrying on the way back — the goods visibly move shelf → table.
+      const shelves = state.warehouse.shelves;
+      let shelfPos = tablePos;
+      if (shelves.length) {
+        const near = shelves.reduce((best, s) =>
+          Math.abs(s.gx - t.gx) + Math.abs(s.gy - t.gy) < Math.abs(best.gx - t.gx) + Math.abs(best.gy - t.gy) ? s : best,
+        );
+        shelfPos = { gx: near.gx, gy: near.gy + 0.5 };
+      }
+      const loads = e.task.loads ?? 1;
+      const prog = e.task.totalDays > 0 ? 1 - e.task.remainingDays / e.task.totalDays : 0;
+      const frac = (prog * loads) % 1; // position within the current trip
+      const fetching = frac < 0.5; // first half: go to shelf; second half: to table
+      tgt = fetching ? shelfPos : tablePos;
+      carrying = !fetching; // only carrying goods on the return leg
     } else if (e.task?.kind === 'putaway') {
       // Same for the inbound slot the putaway task works at.
       const t = inbound[e.task.slotIndex ?? 0] ?? inbound[0] ?? { gx: b.minGx, gy: b.maxGy };
@@ -1022,6 +1056,7 @@ function draw(
     // Dim the whole hall.
     ctx.fillStyle = 'rgba(6,10,14,0.45)';
     ctx.fillRect(0, 0, cw, ch);
+    const demolish = tool === 'demolish';
     if (blockTool) {
       for (const block of blocksFor()) {
         for (const t of block) tileQuad(ctx, v, t.gx, t.gy, C.buildOk, false);
@@ -1029,6 +1064,8 @@ function draw(
         const gy = Math.min(...block.map((t) => t.gy));
         outlineTile(ctx, v, gx, gy, 2, C.buildOkEdge);
       }
+    } else if (demolish) {
+      for (const t of demolishableTiles(state)) tileQuad(ctx, v, t.gx, t.gy, C.demolishHi, false);
     } else {
       for (const t of validBuildTiles(state, tool)) tileQuad(ctx, v, t.gx, t.gy, C.buildOk, false);
     }
@@ -1040,6 +1077,10 @@ function draw(
           const gx = Math.min(...block.map((t) => t.gx));
           const gy = Math.min(...block.map((t) => t.gy));
           outlineTile(ctx, v, gx, gy, 2, C.buildHover, 2.5);
+        }
+      } else if (demolish) {
+        if (demolishableTiles(state).some((t) => t.gx === hover.gx && t.gy === hover.gy)) {
+          outlineTile(ctx, v, hover.gx, hover.gy, 1, C.demolishEdge, 2.5);
         }
       } else if (validBuildTiles(state, tool).some((t) => t.gx === hover.gx && t.gy === hover.gy)) {
         outlineTile(ctx, v, hover.gx, hover.gy, 1, C.buildHover, 2.5);

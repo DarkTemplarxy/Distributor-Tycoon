@@ -7,6 +7,7 @@
 import {
   CONTRACT_PREMIUM,
   CONTRACT_WEEKS,
+  DEMOLISH_REFUND,
   DESK_PRICE,
   EXPRESS_PO_LEAD_DAYS,
   EXPRESS_RESTOCK_SURCHARGE,
@@ -53,6 +54,8 @@ import {
   releaseWorkerTask,
   repriceAcceptChance,
   resolveDemandRejection,
+  shelfCapacity,
+  shelfUsed,
   spend,
   supplierUnitPrice,
   tryPrepareOrder,
@@ -689,6 +692,53 @@ export function buildTable(state: GameState, gx: number, gy: number): ActionResu
   state.warehouse.tables.push({ gx, gy });
   notify(state, `🔧 Vorbereitungstisch gebaut (${TABLE_PRICE}€) – mehr paralleles Herrichten.`, 'info');
   return { ok: true };
+}
+
+/** Tear down the shelf, table or desk on a tile and refund part of its price.
+ * Refuses (with a reason) if the structure is in use or holding stock. */
+export function demolishAt(state: GameState, gx: number, gy: number): ActionResult {
+  const w = state.warehouse;
+  const refundBack = (price: number) => {
+    state.cash += Math.round(price * DEMOLISH_REFUND);
+  };
+
+  const shelf = w.shelves.find((s) => s.gx === gx && s.gy === gy);
+  if (shelf) {
+    // Removing a shelf must not strand stock: capacity after removal ≥ used.
+    if (shelfUsed(state) > shelfCapacity(state) - SHELF_SLOTS * PALETTE_SIZE) {
+      return { ok: false, message: 'Regal (mit-)belegt – erst Bestand abverkaufen/umlagern, sonst geht Ware verloren.' };
+    }
+    w.shelves = w.shelves.filter((s) => s !== shelf);
+    refundBack(SHELF_PRICE);
+    notify(state, `🧹 Regal abgerissen – ${Math.round(SHELF_PRICE * DEMOLISH_REFUND)}€ zurück.`, 'info');
+    return { ok: true };
+  }
+
+  const table = w.tables.find((t) => t.gx === gx && t.gy === gy);
+  if (table) {
+    // Table indices are referenced by active prep tasks — only remove when idle.
+    if (state.employees.some((e) => e.task?.kind === 'prep')) {
+      return { ok: false, message: 'Es wird gerade hergerichtet – erst abwarten, dann Tisch abreißen.' };
+    }
+    w.tables = w.tables.filter((t) => t !== table);
+    refundBack(TABLE_PRICE);
+    notify(state, `🧹 Vorbereitungstisch abgerissen – ${Math.round(TABLE_PRICE * DEMOLISH_REFUND)}€ zurück.`, 'info');
+    return { ok: true };
+  }
+
+  const desk = w.desks.find((d) => d.gx === gx && d.gy === gy);
+  if (desk) {
+    // A desk in use seats an office employee — free one first.
+    if (freeDesks(state) <= 0) {
+      return { ok: false, message: 'Alle Arbeitsplätze belegt – erst Büro-Personal entlassen.' };
+    }
+    w.desks = w.desks.filter((d) => d !== desk);
+    refundBack(DESK_PRICE);
+    notify(state, `🧹 Arbeitsplatz abgerissen – ${Math.round(DESK_PRICE * DEMOLISH_REFUND)}€ zurück.`, 'info');
+    return { ok: true };
+  }
+
+  return { ok: false, message: 'Hier steht nichts zum Abreißen.' };
 }
 
 /** Add an inbound pallet slot (Wareneingang +1) on a free ramp tile. */

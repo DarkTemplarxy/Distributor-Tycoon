@@ -8,7 +8,7 @@ import { BuildBar } from './components/BuildBar';
 import { OpsCockpit } from './components/OpsCockpit';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
-import { buildShelf, buildTable, buildInboundSlot, buildDesk, expandHall, expandOffice } from './game/actions';
+import { buildShelf, buildTable, buildInboundSlot, buildDesk, demolishAt, expandHall, expandOffice } from './game/actions';
 import { isInAssortment, notify } from './game/simulation';
 import {
   LARGE_UNLOCK_MONTHLY,
@@ -260,6 +260,11 @@ export function App() {
                       mutate((s) => {
                         if (buildTool === 'officeExpand') expandOffice(s, block);
                         else expandHall(s, block);
+                      }),
+                    onDemolish: (gx, gy) =>
+                      mutate((s) => {
+                        const r = demolishAt(s, gx, gy);
+                        if (!r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
                       }),
                   }
                 : undefined
