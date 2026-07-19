@@ -188,6 +188,23 @@ export const ROLE_EMOJI: Record<Role, string> = {
  * Auto-Betrieb hält eine Kassen-Reserve, damit ein delegierter Standort die Firma
  * nie leer räumt.
  */
+/**
+ * Konzern gründen (ab 2 Standorten): der Übergang vom einzelnen Betrieb zur
+ * Unternehmensgruppe mit eigener Zentrale. Die Gründung kostet einmalig — danach
+ * eröffnet die Konzernzentrale neue, konzernweite Führungsrollen (siehe unten;
+ * ihre konkrete Wirkung wird später definiert).
+ */
+export const KONZERN_FOUND_COST = 50_000;
+
+/** Künftige Konzern-Führungsrollen — heute Teaser/Platzhalter in der Zentrale,
+ * ihre Mechanik folgt in einem späteren Paket. */
+export const KONZERN_PLANNED_ROLES: { emoji: string; title: string; blurb: string }[] = [
+  { emoji: '💰', title: 'Finanzvorstand (CFO)', blurb: 'Steuert Kredite, Budget & Investitionen konzernweit.' },
+  { emoji: '🚚', title: 'Logistik-Vorstand', blurb: 'Optimiert Transfers & Beschaffung über alle Standorte.' },
+  { emoji: '📣', title: 'Marketing-Vorstand', blurb: 'Konzernweite Kampagnen vergrößern jeden Markt.' },
+  { emoji: '🌍', title: 'Expansions-Manager', blurb: 'Erschließt neue Städte und – später – Länder.' },
+];
+
 export const STANDORTLEITER_AUTO = {
   /** Untergrenze der Kassen-Reserve; darüber skaliert sie mit dem Monatsumsatz. */
   RESERVE_FLOOR: 15_000,

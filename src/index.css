@@ -1102,3 +1102,39 @@ label.fld {
   .konzern-crumbs { margin: 0; }
   .konzern-header { flex-wrap: wrap; }
 }
+
+/* Transfer-Panel auf der Stadtkarte */
+.km-transfer { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.km-transfer h4 { margin: 0 0 10px; font-size: 14px; }
+.km-tx-dir { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.km-tx-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.km-input {
+  width: 100%;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.km-tx-row .km-input { width: 90px; }
+.km-transfer .btn { width: 100%; }
+
+/* Konzern gründen + Zentrale */
+.konzern-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 10px 16px;
+  background: linear-gradient(90deg, rgba(124,92,255,0.18), rgba(90,160,255,0.12));
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.konzern-zentrale { flex: 1; padding: 22px 28px; overflow-y: auto; }
+.km-zentrale-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.km-roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+.km-role {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-panel-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+}
+.km-role-emoji { font-size: 30px; opacity: 0.85; }
+.km-role-title { font-weight: 700; font-size: 14px; margin-bottom: 2px; }

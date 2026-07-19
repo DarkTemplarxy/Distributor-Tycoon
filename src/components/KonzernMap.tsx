@@ -10,6 +10,7 @@ import { useGame } from '../state/GameProvider';
 import {
   warehouseOf,
   shelfFree,
+  shelfStock,
   normalShelfCapacity,
   normalShelfUsed,
   siteOfOrder,
@@ -18,13 +19,17 @@ import {
   playerRank,
   marketRanking,
 } from '../game/simulation';
-import { siteManager, siteWeeklyVolume, hireEmployee } from '../game/actions';
-import { SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT, BRANCH_UNLOCK_MONTHLY } from '../game/constants';
+import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundKonzern } from '../game/actions';
+import {
+  SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT, BRANCH_UNLOCK_MONTHLY,
+  TRANSFER_DAYS, TRANSFER_COST_PER_PALLET, PALETTE_SIZE,
+  KONZERN_FOUND_COST, KONZERN_PLANNED_ROLES,
+} from '../game/constants';
 import {
   GERMANY_VIEWBOX, GERMANY_PATH, GERMANY_SEAT, GERMANY_CITIES,
   EUROPE_VIEWBOX, EUROPE_PATH, EUROPE_DE, EUROPE_COUNTRIES,
 } from './mapPaths';
-import type { GameState, SiteId } from '../game/types';
+import type { GameState, ProductId, SiteId } from '../game/types';
 
 const eur = (n: number) => Math.round(n).toLocaleString('de-DE');
 const LEITER_UPFRONT = ROLE_SALARY.standortleiter * HIRE_WEEKS_UPFRONT;
@@ -36,8 +41,16 @@ const LEVELS: { id: Level; icon: string; label: string }[] = [
   { id: 'kontinent', icon: '🌍', label: 'Europa' },
 ];
 
+/** Feste Bildschirm-Positionen der Standort-Pins auf der Stadtkarte (viewBox 1000×640).
+ * Route und LKW nutzen dieselben Punkte, damit alles deckungsgleich sitzt. */
+const PIN_XY: Record<SiteId, { x: number; y: number }> = {
+  hq: { x: 300, y: 230 },
+  sued: { x: 690, y: 410 },
+};
+
 interface Kpis {
   customers: number;
+  pending: number;
   vol: number;
   crew: number;
   tables: number;
@@ -57,13 +70,14 @@ function siteKpis(state: GameState, site: SiteId): Kpis {
   const shelfPct = shelfCap > 0 ? (normalShelfUsed(state, site) / shelfCap) * 100 : 0;
   const vol = siteWeeklyVolume(state, site);
 
-  const lateHere = state.orders.filter((o) => o.status !== 'delivered' && o.late && siteOfOrder(state, o) === site).length;
+  const ordersHere = state.orders.filter((o) => o.status !== 'delivered' && siteOfOrder(state, o) === site);
+  const lateHere = ordersHere.filter((o) => o.late).length;
   const alarms: string[] = [];
   if (lateHere > 0) alarms.push(`⏰ ${lateHere} verspätete Aufträge`);
   if (shelfFree(state, site) < Math.max(120, vol * 0.4)) alarms.push('📦 Regalplatz knapp');
   if (site === 'hq' && coldChainGap(state)) alarms.push('❄️ kein Kühlregal');
   if (regionCust.length > 0 && crew.length === 0) alarms.push('👷 keine Lagerkraft');
-  return { customers: regionCust.length, vol, crew: crew.length, tables: w.tables.length, avgSkill, service, shelfPct, alarms };
+  return { customers: regionCust.length, pending: ordersHere.length, vol, crew: crew.length, tables: w.tables.length, avgSkill, service, shelfPct, alarms };
 }
 
 /** A KPI figure with a label. */
@@ -76,12 +90,13 @@ function Kpi({ label, value, tone }: { label: string; value: string; tone?: 'goo
   );
 }
 
-/** A location pin on the city map. */
+/** A live location pin on the city map: ring colour = service, badges for open
+ * orders and alarms, so the map communicates operational status at a glance. */
 function CityPin({
-  x, y, emoji, name, delegated, service, selected, locked, onClick,
+  x, y, emoji, name, delegated, service, selected, locked, pending = 0, alarms = 0, onClick,
 }: {
   x: number; y: number; emoji: string; name: string; delegated: boolean;
-  service: number; selected: boolean; locked?: boolean; onClick: () => void;
+  service: number; selected: boolean; locked?: boolean; pending?: number; alarms?: number; onClick: () => void;
 }) {
   const ring = locked ? 'var(--text-faint)' : service >= 4 ? 'var(--good)' : service > 0 && service < 3 ? 'var(--bad)' : 'var(--accent)';
   return (
@@ -90,11 +105,49 @@ function CityPin({
       <circle r={30} fill="var(--bg-elev)" stroke={ring} strokeWidth={4} />
       <text y={10} textAnchor="middle" fontSize={30} opacity={locked ? 0.5 : 1}>{locked ? '🔒' : emoji}</text>
       {delegated && !locked && <text x={22} y={-18} textAnchor="middle" fontSize={20}>🧑‍✈️</text>}
+      {!locked && pending > 0 && (
+        <g transform="translate(-26,-20)">
+          <circle r={12} fill="var(--accent)" />
+          <text y={4} textAnchor="middle" fontSize={13} fill="#fff" fontWeight={700}>{pending}</text>
+        </g>
+      )}
+      {!locked && alarms > 0 && (
+        <g transform="translate(26,20)">
+          <circle r={11} fill="var(--bad)" />
+          <text y={4} textAnchor="middle" fontSize={13} fill="#fff" fontWeight={700}>!</text>
+        </g>
+      )}
       <g transform="translate(0,52)">
         <rect x={-58} y={-16} width={116} height={26} rx={8} fill="var(--bg-panel)" stroke="var(--border)" />
         <text y={2} textAnchor="middle" fontSize={15} fill="var(--text)" fontWeight={600}>{name}</text>
       </g>
     </g>
+  );
+}
+
+/** In-flight goods transfers drawn as trucks moving along the Nord↔Süd route. */
+function TransferTrucks({ state }: { state: GameState }) {
+  const transfers = state.transfers ?? [];
+  if (transfers.length === 0) return null;
+  return (
+    <>
+      {transfers.map((t) => {
+        const from = PIN_XY[t.fromSite];
+        const to = PIN_XY[t.toSite];
+        // progress 0..1 from departure to arrival (arrivalDay = departure + TRANSFER_DAYS)
+        const remain = (t.arrivalDay - state.totalDays) / Math.max(1, TRANSFER_DAYS);
+        const p = Math.min(1, Math.max(0, 1 - remain));
+        const tx = from.x + (to.x - from.x) * p;
+        const ty = from.y + (to.y - from.y) * p;
+        const flip = to.x < from.x;
+        return (
+          <g key={t.id} transform={`translate(${tx},${ty})`}>
+            <text textAnchor="middle" y={-14} fontSize={22} transform={flip ? 'scale(-1,1)' : undefined}>🚚</text>
+            <text textAnchor="middle" y={4} fontSize={12} fill="var(--text-dim)">{t.quantity}×</text>
+          </g>
+        );
+      })}
+    </>
   );
 }
 
@@ -127,6 +180,14 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   const branchOpen = !!state.branchWarehouse;
   const [level, setLevel] = useState<Level>('stadt');
   const [selected, setSelected] = useState<SiteId | null>('hq');
+  // Transfer-Formular (Waren zwischen den Standorten verschieben)
+  const [txFrom, setTxFrom] = useState<SiteId>('hq');
+  const [txProduct, setTxProduct] = useState<ProductId | ''>('');
+  const [txQty, setTxQty] = useState(50);
+  const [showZentrale, setShowZentrale] = useState(false);
+
+  const konzern = state.konzern;
+  const foundKonzernNow = () => mutate((s) => foundKonzern(s));
 
   const share = marketShare(state);
   const rank = playerRank(state);
@@ -136,6 +197,13 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   const enter = (site: SiteId) => { onEnterSite(site); onClose(); };
 
   const sel = selected && (selected === 'hq' || branchOpen) ? selected : null;
+
+  // Transfer-Ableitungen
+  const txTo: SiteId = txFrom === 'hq' ? 'sued' : 'hq';
+  const txProducts = branchOpen ? state.products.filter((p) => shelfStock(p, txFrom) > 0) : [];
+  const txStock = txProduct ? shelfStock(state.products.find((p) => p.id === txProduct)!, txFrom) : 0;
+  const txCost = Math.ceil(Math.max(0, txQty) / PALETTE_SIZE) * TRANSFER_COST_PER_PALLET;
+  const doTransfer = () => { if (txProduct) mutate((s) => transferStock(s, txProduct, txQty, txFrom, txTo)); };
 
   return (
     <div className="konzern-screen">
@@ -149,12 +217,56 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
           ))}
         </div>
         <div className="konzern-cash">
+          {konzern && (
+            <button className={`konzern-crumb${showZentrale ? ' active' : ''}`} onClick={() => setShowZentrale((v) => !v)}>
+              🏛️ Zentrale
+            </button>
+          )}
           <span className="pill">Marktanteil {(share * 100).toFixed(1)}% · Platz {rank}/{totalRanks}</span>
           <span className="km-money">💶 {eur(state.cash)}</span>
         </div>
       </header>
 
+      {branchOpen && !konzern && (
+        <div className="konzern-banner">
+          <span>🏛️ <b>Zwei Standorte!</b> Mach aus deinen Betrieben eine Unternehmensgruppe mit eigener Zentrale.</span>
+          <button className="btn primary" disabled={state.cash < KONZERN_FOUND_COST} onClick={foundKonzernNow}
+            title={state.cash < KONZERN_FOUND_COST ? `Kostet ${eur(KONZERN_FOUND_COST)}€` : undefined}>
+            Konzern gründen ({eur(KONZERN_FOUND_COST)}€)
+          </button>
+        </div>
+      )}
+
       <div className="konzern-body">
+        {showZentrale && konzern ? (
+          <div className="konzern-zentrale">
+            <div className="km-zentrale-head">
+              <div>
+                <div className="km-side-title">🏛️ {konzern.name}</div>
+                <div className="sub">Konzern gegründet in Woche {konzern.foundedWeek} · {branchOpen ? '2' : '1'} Standorte</div>
+              </div>
+              <button className="btn ghost" onClick={() => setShowZentrale(false)}>← Zur Karte</button>
+            </div>
+            <h3 style={{ marginTop: 18 }}>Konzern-Büro</h3>
+            <p className="hint">
+              Die Zentrale steuert künftig den ganzen Konzern. Diese Führungsrollen werden in einem
+              kommenden Update mit Leben gefüllt – hier kannst du sie dann besetzen.
+            </p>
+            <div className="km-roles">
+              {KONZERN_PLANNED_ROLES.map((r) => (
+                <div key={r.title} className="km-role">
+                  <div className="km-role-emoji">{r.emoji}</div>
+                  <div className="grow">
+                    <div className="km-role-title">{r.title}</div>
+                    <div className="sub">{r.blurb}</div>
+                  </div>
+                  <span className="pill">🔒 folgt</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="konzern-map">
           {level === 'stadt' && (
             <svg viewBox="0 0 1000 640" className="km-svg" preserveAspectRatio="xMidYMid meet">
@@ -173,24 +285,35 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
               <text x={250} y={95} fontSize={22} fill="var(--text-faint)" fontWeight={700}>NORD</text>
               <text x={650} y={560} fontSize={22} fill="var(--text-faint)" fontWeight={700}>SÜD</text>
 
+              {/* Transfer-Route Nord↔Süd (erst mit offenem Standort Süd) */}
+              {branchOpen && (
+                <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={PIN_XY.sued.x} y2={PIN_XY.sued.y}
+                  stroke="var(--accent)" strokeWidth={3} strokeDasharray="10 8" opacity={0.45} />
+              )}
+
               {/* Standort Nord (immer) */}
               {(() => {
                 const k = siteKpis(state, 'hq');
                 return (
-                  <CityPin x={300} y={230} emoji={SITE_META.hq.emoji} name={SITE_META.hq.name}
-                    delegated={!!siteManager(state, 'hq')} service={k.service} selected={sel === 'hq'} onClick={() => setSelected('hq')} />
+                  <CityPin x={PIN_XY.hq.x} y={PIN_XY.hq.y} emoji={SITE_META.hq.emoji} name={SITE_META.hq.name}
+                    delegated={!!siteManager(state, 'hq')} service={k.service} pending={k.pending} alarms={k.alarms.length}
+                    selected={sel === 'hq'} onClick={() => setSelected('hq')} />
                 );
               })()}
               {/* Standort Süd (offen → echt, sonst gesperrt) */}
               {branchOpen ? (() => {
                 const k = siteKpis(state, 'sued');
                 return (
-                  <CityPin x={690} y={410} emoji={SITE_META.sued.emoji} name={SITE_META.sued.name}
-                    delegated={!!siteManager(state, 'sued')} service={k.service} selected={sel === 'sued'} onClick={() => setSelected('sued')} />
+                  <CityPin x={PIN_XY.sued.x} y={PIN_XY.sued.y} emoji={SITE_META.sued.emoji} name={SITE_META.sued.name}
+                    delegated={!!siteManager(state, 'sued')} service={k.service} pending={k.pending} alarms={k.alarms.length}
+                    selected={sel === 'sued'} onClick={() => setSelected('sued')} />
                 );
               })() : (
-                <CityPin x={690} y={410} emoji={SITE_META.sued.emoji} name="Standort Süd" delegated={false} service={0} selected={false} locked onClick={() => setSelected(null)} />
+                <CityPin x={PIN_XY.sued.x} y={PIN_XY.sued.y} emoji={SITE_META.sued.emoji} name="Standort Süd" delegated={false} service={0} selected={false} locked onClick={() => setSelected(null)} />
               )}
+
+              {/* Laufende Transfers als fahrende LKW */}
+              {branchOpen && <TransferTrucks state={state} />}
             </svg>
           )}
 
@@ -213,7 +336,8 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
 
         <aside className="konzern-side">
           {level === 'stadt' ? (
-            sel ? (() => {
+            <>
+            {sel ? (() => {
               const meta = SITE_META[sel];
               const k = siteKpis(state, sel);
               const leiter = siteManager(state, sel);
@@ -260,7 +384,35 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                 <p className="sub">Ab {Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz kannst du ihn über <b>🏢 Ausbau</b> eröffnen – dann erscheint er hier auf der Karte.</p>
                 <button className="btn" onClick={() => setSelected('hq')}>Hauptlager Nord ansehen</button>
               </div>
-            )
+            )}
+            {branchOpen && (
+              <div className="km-transfer">
+                <h4>🚚 Waren transferieren</h4>
+                <div className="km-tx-dir">
+                  <span className="pill">{SITE_META[txFrom].emoji} {SITE_META[txFrom].short}</span>
+                  <button className="btn small ghost" title="Richtung umkehren" onClick={() => { setTxFrom(txTo); setTxProduct(''); }}>⇄</button>
+                  <span className="pill">{SITE_META[txTo].emoji} {SITE_META[txTo].short}</span>
+                </div>
+                <select className="km-input" value={txProduct} onChange={(e) => setTxProduct(e.target.value as ProductId)}>
+                  <option value="">Produkt wählen…</option>
+                  {txProducts.map((p) => (
+                    <option key={p.id} value={p.id}>{p.emoji} {p.name} – {shelfStock(p, txFrom)}× im Regal</option>
+                  ))}
+                </select>
+                {txProducts.length === 0 && <p className="sub">Kein Regalbestand in {SITE_META[txFrom].short} zum Verschieben.</p>}
+                <div className="km-tx-row">
+                  <input className="km-input" type="number" min={1} value={txQty}
+                    onChange={(e) => setTxQty(Math.max(1, Math.floor(+e.target.value) || 0))} />
+                  <span className="sub">{Math.ceil(Math.max(0, txQty) / PALETTE_SIZE)} Paletten · {eur(txCost)}€</span>
+                </div>
+                <button className="btn primary" disabled={!txProduct || txQty < 1 || txQty > txStock || state.cash < txCost}
+                  onClick={doTransfer}
+                  title={txProduct && txQty > txStock ? `Nur ${txStock}× verfügbar` : undefined}>
+                  Senden ({SITE_META[txFrom].short} → {SITE_META[txTo].short})
+                </button>
+              </div>
+            )}
+            </>
           ) : (
             <div className="km-hint">
               <p><b>{level === 'land' ? '🇩🇪 Landesansicht' : '🌍 Kontinentansicht'}</b></p>
@@ -273,6 +425,8 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
             </div>
           )}
         </aside>
+        </>
+        )}
       </div>
     </div>
   );

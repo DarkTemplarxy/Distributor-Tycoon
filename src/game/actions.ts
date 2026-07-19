@@ -30,6 +30,7 @@ import {
   SHELF_PRICE,
   SLOT_COST,
   SHELF_SLOTS,
+  KONZERN_FOUND_COST,
   STANDORTLEITER_AUTO,
   STRATEGY_COOLDOWN_WEEKS,
   supplierDeliversTo,
@@ -1009,6 +1010,29 @@ export function expandOffice(state: GameState, block: { gx: number; gy: number }
 // läuft pro Sim-Tick aus dem Treiber (GameProvider / Harness), ganz ohne UI — genau
 // so, wie die ganze Wirtschaft schon headless im Balancing-Harness läuft.
 // ============================================================================
+
+/**
+ * Konzern gründen — ab 2 Standorten macht der Spieler aus seinen Betrieben eine
+ * Unternehmensgruppe mit eigener Zentrale. Einmalige Kosten; danach stehen (in
+ * späteren Paketen) konzernweite Führungsrollen bereit. Idempotent-sicher.
+ */
+export function foundKonzern(state: GameState): ActionResult {
+  if (state.konzern) return { ok: false, message: 'Dein Konzern besteht bereits.' };
+  if (!branchOpen(state)) {
+    return { ok: false, message: 'Du brauchst mindestens 2 Standorte, um einen Konzern zu gründen.' };
+  }
+  if (state.cash + availableCredit(state) < KONZERN_FOUND_COST) {
+    return { ok: false, message: `Die Gründung kostet ${KONZERN_FOUND_COST.toLocaleString('de-DE')}€.` };
+  }
+  spend(state, KONZERN_FOUND_COST);
+  state.konzern = { foundedWeek: weekOf(state.totalDays), name: 'Deine Unternehmensgruppe' };
+  notify(
+    state,
+    `🏛️ Konzern gegründet! Deine Standorte bilden jetzt eine Unternehmensgruppe mit eigener Konzernzentrale. Neue Führungsrollen im Büro folgen bald.`,
+    'success',
+  );
+  return { ok: true };
+}
 
 /** Der Standortleiter eines Standorts (führt ihn automatisch), falls vorhanden. */
 export function siteManager(state: GameState, site: SiteId): GameState['employees'][number] | undefined {

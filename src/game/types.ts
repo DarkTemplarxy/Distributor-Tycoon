@@ -505,6 +505,14 @@ export interface GameState {
   /** Laufende Waren-Transfers zwischen Standorten (L3). */
   transfers?: Transfer[];
 
+  /** Gegründeter Konzern (ab 2 Standorten): macht aus den Betrieben eine
+   * Unternehmensgruppe mit eigener Zentrale/Büro. Undefined = noch nicht gegründet.
+   * Optional → kein SAVE-Bump, alte Spielstände bleiben gültig. */
+  konzern?: {
+    foundedWeek: number;
+    name: string;
+  };
+
   stats: GameStats;
   /** Progress on "Onkels Notizbuch" milestones (see MILESTONE_DEFS). Checks run
    * once the tutorial has ended. */

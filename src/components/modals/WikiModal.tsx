@@ -261,8 +261,11 @@ const ENTRIES: WikiEntry[] = [
           Bedarf ein, baut Packtische/Regale/Kühlzone/Rampe aus und <b>trainiert die Crew</b> — alles
           automatisch im Hintergrund, auch wenn du gerade woanders bist. Für den <b>Nachschub sorgt
           weiterhin der Einkäufer</b> zentral, also gib einem delegierten Standort genügend
-          Einkäufer-Kapazität. So wächst du vom Hands-on-Lager zum Konzern, ohne im Mikromanagement zu
-          ersticken.
+          Einkäufer-Kapazität. Auf der Stadt-Karte kannst du außerdem <b>Waren per Klick zwischen Nord
+          & Süd transferieren</b> (laufende Transfers fahren als 🚚 auf der Route), und ab zwei
+          Standorten <b>deinen Konzern gründen</b> – das eröffnet eine <b>Konzernzentrale mit Büro</b>,
+          in der künftige Führungsrollen sitzen. So wächst du vom Hands-on-Lager zum Konzern, ohne im
+          Mikromanagement zu ersticken.
         </p>
       </>
     ),
