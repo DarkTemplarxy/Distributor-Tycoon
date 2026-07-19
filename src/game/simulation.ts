@@ -1259,7 +1259,11 @@ function processWeeklyOrder(state: GameState, week: number): void {
   }
 
   // Automatic: the Einkäufer covers next week's fixed demand (the deficit),
-  // trimmed to budget — no cushion, exactly what the subscriptions need.
+  // trimmed to budget. The player can instruct a safety buffer (buyerOrderBuffer,
+  // e.g. +5 %) that is ordered ON TOP of the deficit as a cushion against
+  // demand spikes/spoilage — self-correcting, since next week's deficit sees the
+  // leftover stock.
+  const buffer = Math.max(0, state.settings.buyerOrderBuffer ?? 0);
   let budget = state.cash + availableCredit(state);
   const items: { productId: ProductId; quantity: number }[] = [];
   for (const product of state.products) {
@@ -1267,7 +1271,8 @@ function processWeeklyOrder(state: GameState, week: number): void {
     if (outlook.deficit <= 0) continue;
     const sp = state.supplier.products.find((s) => s.productId === product.id);
     if (!sp) continue;
-    const affordable = Math.min(outlook.deficit, Math.floor(budget / sp.price));
+    const target = Math.ceil(outlook.deficit * (1 + buffer));
+    const affordable = Math.min(target, Math.floor(budget / sp.price));
     if (affordable <= 0) continue;
     items.push({ productId: product.id, quantity: affordable });
     budget -= affordable * sp.price;
@@ -1277,9 +1282,10 @@ function processWeeklyOrder(state: GameState, week: number): void {
     const summary = po.items
       .map((i) => `${i.quantity}× ${getProduct(state, i.productId).name}`)
       .join(', ');
+    const bufNote = buffer > 0 ? ` (inkl. +${Math.round(buffer * 100)}% Puffer)` : '';
     notify(
       state,
-      `✓ Einkäufer deckt die fixe Nachfrage: ${summary} (${Math.round(po.totalCost)}€) – Lieferung nächsten Montag.`,
+      `✓ Einkäufer deckt die fixe Nachfrage${bufNote}: ${summary} (${Math.round(po.totalCost)}€) – Lieferung nächsten Montag.`,
       'success',
     );
   }

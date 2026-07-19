@@ -64,16 +64,37 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="two-col" style={{ marginBottom: 16 }}>
-        <div className="row" style={{ padding: '8px 10px' }}>
+        <div className="row" style={{ padding: '8px 10px', flexWrap: 'wrap' }}>
           <div className="grow">
             <div className="title" style={{ fontSize: 13 }}>Einkäufer</div>
             <div className="sub">
               {state.employees.some((e) => e.role === 'einkaeufer')
-                ? 'Verhandelt Preiserhöhungen'
-                : 'Keiner – volle Preiserhöhungen'}
+                ? 'Bestellt automatisch nach & verhandelt Preiserhöhungen'
+                : 'Keiner – volle Preiserhöhungen, manuelle Bestellung'}
             </div>
           </div>
           <span className="pill">{state.employees.filter((e) => e.role === 'einkaeufer').length}</span>
+          {state.employees.some((e) => e.role === 'einkaeufer') && (
+            <div
+              style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}
+              title="Der Einkäufer bestellt diesen Anteil ZUSÄTZLICH zum Wochenbedarf als Sicherheitspuffer gegen Nachfragespitzen und Verderb. Mehr Puffer = weniger Fehlmengen, aber mehr Lagerbestand und Kapitalbindung."
+            >
+              <span className="sub" style={{ minWidth: 116 }}>📋 Bestell-Anweisung:</span>
+              <span className="sub">Puffer auf die Bestellung</span>
+              {[0, 0.05, 0.1, 0.15, 0.2].map((b) => {
+                const active = Math.abs((state.settings.buyerOrderBuffer ?? 0) - b) < 0.001;
+                return (
+                  <button
+                    key={b}
+                    className={`btn small${active ? ' primary' : ' ghost'}`}
+                    onClick={() => mutate((s) => (s.settings.buyerOrderBuffer = b))}
+                  >
+                    +{Math.round(b * 100)}%
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div
           className="row"

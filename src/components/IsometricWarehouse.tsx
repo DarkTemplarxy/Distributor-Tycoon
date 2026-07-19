@@ -236,12 +236,22 @@ function shade(hex: string, f: number): string {
   return `rgb(${r | 0},${g | 0},${bl | 0})`;
 }
 
-export function IsometricWarehouse({ build }: { build?: BuildProps }) {
+export function IsometricWarehouse({
+  build,
+  onOpenOffice,
+}: {
+  build?: BuildProps;
+  /** Left-click on an office tile (outside build mode) — go see the office
+   * staff (opens the Personal screen). */
+  onOpenOffice?: () => void;
+}) {
   const { state } = useGame();
   const stateRef = useRef(state);
   stateRef.current = state;
   const buildRef = useRef(build);
   buildRef.current = build;
+  const openOfficeRef = useRef(onOpenOffice);
+  openOfficeRef.current = onOpenOffice;
   const viewRef = useRef<View>({ ox: 0, oy: 0, s: 1 });
   // Persistent camera (world-space center + scale). Unlike the old per-frame
   // auto-fit, the scale stays fixed after the initial fit, so building expansions
@@ -355,6 +365,14 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
       }
       if (!buildRef.current?.tool) {
         hoverRef.current = null;
+        // Cursor affordance: a pointer over the clickable office.
+        if (openOfficeRef.current) {
+          const { gx, gy } = toTile(ev);
+          const onOffice = stateRef.current.warehouse.tiles.some(
+            (t) => t.zone === 'office' && t.gx === gx && t.gy === gy,
+          );
+          canvas.style.cursor = onOffice ? 'pointer' : '';
+        }
         return;
       }
       hoverRef.current = toTile(ev);
@@ -371,8 +389,16 @@ export function IsometricWarehouse({ build }: { build?: BuildProps }) {
       }
       if (ev.button !== 0) return; // only the left button places
       const b = buildRef.current;
-      if (!b?.tool) return;
       const { gx, gy } = toTile(ev);
+      if (!b?.tool) {
+        // Outside build mode: a click on the office (where the staff sit) opens
+        // the Personal screen — e.g. to instruct the Einkäufer.
+        const onOffice = stateRef.current.warehouse.tiles.some(
+          (t) => t.zone === 'office' && t.gx === gx && t.gy === gy,
+        );
+        if (onOffice) openOfficeRef.current?.();
+        return;
+      }
       if (b.tool === 'expand' || b.tool === 'officeExpand') {
         const blocks = b.tool === 'expand' ? hallExpansionFrontier(stateRef.current) : officeExpansionFrontier(stateRef.current);
         const block = blocks.find((blk) => blk.some((c) => c.gx === gx && c.gy === gy));

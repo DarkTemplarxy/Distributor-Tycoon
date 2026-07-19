@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGame } from './state/GameProvider';
-import { STEP, tutorialPausesGame } from './game/tutorial';
+import { isFeatureUnlocked, STEP, tutorialPausesGame } from './game/tutorial';
 import { TopBar } from './components/TopBar';
 import { Modal } from './components/Modal';
 import { IsometricWarehouse, type BuildTool } from './components/IsometricWarehouse';
@@ -259,6 +259,11 @@ export function App() {
                         else expandHall(s, block);
                       }),
                   }
+                : undefined
+            }
+            onOpenOffice={
+              isFeatureUnlocked(state.tutorial, 'employees')
+                ? () => openModal('employees')
                 : undefined
             }
           />

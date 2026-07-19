@@ -250,7 +250,7 @@ export function createInitialState(): GameState {
     unlockIntroShown: false,
     // Auto-prep starts OFF so the tutorial's first beat teaches manual Herrichten;
     // it is switched on once the first delivery is celebrated (see advanceTutorial).
-    settings: { autoPrep: false, ordersPanelCollapsed: false },
+    settings: { autoPrep: false, ordersPanelCollapsed: false, buyerOrderBuffer: 0 },
 
     tutorial: { active: true, step: STEP.INTRO },
 

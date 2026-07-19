@@ -375,7 +375,11 @@ const ENTRIES: WikiEntry[] = [
           Neukunden-Anfragen (je mehr Reps und je höher ihr Skill, desto größer der Markt – mit
           abnehmendem Grenzertrag, weil dieselbe Sättigung greift; Spam lohnt nicht). Zum
           Abschließen brauchst du weiterhin freie KAM-Slots. <b>Einkäufer</b>{' '}
-          bestellen automatisch nach und verhandeln Preiserhöhungen herunter.
+          bestellen automatisch nach und verhandeln Preiserhöhungen herunter. Im Personal-Fenster
+          kannst du ihm einen <b>Bestell-Puffer</b> vorgeben (z. B. +5 %): So viel bestellt er{' '}
+          zusätzlich zum Wochenbedarf als Sicherheitsreserve gegen Nachfragespitzen und Verderb –
+          weniger Fehlmengen, aber mehr Lagerbestand. Ein <b>Klick aufs Büro</b> in der Halle
+          öffnet das Personal-Fenster direkt.
         </p>
         <p>
           Einstellung kostet {HIRE_WEEKS_UPFRONT} Wochen Gehalt im Voraus. Büro-Rollen

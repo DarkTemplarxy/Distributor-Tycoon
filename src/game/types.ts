@@ -400,6 +400,10 @@ export interface GameState {
     autoPrep: boolean;
     /** The side orders panel is collapsed to a slim handle (persisted). */
     ordersPanelCollapsed: boolean;
+    /** Instruction to the Einkäufer: order this fraction ON TOP of the weekly
+     * deficit as a safety cushion (0 = exact demand). Optional for save
+     * compatibility; read as `?? 0`. */
+    buyerOrderBuffer?: number;
   };
 
   /** Guided onboarding state. `active` runs the beat machine and gates the UI;
