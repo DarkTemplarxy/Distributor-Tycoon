@@ -169,6 +169,17 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
                     {pref && ` · ${pref}`}
                   </div>
                 </div>
+                <button
+                  className="btn small"
+                  disabled={e.skill >= 100}
+                  title="Schulung: +10 Skill – schnelleres Herrichten & Einlagern."
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    mutate((s) => trainEmployee(s, e.id));
+                  }}
+                >
+                  🎓 Training
+                </button>
                 <span className={`pill ${e.task ? '' : 'good'}`}>{e.task ? '⚙️ aktiv' : 'frei'}</span>
               </div>
 
@@ -181,13 +192,6 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
                         <span style={{ width: `${e.skill}%` }} />
                       </div>
                     </div>
-                    <button
-                      className="btn small"
-                      disabled={e.skill >= 100}
-                      onClick={() => mutate((s) => trainEmployee(s, e.id))}
-                    >
-                      🎓 Training
-                    </button>
                     <button
                       className="btn small danger"
                       disabled={!!e.task}

@@ -216,8 +216,7 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
                     )}
                   </div>
                   <div className="sub">
-                    Lieferzeit {c.deliveryLeadWeeks}W · Verspätungen {c.lateDeliveries}/{tolerance} ·
-                    Loyalität {Math.round(c.loyalty)}%
+                    Verspätungen {c.lateDeliveries}/{tolerance}
                     {c.activeDiscount > 0 && ` · Rabatt −${Math.round(c.activeDiscount * 100)}%`}
                   </div>
                 </div>
