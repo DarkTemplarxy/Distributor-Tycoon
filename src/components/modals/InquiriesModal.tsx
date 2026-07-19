@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { counterAcceptChance, freeCapacity, isInAssortment, notify } from '../../game/simulation';
+import { counterAcceptChance, freeCapacity, isInAssortment, notify, shelfStock } from '../../game/simulation';
 import { acceptInquiry, counterOffer, dismissInquiry } from '../../game/actions';
 import {
   getProductDef,
@@ -127,6 +127,66 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
           const product =
             state.products.find((p) => p.id === inq.preferredProduct) ??
             getProductDef(inq.preferredProduct);
+
+          // --- Großauftrag (Paket 5): a one-off bet, its own card ---
+          if (inq.bigOrder) {
+            const listedProduct = state.products.find((p) => p.id === inq.preferredProduct);
+            const stock = listedProduct ? shelfStock(listedProduct) : 0;
+            const need = inq.bigOrder.quantity;
+            const premium = Math.round((inq.targetPrice / product.verkaufspreis - 1) * 100);
+            const dueWeek = inq.bigOrder.dueWeek;
+            const enough = stock >= need;
+            return (
+              <div
+                key={inq.id}
+                className="row"
+                style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8, borderColor: 'var(--accent-2)' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 22 }}>📦</span>
+                  <div className="grow">
+                    <div className="title">
+                      {inq.name} <span className="pill" style={{ background: 'var(--accent-2)', color: '#fff' }}>📦 GROSSAUFTRAG</span>{' '}
+                      <span className="pill warn">einmalig · Liefertermin Woche {dueWeek}</span>
+                    </div>
+                    <div className="sub">
+                      Will einmalig{' '}
+                      <b style={{ color: PRODUCT_COLOR[inq.preferredProduct] }}>
+                        {need}× {product.emoji} {product.name}
+                      </b>{' '}
+                      @ {inq.targetPrice}€{' '}
+                      <span className="pill good">+{premium}% Premium</span> ·{' '}
+                      <span className={`pill ${enough ? 'good' : 'warn'}`} title="Aktueller Regal-Bestand vs. benötigte Menge">
+                        Bestand {stock}/{need}
+                      </span>
+                    </div>
+                    <div className="sub" style={{ fontStyle: 'italic', color: enough ? 'var(--good)' : 'var(--warn)' }}>
+                      {enough
+                        ? 'Bestand reicht – herrichten & rechtzeitig ausliefern lohnt sich.'
+                        : 'Achtung: Bestand knapp – rechtzeitig nachbestellen/herrichten, sonst verspätet (Service-Malus).'}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    className="btn good small"
+                    onClick={() =>
+                      mutate((s) => {
+                        const r = acceptInquiry(s, inq.id);
+                        if (!r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
+                      })
+                    }
+                  >
+                    ✓ Annehmen ({need}× @ {inq.targetPrice}€)
+                  </button>
+                  <button className="btn ghost small" onClick={() => mutate((s) => dismissInquiry(s, inq.id))}>
+                    Ablehnen
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
           const needsListing = !isInAssortment(state, inq.preferredProduct);
           const listingFee = getProductDef(inq.preferredProduct).listingFee;
           // Margin the wish price would yield vs the current EK — the owner

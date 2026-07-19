@@ -246,6 +246,11 @@ export function createInitialState(): GameState {
       spoilageLoss: 0,
       ultimatumsHeld: 0,
     },
+    equipment: { forklift: 0, packstation: 0, cooling: 0, truck: 0 },
+    strategy: 'full',
+    // strategyChangedWeek intentionally unset: the FIRST stance choice is free;
+    // the cooldown only starts once the player has actually switched.
+    lastBigOrderWeek: null,
     milestones: MILESTONE_DEFS.map((d) => ({ id: d.id, achievedWeek: null })),
     unlockIntroShown: false,
     // Auto-prep starts OFF so the tutorial's first beat teaches manual Herrichten;

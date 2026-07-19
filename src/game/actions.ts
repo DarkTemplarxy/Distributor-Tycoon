@@ -5,10 +5,14 @@
 // ============================================================================
 
 import {
+  CONTRACT_PREMIUM,
+  CONTRACT_WEEKS,
   DESK_PRICE,
   EXPRESS_PO_LEAD_DAYS,
   EXPRESS_RESTOCK_SURCHARGE,
+  getEquipmentDef,
   getProductDef,
+  getStrategyDef,
   hallExpansionPrice,
   HIRE_WEEKS_UPFRONT,
   INBOUND_SLOT_PRICE,
@@ -24,20 +28,23 @@ import {
   SHELF_PRICE,
   SLOT_COST,
   SHELF_SLOTS,
+  STRATEGY_COOLDOWN_WEEKS,
   TABLE_PRICE,
   TRAINING_COST,
   TRAINING_SKILL_GAIN,
 } from './constants';
-import type { CustomerLine, GameState, ProductId, Role } from './types';
+import type { CustomerLine, EquipmentId, GameState, Order, ProductId, Role, StrategyId } from './types';
 import {
   acceptInquiry as onboardInquiry,
   availableCredit,
   commitWeeklyOrder,
   counterAcceptChance,
   createPurchaseOrderInternal,
+  equipmentLevel,
   freeCapacity,
   freeDesks,
   getProduct,
+  hasActiveContract,
   isFrontierBlock,
   isInAssortment,
   managers,
@@ -47,6 +54,7 @@ import {
   repriceAcceptChance,
   resolveDemandRejection,
   spend,
+  supplierUnitPrice,
   tryPrepareOrder,
 } from './simulation';
 import { buildProduct } from './init';
@@ -448,6 +456,9 @@ export function acceptInquiry(state: GameState, inquiryId: string): ActionResult
   if (inq.status !== 'open') {
     return { ok: false, message: 'Anfrage ist nicht mehr offen.' };
   }
+  // A Großauftrag (Paket 5) is a one-off order, not a new customer relationship —
+  // no slots, no new line; the normal pipeline delivers it (or misses it).
+  if (inq.bigOrder) return acceptBigOrder(state, inq.id);
   // New customers need SLOT_COST[type] free slots at ONE manager; expansions of
   // existing customers don't (their manager keeps them).
   if (!inq.existingCustomerId && freeCapacity(state, inq.type) <= 0) {
@@ -471,6 +482,8 @@ export function counterOffer(state: GameState, inquiryId: string, price: number)
   if (inq.status !== 'open') {
     return { ok: false, message: 'Anfrage ist nicht mehr offen.' };
   }
+  // A Großauftrag is take-it-or-leave-it at the offered price — no haggling.
+  if (inq.bigOrder) return { ok: false, message: 'Ein Großauftrag ist nicht verhandelbar – annehmen oder ablehnen.' };
   if (!inq.existingCustomerId && freeCapacity(state, inq.type) <= 0) {
     return {
       ok: false,
@@ -499,6 +512,45 @@ export function counterOffer(state: GameState, inquiryId: string, price: number)
   return { ok: true };
 }
 
+/** Accept a Großauftrag (Paket 5): create ONE one-off order for the offering
+ * customer, due next week at the premium price. Fulfilment and payment run
+ * through the normal order pipeline; missing the deadline hits service like any
+ * late order. No slot check, no recurring line. */
+export function acceptBigOrder(state: GameState, inquiryId: string): ActionResult {
+  const inq = state.inquiries.find((i) => i.id === inquiryId);
+  if (!inq || inq.status !== 'open' || !inq.bigOrder) {
+    return { ok: false, message: 'Großauftrag ist nicht mehr offen.' };
+  }
+  const cust = state.customers.find((c) => c.id === inq.existingCustomerId);
+  if (!cust || !cust.active) {
+    inq.status = 'expired';
+    return { ok: false, message: 'Der Kunde ist nicht mehr aktiv.' };
+  }
+  const listed = ensureInquiryProductListed(state, inq.preferredProduct);
+  if (!listed.ok) return listed;
+
+  const order: Order = {
+    id: uid('order'),
+    customerId: cust.id,
+    productId: inq.preferredProduct,
+    quantity: inq.bigOrder.quantity,
+    price: inq.targetPrice,
+    createdDay: state.totalDays,
+    dueWeek: inq.bigOrder.dueWeek,
+    status: 'pending',
+    late: false,
+  };
+  state.orders.push(order);
+  inq.status = 'accepted';
+  const product = getProduct(state, inq.preferredProduct);
+  notify(
+    state,
+    `📦 Großauftrag angenommen: ${inq.bigOrder.quantity}× ${product.emoji} ${product.name} für ${cust.name} @ ${inq.targetPrice}€ – bis Woche ${inq.bigOrder.dueWeek} liefern!`,
+    'success',
+  );
+  return { ok: true };
+}
+
 export function dismissInquiry(state: GameState, inquiryId: string): void {
   const inq = state.inquiries.find((i) => i.id === inquiryId);
   if (!inq || inq.status !== 'open') return;
@@ -508,6 +560,72 @@ export function dismissInquiry(state: GameState, inquiryId: string): void {
     return;
   }
   inq.status = 'expired';
+}
+
+// --- Investitionen & Ausrüstung (Paket 2) -----------------------------------
+
+/** Buy the next level of a piece of equipment. Rising price, capped at maxLevel. */
+export function buyEquipment(state: GameState, id: EquipmentId): ActionResult {
+  const def = getEquipmentDef(id);
+  const level = equipmentLevel(state, id);
+  if (level >= def.maxLevel) return { ok: false, message: 'Bereits voll ausgebaut.' };
+  const price = def.price(level + 1);
+  if (state.cash + availableCredit(state) < price) {
+    return { ok: false, message: `${def.name} kostet ${price}€ – nicht bezahlbar.` };
+  }
+  spend(state, price);
+  if (!state.equipment) state.equipment = {};
+  state.equipment[id] = level + 1;
+  notify(state, `${def.icon} ${def.name} Stufe ${level + 1} gekauft (${price}€): ${def.effectLabel(level + 1)}.`, 'success');
+  return { ok: true };
+}
+
+// --- Firmen-Strategie (Paket 4) ---------------------------------------------
+
+/** Switch the company strategy. Only every STRATEGY_COOLDOWN_WEEKS weeks, so a
+ * stance is a commitment, not a per-week min-max toggle. */
+export function setStrategy(state: GameState, id: StrategyId): ActionResult {
+  if ((state.strategy ?? 'full') === id) return { ok: true };
+  const week = weekOf(state.totalDays);
+  const since = week - (state.strategyChangedWeek ?? 0);
+  if (state.strategyChangedWeek != null && since < STRATEGY_COOLDOWN_WEEKS) {
+    return { ok: false, message: `Strategiewechsel erst in ${STRATEGY_COOLDOWN_WEEKS - since} Woche(n) wieder möglich.` };
+  }
+  const def = getStrategyDef(id);
+  state.strategy = id;
+  state.strategyChangedWeek = week;
+  notify(state, `${def.icon} Neue Ausrichtung: ${def.name}. ${def.tagline}`, 'info');
+  return { ok: true };
+}
+
+// --- Liefervertrag (Paket 3) ------------------------------------------------
+
+/** Lock a supply contract: fix today's price (+ a small premium) for
+ * CONTRACT_WEEKS weeks, shielding the product from quarterly hikes. */
+export function signSupplyContract(state: GameState, productId: ProductId): ActionResult {
+  const sp = state.supplier.products.find((s) => s.productId === productId);
+  if (!sp) return { ok: false, message: 'Produkt nicht beim Lieferanten.' };
+  if (hasActiveContract(state, productId)) return { ok: false, message: 'Es läuft bereits ein Vertrag.' };
+  const week = weekOf(state.totalDays);
+  const price = Math.round(supplierUnitPrice(state, productId) * (1 + CONTRACT_PREMIUM) * 100) / 100;
+  sp.contract = { price, untilWeek: week + CONTRACT_WEEKS };
+  const def = getProductDef(productId);
+  notify(
+    state,
+    `📝 Liefervertrag für ${def.name}: EK für ${CONTRACT_WEEKS} Wochen auf €${price.toFixed(2)} fixiert (+${Math.round(CONTRACT_PREMIUM * 100)}% Prämie) – geschützt vor Erhöhungen.`,
+    'success',
+  );
+  return { ok: true };
+}
+
+/** Cancel a running supply contract (back to the spot price). */
+export function cancelSupplyContract(state: GameState, productId: ProductId): ActionResult {
+  const sp = state.supplier.products.find((s) => s.productId === productId);
+  if (!sp?.contract) return { ok: false, message: 'Kein Vertrag aktiv.' };
+  delete sp.contract;
+  const def = getProductDef(productId);
+  notify(state, `📝 Liefervertrag für ${def.name} beendet – wieder Spotpreis.`, 'info');
+  return { ok: true };
 }
 
 // --- Finance ----------------------------------------------------------------

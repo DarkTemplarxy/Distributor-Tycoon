@@ -289,6 +289,10 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     // --- bot: handle inquiries per strategy ---
     if (strategy !== 'passiv') {
       for (const inq of s.inquiries.filter((i) => i.status === 'open')) {
+        // Großaufträge (Paket 5) are a one-off BET on being able to fulfil in
+        // time — a blind bot can't judge that, so it declines them (a sensible
+        // operator would too). They stay out of the baseline economy measurement.
+        if (inq.bigOrder) continue;
         // New customers need free capacity; expansions of existing ones don't.
         if (!inq.existingCustomerId && freeCapacity(s, inq.type) <= 0) continue;
         if (strategy === 'greedy') {

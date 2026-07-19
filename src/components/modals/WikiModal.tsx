@@ -312,6 +312,46 @@ const ENTRIES: WikiEntry[] = [
     ),
   },
   {
+    icon: '🏢',
+    title: 'Ausbau: Investitionen & Strategie',
+    keywords: 'ausbau investition ausrüstung gabelstapler packstation kühlung lkw strategie spezialist discounter vollsortimenter',
+    body: (
+      <>
+        <p>
+          Im <b>Ausbau</b>-Fenster stecken die langfristigen Entscheidungen. <b>Investitionen</b>{' '}
+          lösen je einen Engpass – ihre Wirkung siehst du sofort im Cockpit: <b>🚜 Gabelstapler</b>{' '}
+          (Einlagern schneller), <b>🏭 Kommissionier-Station</b> (Herrichten schneller), <b>❄️ Kühlung</b>{' '}
+          (längere Haltbarkeit, weniger Verderb), <b>🚚 eigener LKW</b> (niedrigere Logistikkosten).
+          Statt „mehr Leute einstellen" fragst du dich: welchen Engpass löse ich womit?
+        </p>
+        <p>
+          Die <b>Firmen-Strategie</b> ist eine Ausrichtung mit echten Trade-offs: der{' '}
+          <b>🐟 Frische-Spezialist</b> erzielt höhere Preise, aber die Ware verdirbt schneller; der{' '}
+          <b>📦 Mengen-Discounter</b> bekommt größere Bestellmengen, dafür weniger Marge; der{' '}
+          <b>🏬 Vollsortimenter</b> bleibt neutral. Ein Wechsel ist nur alle paar Wochen möglich –
+          also eine Festlegung, kein Hin-und-Her.
+        </p>
+      </>
+    ),
+  },
+  {
+    icon: '📦',
+    title: 'Großaufträge (Events)',
+    keywords: 'großauftrag event einmalig premium deadline wette spitze',
+    body: (
+      <>
+        <p>
+          Gelegentlich bietet ein Bestandskunde einen <b>Großauftrag</b> an: eine große{' '}
+          <b>einmalige</b> Lieferung nächste Woche zu einem <b>Premium-Preis</b>, aber mit knapper
+          Frist. Das ist eine <b>Wette</b> – nimm ihn nur an, wenn du genug Bestand aufbauen und ihn
+          rechtzeitig herrichten kannst. Lieferst du pünktlich, zahlt er richtig gut; verpasst du
+          den Termin, zählt es wie eine normale Verspätung (Service leidet). Die Anfrage-Karte zeigt
+          dir Bestand vs. benötigte Menge, damit du die Wette einschätzen kannst.
+        </p>
+      </>
+    ),
+  },
+  {
     icon: '🛒',
     title: 'Einkauf, Express & Lieferant',
     keywords: 'bestellen einkäufer empfehlung express nachbestellen ek erhöhung quartal saison verhandeln',
@@ -328,6 +368,12 @@ const ENTRIES: WikiEntry[] = [
           mit gutem Skill verhandelt einen Teil weg. Deine Marge schmilzt sonst schleichend:
           Vertragspreise regelmäßig prüfen! Die Nachfrage schwankt außerdem <b>saisonal</b> je
           Produkt (Quartal oben in der Leiste).
+        </p>
+        <p>
+          Im Einkauf-Fenster gibt es zwei Hebel: <b>📝 Lieferverträge</b> fixieren den Preis eines
+          Produkts für einige Wochen (kleine Prämie) und schützen so vor Erhöhungen – ein Gewinn,
+          wenn der Lieferant stärker anzieht als die Prämie. Und der <b>Mengenrabatt</b>: bestellst
+          du viel von <b>einem</b> Produkt auf einmal, sinkt der Stückpreis stufenweise.
         </p>
       </>
     ),

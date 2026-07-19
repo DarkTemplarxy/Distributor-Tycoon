@@ -2,7 +2,7 @@
 // Tunable game constants. Everything the designer might want to tweak lives here.
 // ============================================================================
 
-import type { CustomerType, GameState, ProductId, Role } from './types';
+import type { CustomerType, EquipmentId, GameState, ProductId, Role, StrategyId } from './types';
 
 export const SAVE_VERSION = 17;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
@@ -413,6 +413,176 @@ export const INQUIRY_EXPIRY_WEEKS = 3;
 /** Quarterly supplier price increase settings. */
 export const SUPPLIER_INCREASE_CHANCE = 0.6;
 export const SUPPLIER_INCREASE_RANGE: [number, number] = [0.03, 0.1];
+
+// ============================================================================
+// Paket 2 — Investitionen & Ausrüstung
+// Capital upgrades that each relieve ONE bottleneck, so "hire more people" is no
+// longer the only lever. Their effect flows straight into the Betriebs-Cockpit
+// (a forklift lowers the Personal gauge; cooling protects storage). Levels are
+// bought one at a time at a rising price.
+// ============================================================================
+/** Per-level effect strengths (multiplied by the owned level). */
+export const FORKLIFT_PUTAWAY_SPEED = 0.2; // Einlagern this much faster per level
+export const PACKSTATION_PREP_SPEED = 0.15; // Herrichten this much faster per level
+export const COOLING_SHELFLIFE_BONUS = 0.25; // Haltbarkeit extended per level
+export const TRUCK_LOGISTICS_SAVE = 0.2; // logistics €/Palette cheaper per level
+
+export interface EquipmentDef {
+  id: EquipmentId;
+  name: string;
+  icon: string;
+  desc: string;
+  maxLevel: number;
+  /** Price to go from (level-1) → level. */
+  price: (level: number) => number;
+  /** Human-readable effect at a given owned level. */
+  effectLabel: (level: number) => string;
+}
+
+export const EQUIPMENT_DEFS: EquipmentDef[] = [
+  {
+    id: 'forklift',
+    name: 'Gabelstapler',
+    icon: '🚜',
+    desc: 'Beschleunigt das Einlagern vom Wareneingang ins Regal – entlastet die Lagerkräfte.',
+    maxLevel: 3,
+    price: (l) => 3000 * l,
+    effectLabel: (l) => (l > 0 ? `Einlagern ${Math.round(FORKLIFT_PUTAWAY_SPEED * l * 100)}% schneller` : '—'),
+  },
+  {
+    id: 'packstation',
+    name: 'Kommissionier-Station',
+    icon: '🏭',
+    desc: 'Bessere Packtische – Aufträge werden schneller hergerichtet.',
+    maxLevel: 3,
+    price: (l) => 3500 * l,
+    effectLabel: (l) => (l > 0 ? `Herrichten ${Math.round(PACKSTATION_PREP_SPEED * l * 100)}% schneller` : '—'),
+  },
+  {
+    id: 'cooling',
+    name: 'Kühlung',
+    icon: '❄️',
+    desc: 'Kühlhaus verlängert die Haltbarkeit – deutlich weniger Verderb.',
+    maxLevel: 3,
+    price: (l) => 2500 * l,
+    effectLabel: (l) => (l > 0 ? `Haltbarkeit +${Math.round(COOLING_SHELFLIFE_BONUS * l * 100)}%` : '—'),
+  },
+  {
+    id: 'truck',
+    name: 'Eigener LKW',
+    icon: '🚚',
+    desc: 'Eigene Auslieferung senkt die Logistikkosten je abgeholter Palette.',
+    maxLevel: 3,
+    price: (l) => 3000 * l,
+    effectLabel: (l) => (l > 0 ? `Logistik −${Math.round(TRUCK_LOGISTICS_SAVE * l * 100)}%/Palette` : '—'),
+  },
+];
+
+export function getEquipmentDef(id: EquipmentId): EquipmentDef {
+  return EQUIPMENT_DEFS.find((e) => e.id === id)!;
+}
+
+// ============================================================================
+// Paket 3 — Einkaufs-Entscheidungen
+// Volume discounts make a bigger single-product order cheaper per unit; a supply
+// contract fixes the price for a while (a small premium now, protection against
+// quarterly hikes later). Both turn the automated order back into a decision.
+// ============================================================================
+/** Bulk tiers (checked high → low): ordering ≥ min units of ONE product cuts the
+ * per-unit price by `discount`. */
+export const VOLUME_DISCOUNT_TIERS: { min: number; discount: number }[] = [
+  { min: 600, discount: 0.06 },
+  { min: 300, discount: 0.04 },
+  { min: 150, discount: 0.02 },
+];
+export function volumeDiscount(qty: number): number {
+  for (const t of VOLUME_DISCOUNT_TIERS) if (qty >= t.min) return t.discount;
+  return 0;
+}
+
+/** A supply contract fixes today's price for this many weeks… */
+export const CONTRACT_WEEKS = 12;
+/** …at a small premium over the current spot price (the cost of the guarantee).
+ * It pays off only if the supplier would otherwise hike by more than this. */
+export const CONTRACT_PREMIUM = 0.03;
+
+// ============================================================================
+// Paket 4 — Kunden-Fokus & Strategie
+// A company stance with genuine trade-offs, so there are several viable ways to
+// play instead of one optimum. Switchable, but only every few weeks.
+// ============================================================================
+
+export interface StrategyDef {
+  id: StrategyId;
+  name: string;
+  icon: string;
+  tagline: string;
+  /** Multiplier on the price customers are willing to pay (inquiry targets). */
+  priceFactor: number;
+  /** Multiplier on ordered volumes (demand). */
+  demandFactor: number;
+  /** Multiplier on shelf life (spoilage speed). */
+  spoilageFactor: number;
+  pros: string;
+  cons: string;
+}
+
+export const STRATEGY_DEFS: StrategyDef[] = [
+  {
+    id: 'full',
+    name: 'Vollsortimenter',
+    icon: '🏬',
+    tagline: 'Ausgewogen – keine Sonderregeln.',
+    priceFactor: 1,
+    demandFactor: 1,
+    spoilageFactor: 1,
+    pros: 'Robust, keine Nachteile.',
+    cons: 'Keine Sonderboni.',
+  },
+  {
+    id: 'fresh',
+    name: 'Frische-Spezialist',
+    icon: '🐟',
+    tagline: 'Premium-Qualität zu höheren Preisen.',
+    priceFactor: 1.08,
+    demandFactor: 0.95,
+    spoilageFactor: 0.8,
+    pros: '+8 % erzielbarer Preis bei neuen Deals.',
+    cons: 'Ware verdirbt schneller (−20 % Haltbarkeit), etwas weniger Menge.',
+  },
+  {
+    id: 'volume',
+    name: 'Mengen-Discounter',
+    icon: '📦',
+    tagline: 'Masse statt Marge.',
+    priceFactor: 0.94,
+    demandFactor: 1.18,
+    spoilageFactor: 1,
+    pros: '+18 % Bestellmengen.',
+    cons: '−6 % erzielbarer Preis bei neuen Deals.',
+  },
+];
+export function getStrategyDef(id: StrategyId | undefined): StrategyDef {
+  return STRATEGY_DEFS.find((s) => s.id === id) ?? STRATEGY_DEFS[0];
+}
+/** Minimum weeks between strategy switches (no flip-flopping). */
+export const STRATEGY_COOLDOWN_WEEKS = 8;
+
+// ============================================================================
+// Paket 5 — Nachfrage-Events: Großaufträge
+// An occasional one-off bulk order at a premium price with a tight deadline: a
+// bet you take only if you can build the stock and prep it in time. Fulfilment
+// pays big; missing it hits service like any late order.
+// ============================================================================
+export const BIGORDER_CHANCE_PER_WEEK = 0.28; // rolled Thursday with inquiries
+export const BIGORDER_COOLDOWN_WEEKS = 3;
+export const BIGORDER_MIN_CUSTOMERS = 4; // only once the business is running
+/** One-off quantity as a multiple of a normal medium single-line volume. */
+export const BIGORDER_VOLUME_MULT: [number, number] = [3, 6];
+/** Premium over the product's list sales price. */
+export const BIGORDER_PRICE_PREMIUM: [number, number] = [0.12, 0.25];
+/** Weeks until the offer lapses (decide fast) — delivery is due the week after. */
+export const BIGORDER_EXPIRY_WEEKS = 1;
 
 /**
  * How sharply a counter-offer's acceptance chance falls as the asked price rises

@@ -13,6 +13,12 @@ export type CustomerType = 'small' | 'medium' | 'large';
 
 export type Role = 'lager' | 'einkaeufer' | 'kam' | 'sales' | 'admin';
 
+/** Buyable capital upgrades (Paket 2). */
+export type EquipmentId = 'forklift' | 'packstation' | 'cooling' | 'truck';
+
+/** Company strategy stance (Paket 4). */
+export type StrategyId = 'full' | 'fresh' | 'volume';
+
 export type OrderStatus =
   | 'pending' // waiting for inventory / worker
   | 'preparing' // worker is picking & packing
@@ -122,6 +128,11 @@ export interface Inquiry {
    * schedules stage 2, the ultimatum — rejecting THAT churns the customer
    * completely. `deadlineWeek` (== expiryWeek) drives the visible countdown. */
   demand?: { stage: 1 | 2; deadlineWeek: number };
+  /** Set on a one-off Großauftrag (Paket 5): a single large delivery due next
+   * week at a premium price, NOT a recurring line. `existingCustomerId` names the
+   * ordering customer; accepting creates one Order that the normal pipeline
+   * fulfils (or misses, hitting service). Optional for save compatibility. */
+  bigOrder?: { quantity: number; dueWeek: number };
 }
 
 /** A scheduled stage-2 escalation: after a rejected/expired wish, the same
@@ -221,6 +232,10 @@ export interface SupplierProduct {
   productId: ProductId;
   price: number;
   basePrice: number;
+  /** Active supply contract (Paket 3): a price fixed until `untilWeek`. While
+   * active it overrides the spot price and shields the product from quarterly
+   * hikes. Optional for save compatibility. */
+  contract?: { price: number; untilWeek: number };
 }
 
 export interface Supplier {
@@ -385,6 +400,16 @@ export interface GameState {
   /** Per-product history of weekly demanded units (most recent last), used by the
    * order recommendation ("average of the last 2 weeks"). */
   demandLog: Partial<Record<ProductId, number[]>>;
+
+  /** Owned equipment levels (Paket 2). Missing/undefined = level 0. Optional for
+   * save compatibility; read via equipmentLevel(). */
+  equipment?: Partial<Record<EquipmentId, number>>;
+  /** Company strategy (Paket 4). Undefined = 'full'. Read via strategyOf(). */
+  strategy?: StrategyId;
+  /** Week the strategy was last switched — cooldown anchor. */
+  strategyChangedWeek?: number;
+  /** Week the last Großauftrag offer was made (Paket 5) — frequency cap. */
+  lastBigOrderWeek?: number | null;
 
   stats: GameStats;
   /** Progress on "Onkels Notizbuch" milestones (see MILESTONE_DEFS). Checks run

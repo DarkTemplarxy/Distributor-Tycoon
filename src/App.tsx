@@ -28,6 +28,7 @@ import { PricingModal } from './components/modals/PricingModal';
 import { CustomersModal } from './components/modals/CustomersModal';
 import { InquiriesModal } from './components/modals/InquiriesModal';
 import { EmployeesModal } from './components/modals/EmployeesModal';
+import { CompanyModal } from './components/modals/CompanyModal';
 import { FinanceModal } from './components/modals/FinanceModal';
 import { ReportsModal } from './components/modals/ReportsModal';
 import { LogModal } from './components/modals/LogModal';
@@ -43,6 +44,7 @@ export type ModalId =
   | 'customers'
   | 'inquiries'
   | 'employees'
+  | 'company'
   | 'finance'
   | 'reports'
   | 'log'
@@ -210,12 +212,12 @@ export function App() {
   // slip by — the generic auto-pause above holds the clock while it's open.
   const seenDemandIdsRef = useRef<Set<string>>(new Set());
   const openDemandKey = state.inquiries
-    .filter((i) => i.status === 'open' && i.demand)
+    .filter((i) => i.status === 'open' && (i.demand || i.bigOrder))
     .map((i) => i.id)
     .join(',');
   useEffect(() => {
     const fresh = state.inquiries.filter(
-      (i) => i.status === 'open' && i.demand && !seenDemandIdsRef.current.has(i.id),
+      (i) => i.status === 'open' && (i.demand || i.bigOrder) && !seenDemandIdsRef.current.has(i.id),
     );
     if (fresh.length === 0) return;
     for (const i of fresh) seenDemandIdsRef.current.add(i.id);
@@ -290,6 +292,7 @@ export function App() {
       {modal === 'customers' && <CustomersModal onClose={closeModal} />}
       {modal === 'inquiries' && <InquiriesModal onClose={closeModal} />}
       {modal === 'employees' && <EmployeesModal onClose={closeModal} />}
+      {modal === 'company' && <CompanyModal onClose={closeModal} />}
       {modal === 'finance' && <FinanceModal onClose={closeModal} />}
       {modal === 'reports' && <ReportsModal onClose={closeModal} />}
       {modal === 'log' && <LogModal onClose={closeModal} />}

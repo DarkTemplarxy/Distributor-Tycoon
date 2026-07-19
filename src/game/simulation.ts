@@ -72,6 +72,18 @@ import {
   SECONDS_PER_DAY_AT_1X,
   SUPPLIER_INCREASE_CHANCE,
   SUPPLIER_INCREASE_RANGE,
+  FORKLIFT_PUTAWAY_SPEED,
+  PACKSTATION_PREP_SPEED,
+  COOLING_SHELFLIFE_BONUS,
+  TRUCK_LOGISTICS_SAVE,
+  volumeDiscount,
+  getStrategyDef,
+  BIGORDER_CHANCE_PER_WEEK,
+  BIGORDER_COOLDOWN_WEEKS,
+  BIGORDER_MIN_CUSTOMERS,
+  BIGORDER_VOLUME_MULT,
+  BIGORDER_PRICE_PREMIUM,
+  BIGORDER_EXPIRY_WEEKS,
   TRUCK_DAY_FRACTION,
   WEEKS_PER_MONTH,
   WEEKS_PER_QUARTER,
@@ -86,6 +98,7 @@ import type {
   Customer,
   CustomerLine,
   CustomerType,
+  EquipmentId,
   GameState,
   Inquiry,
   NotificationType,
@@ -544,20 +557,78 @@ export function hasEinkaeufer(state: GameState): boolean {
   return state.employees.some((e) => e.role === 'einkaeufer');
 }
 
-/** Contracted weekly demand for a product = sum of active customers' line volumes. */
+/** Contracted weekly demand for a product = sum of active customers' line volumes,
+ * scaled by the company strategy (Mengen-Discounter orders more, Frische-Spezialist
+ * a touch less). Applied at this single source so the cockpit, the order outlook
+ * and the Einkäufer all see the same figure. */
 export function weeklyDemand(state: GameState, productId: ProductId): number {
   let sum = 0;
   for (const c of state.customers) {
     if (!c.active) continue;
     for (const l of c.lines) if (l.productId === productId) sum += l.volume;
   }
-  return sum;
+  return Math.round(sum * strategyDemandFactor(state));
 }
 
 /** Total contracted units per week across all products (what the crew must
  * handle: prepare for pickup AND put away when delivered). */
 export function totalWeeklyDemand(state: GameState): number {
   return state.products.reduce((s, p) => s + weeklyDemand(state, p.id), 0);
+}
+
+// --- Equipment & strategy modifiers (Pakete 2 & 4) --------------------------
+// Live multipliers applied to the core formulas so an upgrade or strategy shift
+// takes effect everywhere at once (including the cockpit) with no stored state
+// to migrate.
+
+/** Owned level of a piece of equipment (0 if none). */
+export function equipmentLevel(state: GameState, id: EquipmentId): number {
+  return state.equipment?.[id] ?? 0;
+}
+
+/** Prep hours per unit after the Kommissionier-Station upgrade. */
+export function effectivePrepHours(state: GameState): number {
+  return PREP_HOURS_PER_UNIT * Math.max(0.25, 1 - PACKSTATION_PREP_SPEED * equipmentLevel(state, 'packstation'));
+}
+/** Put-away hours per unit after the Gabelstapler upgrade. */
+export function effectivePutawayHours(state: GameState): number {
+  return PUTAWAY_HOURS_PER_UNIT * Math.max(0.25, 1 - FORKLIFT_PUTAWAY_SPEED * equipmentLevel(state, 'forklift'));
+}
+/** Logistics cost per pallet after the eigener-LKW upgrade. */
+export function truckCostPerPallet(state: GameState): number {
+  return Math.round(state.truck.costPerPallet * Math.max(0.25, 1 - TRUCK_LOGISTICS_SAVE * equipmentLevel(state, 'truck')));
+}
+/** Effective shelf life for a product's fresh batches: cooling extends it, the
+ * Frische-Spezialist strategy shortens it. */
+export function spoilageDaysFor(state: GameState, product: Product): number {
+  const cooling = 1 + COOLING_SHELFLIFE_BONUS * equipmentLevel(state, 'cooling');
+  const strat = getStrategyDef(state.strategy).spoilageFactor;
+  return Math.max(1, Math.round(product.spoilageDays * cooling * strat));
+}
+
+/** Strategy multiplier on the price customers will pay in NEW deals. */
+export function strategyPriceFactor(state: GameState): number {
+  return getStrategyDef(state.strategy).priceFactor;
+}
+/** Strategy multiplier on ordered volumes (demand). */
+export function strategyDemandFactor(state: GameState): number {
+  return getStrategyDef(state.strategy).demandFactor;
+}
+
+// --- Supplier pricing (Paket 3) ---------------------------------------------
+
+/** The per-unit purchase price in force for a product: an active supply contract
+ * price if one is running, otherwise the spot price. */
+export function supplierUnitPrice(state: GameState, productId: ProductId): number {
+  const sp = state.supplier.products.find((s) => s.productId === productId);
+  if (!sp) return 0;
+  if (sp.contract && sp.contract.untilWeek > weekOf(state.totalDays)) return sp.contract.price;
+  return sp.price;
+}
+/** Whether a product currently has a running supply contract. */
+export function hasActiveContract(state: GameState, productId: ProductId): boolean {
+  const sp = state.supplier.products.find((s) => s.productId === productId);
+  return !!sp?.contract && sp.contract.untilWeek > weekOf(state.totalDays);
 }
 
 // --- Operations cockpit (Betriebs-Status) -----------------------------------
@@ -603,7 +674,7 @@ export function opsStatus(state: GameState): OpsStatus {
 
   // 1) Personal (Lager) — weekly handling hours demanded vs. crew hours supplied.
   const weeklyUnits = totalWeeklyDemand(state);
-  const handlingHours = weeklyUnits * (PREP_HOURS_PER_UNIT + PUTAWAY_HOURS_PER_UNIT);
+  const handlingHours = weeklyUnits * (effectivePrepHours(state) + effectivePutawayHours(state));
   const lager = state.employees.filter((e) => e.role === 'lager');
   const laborHours = lager.reduce((s, e) => s + WORK_HOURS_PER_WEEK / skillSpeedFactor(e.skill), 0);
   const laborPct = laborHours > 0 ? handlingHours / laborHours : weeklyUnits > 0 ? Infinity : 0;
@@ -763,10 +834,11 @@ export function skillSpeedFactor(skill: number): number {
 }
 
 /** Game-days to prepare an order of `quantity` units at `skill`. Quantity-linear
- * (0.3 h/unit at the baseline skill), longer for multi-article customer bundles. */
-function prepDaysFor(quantity: number, skill: number, bundleSize = 1): number {
+ * (0.3 h/unit at the baseline skill, reduced by the Kommissionier-Station), longer
+ * for multi-article customer bundles. */
+function prepDaysFor(state: GameState, quantity: number, skill: number, bundleSize = 1): number {
   const bundleFactor = 1 + Math.max(0, bundleSize - 1) * PER_ARTICLE_PREP_FACTOR;
-  return ((quantity * PREP_HOURS_PER_UNIT) / 24) * skillSpeedFactor(skill) * bundleFactor;
+  return ((quantity * effectivePrepHours(state)) / 24) * skillSpeedFactor(skill) * bundleFactor;
 }
 
 /** Workers currently preparing (each occupies one prep table). */
@@ -806,7 +878,7 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
   const bundleSize = state.orders.filter(
     (o) => o.customerId === order.customerId && o.status !== 'delivered',
   ).length;
-  let days = prepDaysFor(order.quantity, worker.skill, bundleSize);
+  let days = prepDaysFor(state, order.quantity, worker.skill, bundleSize);
   // Tutorial BEAT 0: the very first Herrichtung (the starter order only) is
   // near-instant so the first reward comes fast — the palette visibly appears
   // instead of a long wait. Other orders prepared early keep normal timing.
@@ -887,7 +959,7 @@ function assignPutaway(state: GameState, product: Product): boolean {
   }
   product.batches = product.batches.filter((b) => b.quantity > 0);
 
-  const days = ((qty * PUTAWAY_HOURS_PER_UNIT) / 24) * skillSpeedFactor(worker.skill);
+  const days = ((qty * effectivePutawayHours(state)) / 24) * skillSpeedFactor(worker.skill);
   // Work at the lowest inbound slot no other putaway task occupies (falls back
   // to round-robin only if there are more putaway workers than slots).
   const usedSlots = new Set(
@@ -899,7 +971,7 @@ function assignPutaway(state: GameState, product: Product): boolean {
     kind: 'putaway',
     productId: product.id,
     quantity: qty,
-    expiryDay: expiry === Infinity ? state.totalDays + product.spoilageDays : expiry,
+    expiryDay: expiry === Infinity ? state.totalDays + spoilageDaysFor(state, product) : expiry,
     slotIndex,
     totalDays: days,
     remainingDays: days,
@@ -985,7 +1057,10 @@ function generateCustomerOrder(state: GameState, customer: Customer, line: Custo
   const seasonal = seasonalMultiplier(line.productId, week);
   const discountUplift = 1 + demandUpliftFromDiscount(customer.activeDiscount);
   const jitter = randRange(0.9, 1.1);
-  const qty = Math.max(1, Math.round(line.volume * seasonal * discountUplift * jitter));
+  const qty = Math.max(
+    1,
+    Math.round(line.volume * seasonal * discountUplift * jitter * strategyDemandFactor(state)),
+  );
   // Track actual demanded units this week (feeds the order recommendation).
   state.demandThisWeek[line.productId] = (state.demandThisWeek[line.productId] ?? 0) + qty;
   const price = line.price * (1 - customer.activeDiscount);
@@ -1064,9 +1139,10 @@ function truckPickup(state: GameState, week: number): void {
     loadedPaletteIds.add(palette.id);
     loaded += 1;
 
-    // Logistics cost per palette.
-    spend(state, state.truck.costPerPallet);
-    state.weekAcc.logistics += state.truck.costPerPallet;
+    // Logistics cost per palette (lowered by the eigener-LKW upgrade).
+    const palletCost = truckCostPerPallet(state);
+    spend(state, palletCost);
+    state.weekAcc.logistics += palletCost;
 
     const cust = state.customers.find((c) => c.id === order.customerId);
     const amount = order.quantity * order.price;
@@ -1122,7 +1198,7 @@ function truckPickup(state: GameState, week: number): void {
   }
 
   if (loaded > 0) {
-    notify(state, `🚚 Laster abgefahren – ${loaded} Palette(n) geladen (Kosten ${loaded * state.truck.costPerPallet}€).`, 'success', { channel: 'log' });
+    notify(state, `🚚 Laster abgefahren – ${loaded} Palette(n) geladen (Kosten ${loaded * truckCostPerPallet(state)}€).`, 'success', { channel: 'log' });
     state.truckAnimUntil = state.totalDays + 0.06;
   }
 
@@ -1240,7 +1316,7 @@ function receiveDuePurchaseOrders(state: GameState): void {
         id: uid('batch'),
         productId: item.productId,
         quantity: take,
-        expiryDay: state.totalDays + product.spoilageDays,
+        expiryDay: state.totalDays + spoilageDaysFor(state, product),
         location: 'inbound',
       });
       item.quantity -= take;
@@ -1289,8 +1365,10 @@ export function createPurchaseOrderInternal(
   const poItems = items
     .filter((i) => i.quantity > 0)
     .map((i) => {
-      const sp = state.supplier.products.find((s) => s.productId === i.productId)!;
-      const unit = sp.price * mult;
+      // Contract price if one is running, else spot; then the bulk discount for
+      // ordering a large quantity of THIS product in one go.
+      const base = supplierUnitPrice(state, i.productId);
+      const unit = Math.round(base * (1 - volumeDiscount(i.quantity)) * mult * 100) / 100;
       total += i.quantity * unit;
       return { productId: i.productId, quantity: i.quantity, pricePerUnit: unit };
     });
@@ -1425,13 +1503,13 @@ function processWeeklyOrder(state: GameState, week: number): void {
   for (const product of state.products) {
     const outlook = orderOutlook(state, product.id);
     if (outlook.deficit <= 0) continue;
-    const sp = state.supplier.products.find((s) => s.productId === product.id);
-    if (!sp) continue;
+    const unit = supplierUnitPrice(state, product.id);
+    if (unit <= 0) continue;
     const target = Math.ceil(outlook.deficit * (1 + buffer));
-    const affordable = Math.min(target, Math.floor(budget / sp.price));
+    const affordable = Math.min(target, Math.floor(budget / unit));
     if (affordable <= 0) continue;
     items.push({ productId: product.id, quantity: affordable });
-    budget -= affordable * sp.price;
+    budget -= affordable * unit;
   }
   const po = commitWeeklyOrder(state, items);
   if (po) {
@@ -1573,7 +1651,7 @@ function generateNewInquiry(state: GameState, type: CustomerType): void {
     type,
     preferredProduct: preferred,
     suggestedVolume: rollLineVolume(type, preferred),
-    targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
+    targetPrice: rollInquiryTargetPrice(product.verkaufspreis * strategyPriceFactor(state)),
     createdWeek: week,
     expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
     status: 'open',
@@ -1627,7 +1705,7 @@ function maybeGenerateExpansionInquiries(state: GameState): void {
       existingCustomerId: cust.id,
       preferredProduct: productId,
       suggestedVolume: rollLineVolume(cust.type, productId),
-      targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
+      targetPrice: rollInquiryTargetPrice(product.verkaufspreis * strategyPriceFactor(state)),
       createdWeek: week,
       expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
       status: 'open',
@@ -1674,7 +1752,7 @@ function pushDemandInquiry(
     existingCustomerId: cust.id,
     preferredProduct: productId,
     suggestedVolume: rollLineVolume(cust.type, productId),
-    targetPrice: rollInquiryTargetPrice(product.verkaufspreis),
+    targetPrice: rollInquiryTargetPrice(product.verkaufspreis * strategyPriceFactor(state)),
     createdWeek: weekOf(state.totalDays),
     expiryWeek: deadlineWeek,
     status: 'open',
@@ -1716,6 +1794,59 @@ function maybeGenerateDemand(state: GameState): void {
   notify(
     state,
     `🙋 ${cust.name} würde gern auch ${product.emoji} ${product.name} bei uns beziehen – Antwort in ${deadline - week} Wochen fällig.`,
+    'info',
+  );
+}
+
+/** Occasional Großauftrag (Paket 5): an existing customer offers a large one-off
+ * delivery next week at a premium price on a tight deadline. A bet — accept only
+ * if you can build the stock and prep it in time; miss it and it hits service
+ * like any late order. Surfaced as a special inquiry (bigOrder) in the Anfragen
+ * screen; there's never more than one open at a time. */
+function maybeGenerateBigOrder(state: GameState): void {
+  const week = weekOf(state.totalDays);
+  if (state.customers.filter((c) => c.active).length < BIGORDER_MIN_CUSTOMERS) return;
+  if (state.lastBigOrderWeek != null && week - state.lastBigOrderWeek < BIGORDER_COOLDOWN_WEEKS) return;
+  if (state.inquiries.some((i) => i.status === 'open' && i.bigOrder)) return;
+  if (Math.random() > BIGORDER_CHANCE_PER_WEEK) return;
+
+  // Don't pile a second ask on a customer who already has an open inquiry or a
+  // pending ultimatum (same rule as expansion offers).
+  const busy = new Set<string>();
+  for (const i of state.inquiries) if (i.status === 'open' && i.existingCustomerId) busy.add(i.existingCustomerId);
+  for (const u of state.pendingUltimatums) busy.add(u.customerId);
+  const eligible = state.customers.filter((c) => c.active && !busy.has(c.id));
+  if (eligible.length === 0) return;
+
+  const listed = state.products.filter((p) => isInAssortment(state, p.id));
+  if (listed.length === 0) return;
+  const product = pick(listed);
+  const cust = pick(eligible);
+  const baseVol = rollLineVolume('medium', product.id);
+  const mult = randInt(BIGORDER_VOLUME_MULT[0], BIGORDER_VOLUME_MULT[1]);
+  const quantity = Math.max(PALETTE_SIZE, baseVol * mult);
+  const premium = randRange(BIGORDER_PRICE_PREMIUM[0], BIGORDER_PRICE_PREMIUM[1]);
+  const price = Math.round(product.verkaufspreis * (1 + premium) * 2) / 2;
+  const dueWeek = week + 1;
+
+  state.lastBigOrderWeek = week;
+  state.inquiries.push({
+    id: uid('inq'),
+    name: cust.name,
+    emoji: '📦',
+    type: cust.type,
+    existingCustomerId: cust.id,
+    preferredProduct: product.id,
+    suggestedVolume: quantity,
+    targetPrice: price,
+    createdWeek: week,
+    expiryWeek: week + BIGORDER_EXPIRY_WEEKS,
+    status: 'open',
+    bigOrder: { quantity, dueWeek },
+  });
+  notify(
+    state,
+    `📦 Großauftrag! ${cust.name} will einmalig ${quantity}× ${product.emoji} ${product.name} @ ${price}€ – Lieferung bis Woche ${dueWeek}. Nur annehmen, wenn du rechtzeitig lieferst!`,
     'info',
   );
 }
@@ -1962,7 +2093,11 @@ function applyQuarterlyEvents(state: GameState): void {
   // Einkäufer's negotiation is made visible, and the resulting margin drop is
   // spelled out with a nudge toward the pricing screen.
   if (Math.random() < SUPPLIER_INCREASE_CHANCE) {
-    const sp = pick(state.supplier.products);
+    // A running supply contract shields its product from the hike — that's the
+    // whole point of locking a price. Pick only among un-contracted products.
+    const open = state.supplier.products.filter((s) => !hasActiveContract(state, s.productId));
+    if (open.length === 0) return;
+    const sp = pick(open);
     const product = getProduct(state, sp.productId);
     const pct = randRange(SUPPLIER_INCREASE_RANGE[0], SUPPLIER_INCREASE_RANGE[1]);
     const skill = bestNegotiationSkill(state);
@@ -2204,6 +2339,8 @@ function onDayStart(state: GameState, dayIndex: number): void {
     // due ultimatums first, then maybe a new wish (one process at a time).
     fireDueUltimatums(state);
     maybeGenerateDemand(state);
+    // …and the occasional one-off Großauftrag bet (Paket 5).
+    maybeGenerateBigOrder(state);
   }
 
   // Weekly order window: Saturday, after this week's customer orders are in (so

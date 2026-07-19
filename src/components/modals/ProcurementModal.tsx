@@ -1,9 +1,21 @@
 import { useMemo, useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { availableCredit, hasEinkaeufer, orderOutlook } from '../../game/simulation';
-import { placeWeeklyOrder, type ActionResult } from '../../game/actions';
-import { euro } from '../../game/util';
+import {
+  availableCredit,
+  hasActiveContract,
+  hasEinkaeufer,
+  orderOutlook,
+  supplierUnitPrice,
+} from '../../game/simulation';
+import {
+  cancelSupplyContract,
+  placeWeeklyOrder,
+  signSupplyContract,
+  type ActionResult,
+} from '../../game/actions';
+import { CONTRACT_PREMIUM, CONTRACT_WEEKS, VOLUME_DISCOUNT_TIERS } from '../../game/constants';
+import { euro, weekOf } from '../../game/util';
 import { PRODUCT_COLOR } from '../shared';
 
 export function ProcurementModal({ onClose }: { onClose: () => void }) {
@@ -30,7 +42,9 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
 
   const setQ = (id: string, v: number) => setQty((s) => ({ ...s, [id]: Math.max(0, Math.round(v)) }));
 
-  const priceOf = (id: string) => state.supplier.products.find((sp) => sp.productId === id)?.price ?? 0;
+  const priceOf = (id: string) => supplierUnitPrice(state, id as never);
+  const week = weekOf(state.totalDays);
+  const bestTier = VOLUME_DISCOUNT_TIERS[VOLUME_DISCOUNT_TIERS.length - 1]; // smallest threshold
   const total = state.products.reduce((sum, p) => sum + (qty[p.id] || 0) * priceOf(p.id), 0);
   const refundable = currentPo ? currentPo.totalCost : 0;
   const budget = state.cash + availableCredit(state) + refundable;
@@ -62,6 +76,57 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
         Bestellmengen deiner Kunden), was auf Lager ist und was zuläuft. Lieferung kommt{' '}
         <b>Montag</b>.
       </p>
+
+      <div
+        className="row"
+        style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6, marginBottom: 12 }}
+      >
+        <div className="title" style={{ fontSize: 13 }}>
+          📝 Lieferverträge{' '}
+          <span className="sub" style={{ fontWeight: 400 }}>
+            · Preis {CONTRACT_WEEKS} Wochen fixieren (+{Math.round(CONTRACT_PREMIUM * 100)}% Prämie) – schützt vor Erhöhungen
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {state.supplier.products.map((sp) => {
+            const p = state.products.find((pr) => pr.id === sp.productId);
+            const active = hasActiveContract(state, sp.productId);
+            const left = active ? sp.contract!.untilWeek - week : 0;
+            return (
+              <div
+                key={sp.productId}
+                className="row"
+                style={{ padding: '6px 9px', gap: 8, flex: '1 1 200px', minWidth: 190 }}
+              >
+                <span style={{ fontSize: 16 }}>{p?.emoji}</span>
+                <div className="grow">
+                  <div className="sub" style={{ color: PRODUCT_COLOR[sp.productId], fontWeight: 600 }}>
+                    {p?.name}
+                  </div>
+                  <div className="sub">
+                    {active
+                      ? `Vertrag €${sp.contract!.price.toFixed(2)} · noch ${left} Wo`
+                      : `Spot €${sp.price.toFixed(2)}`}
+                  </div>
+                </div>
+                {active ? (
+                  <button className="btn small ghost" onClick={() => mutate((s) => cancelSupplyContract(s, sp.productId))}>
+                    Beenden
+                  </button>
+                ) : (
+                  <button className="btn small" onClick={() => mutate((s) => signSupplyContract(s, sp.productId))}>
+                    Fixieren
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="sub" style={{ fontStyle: 'italic' }}>
+          💡 Mengenrabatt: ab {bestTier.min}× eines Produkts sinkt der Stückpreis (bis −
+          {Math.round(VOLUME_DISCOUNT_TIERS[0].discount * 100)}% bei {VOLUME_DISCOUNT_TIERS[0].min}×).
+        </div>
+      </div>
 
       {showSummary ? (
         // ---- Order already placed this week (auto or manual) ----
