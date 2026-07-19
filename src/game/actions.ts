@@ -564,19 +564,23 @@ export function dismissInquiry(state: GameState, inquiryId: string): void {
 
 // --- Investitionen & Ausrüstung (Paket 2) -----------------------------------
 
-/** Buy the next level of a piece of equipment. Rising price, capped at maxLevel. */
+/** Buy one more of a piece of equipment: another unit (per-worker device) or the
+ * next level (facility). Flat/rising price per the def, capped at def.max. */
 export function buyEquipment(state: GameState, id: EquipmentId): ActionResult {
   const def = getEquipmentDef(id);
-  const level = equipmentLevel(state, id);
-  if (level >= def.maxLevel) return { ok: false, message: 'Bereits voll ausgebaut.' };
-  const price = def.price(level + 1);
+  const owned = equipmentLevel(state, id);
+  if (owned >= def.max) {
+    return { ok: false, message: def.kind === 'perWorker' ? 'Maximale Anzahl erreicht.' : 'Bereits voll ausgebaut.' };
+  }
+  const price = def.price(owned + 1);
   if (state.cash + availableCredit(state) < price) {
     return { ok: false, message: `${def.name} kostet ${price}€ – nicht bezahlbar.` };
   }
   spend(state, price);
   if (!state.equipment) state.equipment = {};
-  state.equipment[id] = level + 1;
-  notify(state, `${def.icon} ${def.name} Stufe ${level + 1} gekauft (${price}€): ${def.effectLabel(level + 1)}.`, 'success');
+  state.equipment[id] = owned + 1;
+  const what = def.kind === 'perWorker' ? `#${owned + 1}` : `Stufe ${owned + 1}`;
+  notify(state, `${def.icon} ${def.name} ${what} gekauft (${price}€): ${def.effectLabel(owned + 1)}.`, 'success');
   return { ok: true };
 }
 

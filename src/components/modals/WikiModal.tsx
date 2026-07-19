@@ -318,11 +318,13 @@ const ENTRIES: WikiEntry[] = [
     body: (
       <>
         <p>
-          Im <b>Ausbau</b>-Fenster stecken die langfristigen Entscheidungen. <b>Investitionen</b>{' '}
-          lösen je einen Engpass – ihre Wirkung siehst du sofort im Cockpit: <b>🚜 Gabelstapler</b>{' '}
-          (Einlagern schneller), <b>🏭 Kommissionier-Station</b> (Herrichten schneller), <b>❄️ Kühlung</b>{' '}
-          (längere Haltbarkeit, weniger Verderb), <b>🚚 eigener LKW</b> (niedrigere Logistikkosten).
-          Statt „mehr Leute einstellen" fragst du dich: welchen Engpass löse ich womit?
+          Im <b>Ausbau</b>-Fenster stecken die langfristigen Entscheidungen. Es gibt zwei Arten von
+          Ausrüstung: <b>physische Geräte pro Mitarbeiter</b> – <b>🚜 Gabelstapler</b> (Einlagern)
+          und <b>🛒 Kommissionierwagen</b> (Herrichten) – helfen je <b>einem</b> Mitarbeiter, der sie
+          gerade benutzt, und sind in der Halle sichtbar. Für vollen Effekt brauchst du etwa so
+          viele wie gleichzeitig arbeitende Lagerkräfte (du kaufst sie in Stückzahl). <b>Anlagen</b>{' '}
+          wirken betriebsweit: <b>❄️ Kühlung</b> (längere Haltbarkeit für ALLE Ware) und{' '}
+          <b>🚚 eigener LKW</b> (niedrigere Logistikkosten). Alles wirkt sofort im Cockpit.
         </p>
         <p>
           Die <b>Firmen-Strategie</b> ist eine Ausrichtung mit echten Trade-offs: der{' '}

@@ -581,18 +581,40 @@ export function totalWeeklyDemand(state: GameState): number {
 // takes effect everywhere at once (including the cockpit) with no stored state
 // to migrate.
 
-/** Owned level of a piece of equipment (0 if none). */
+/** Owned count (per-worker devices) or level (facility upgrades) of a piece of
+ * equipment (0 if none). */
 export function equipmentLevel(state: GameState, id: EquipmentId): number {
   return state.equipment?.[id] ?? 0;
 }
 
-/** Prep hours per unit after the Kommissionier-Station upgrade. */
-export function effectivePrepHours(state: GameState): number {
-  return PREP_HOURS_PER_UNIT * Math.max(0.25, 1 - PACKSTATION_PREP_SPEED * equipmentLevel(state, 'packstation'));
+const lagerCount = (state: GameState): number => state.employees.filter((e) => e.role === 'lager').length;
+
+/** Is a forklift free to hand to a worker starting a put-away right now? A device
+ * helps exactly one active user, so availability = owned − currently in use. */
+export function forkliftAvailable(state: GameState): boolean {
+  const inUse = state.employees.filter((e) => e.task?.kind === 'putaway' && e.task.usesForklift).length;
+  return inUse < equipmentLevel(state, 'forklift');
 }
-/** Put-away hours per unit after the Gabelstapler upgrade. */
-export function effectivePutawayHours(state: GameState): number {
-  return PUTAWAY_HOURS_PER_UNIT * Math.max(0.25, 1 - FORKLIFT_PUTAWAY_SPEED * equipmentLevel(state, 'forklift'));
+/** Is a picking cart free for a worker starting a prep right now? */
+export function cartAvailable(state: GameState): boolean {
+  const inUse = state.employees.filter((e) => e.task?.kind === 'prep' && e.task.usesCart).length;
+  return inUse < equipmentLevel(state, 'packstation');
+}
+
+/** Blended prep hours per unit for the cockpit ESTIMATE: the average across the
+ * crew, weighting how many carts you own against how many workers could prep at
+ * once (limited by tables). Actual per-task timing is binary (has a cart or not,
+ * see tryPrepareOrder) — this is only the aggregate capacity view. */
+export function blendedPrepHours(state: GameState): number {
+  const prepCrew = Math.max(1, Math.min(lagerCount(state), state.warehouse.tables.length));
+  const frac = Math.min(equipmentLevel(state, 'packstation'), prepCrew) / prepCrew;
+  return PREP_HOURS_PER_UNIT * (1 - PACKSTATION_PREP_SPEED * frac);
+}
+/** Blended put-away hours per unit for the cockpit estimate (forklifts vs crew). */
+export function blendedPutawayHours(state: GameState): number {
+  const crew = Math.max(1, lagerCount(state));
+  const frac = Math.min(equipmentLevel(state, 'forklift'), crew) / crew;
+  return PUTAWAY_HOURS_PER_UNIT * (1 - FORKLIFT_PUTAWAY_SPEED * frac);
 }
 /** Logistics cost per pallet after the eigener-LKW upgrade. */
 export function truckCostPerPallet(state: GameState): number {
@@ -674,7 +696,7 @@ export function opsStatus(state: GameState): OpsStatus {
 
   // 1) Personal (Lager) — weekly handling hours demanded vs. crew hours supplied.
   const weeklyUnits = totalWeeklyDemand(state);
-  const handlingHours = weeklyUnits * (effectivePrepHours(state) + effectivePutawayHours(state));
+  const handlingHours = weeklyUnits * (blendedPrepHours(state) + blendedPutawayHours(state));
   const lager = state.employees.filter((e) => e.role === 'lager');
   const laborHours = lager.reduce((s, e) => s + WORK_HOURS_PER_WEEK / skillSpeedFactor(e.skill), 0);
   const laborPct = laborHours > 0 ? handlingHours / laborHours : weeklyUnits > 0 ? Infinity : 0;
@@ -836,9 +858,10 @@ export function skillSpeedFactor(skill: number): number {
 /** Game-days to prepare an order of `quantity` units at `skill`. Quantity-linear
  * (0.3 h/unit at the baseline skill, reduced by the Kommissionier-Station), longer
  * for multi-article customer bundles. */
-function prepDaysFor(state: GameState, quantity: number, skill: number, bundleSize = 1): number {
+function prepDaysFor(quantity: number, skill: number, bundleSize = 1, usesCart = false): number {
   const bundleFactor = 1 + Math.max(0, bundleSize - 1) * PER_ARTICLE_PREP_FACTOR;
-  return ((quantity * effectivePrepHours(state)) / 24) * skillSpeedFactor(skill) * bundleFactor;
+  const perUnit = PREP_HOURS_PER_UNIT * (usesCart ? 1 - PACKSTATION_PREP_SPEED : 1);
+  return ((quantity * perUnit) / 24) * skillSpeedFactor(skill) * bundleFactor;
 }
 
 /** Workers currently preparing (each occupies one prep table). */
@@ -878,7 +901,9 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
   const bundleSize = state.orders.filter(
     (o) => o.customerId === order.customerId && o.status !== 'delivered',
   ).length;
-  let days = prepDaysFor(state, order.quantity, worker.skill, bundleSize);
+  // Hand this worker a picking cart if one is free (Paket 2): faster + rendered.
+  const usesCart = cartAvailable(state);
+  let days = prepDaysFor(order.quantity, worker.skill, bundleSize, usesCart);
   // Tutorial BEAT 0: the very first Herrichtung (the starter order only) is
   // near-instant so the first reward comes fast — the palette visibly appears
   // instead of a long wait. Other orders prepared early keep normal timing.
@@ -892,7 +917,7 @@ export function tryPrepareOrder(state: GameState, order: Order): string | null {
   );
   let tableIndex = 0;
   while (usedTables.has(tableIndex)) tableIndex += 1;
-  worker.task = { kind: 'prep', orderId: order.id, tableIndex, totalDays: days, remainingDays: days };
+  worker.task = { kind: 'prep', orderId: order.id, tableIndex, usesCart, totalDays: days, remainingDays: days };
   return null;
 }
 
@@ -959,7 +984,10 @@ function assignPutaway(state: GameState, product: Product): boolean {
   }
   product.batches = product.batches.filter((b) => b.quantity > 0);
 
-  const days = ((qty * effectivePutawayHours(state)) / 24) * skillSpeedFactor(worker.skill);
+  // Hand this worker a forklift if one is free (Paket 2): faster + rendered.
+  const usesForklift = forkliftAvailable(state);
+  const perUnit = PUTAWAY_HOURS_PER_UNIT * (usesForklift ? 1 - FORKLIFT_PUTAWAY_SPEED : 1);
+  const days = ((qty * perUnit) / 24) * skillSpeedFactor(worker.skill);
   // Work at the lowest inbound slot no other putaway task occupies (falls back
   // to round-robin only if there are more putaway workers than slots).
   const usedSlots = new Set(
@@ -973,6 +1001,7 @@ function assignPutaway(state: GameState, product: Product): boolean {
     quantity: qty,
     expiryDay: expiry === Infinity ? state.totalDays + spoilageDaysFor(state, product) : expiry,
     slotIndex,
+    usesForklift,
     totalDays: days,
     remainingDays: days,
   };
@@ -1776,9 +1805,15 @@ function maybeGenerateDemand(state: GameState): void {
     ...state.products.map((p) => p.id),
     ...listableUnlistedProducts(state),
   ];
+  // A customer already fielding an open ask (expansion or Großauftrag) or a
+  // pending ultimatum must not get piled with a second — no double-booking.
+  const busy = new Set<string>();
+  for (const i of state.inquiries) if (i.status === 'open' && i.existingCustomerId) busy.add(i.existingCustomerId);
+  for (const u of state.pendingUltimatums) busy.add(u.customerId);
   const candidates: { cust: Customer; missing: ProductId[] }[] = [];
   for (const cust of state.customers) {
     if (!cust.active) continue;
+    if (busy.has(cust.id)) continue;
     if (cust.loyalty < DEMAND_MIN_LOYALTY) continue;
     if (week - cust.sinceWeek < DEMAND_MIN_CUSTOMER_WEEKS) continue;
     if (cust.lines.length >= DEMAND_MAX_LINES) continue;

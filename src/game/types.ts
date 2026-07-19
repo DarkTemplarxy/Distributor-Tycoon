@@ -204,6 +204,8 @@ export type WorkerTask =
       orderId: string;
       /** Index of the prep table this task occupies (exclusive per task). */
       tableIndex?: number;
+      /** This task is using a picking cart (Paket 2) — faster + rendered with one. */
+      usesCart?: boolean;
       totalDays: number;
       remainingDays: number;
     }
@@ -215,6 +217,8 @@ export type WorkerTask =
       expiryDay: number;
       /** Index of the inbound slot this task works at (exclusive while free). */
       slotIndex?: number;
+      /** This task is using a forklift (Paket 2) — faster + rendered with one. */
+      usesForklift?: boolean;
       totalDays: number;
       remainingDays: number;
     };

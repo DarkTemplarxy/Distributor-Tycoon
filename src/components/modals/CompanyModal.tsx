@@ -16,6 +16,7 @@ export function CompanyModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
   const budget = state.cash + availableCredit(state);
   const week = weekOf(state.totalDays);
+  const lagerkraefte = state.employees.filter((e) => e.role === 'lager').length;
   const current = state.strategy ?? 'full';
   const switchLeft =
     state.strategyChangedWeek != null
@@ -26,15 +27,20 @@ export function CompanyModal({ onClose }: { onClose: () => void }) {
     <Modal title="Unternehmen · Ausbau & Strategie" icon="🏢" onClose={onClose} wide>
       <h3>🏗️ Investitionen & Ausrüstung</h3>
       <p className="hint" style={{ marginTop: 2 }}>
-        Kapital-Investitionen, die je einen <b>Engpass</b> lösen – die Wirkung siehst du sofort im
-        Betriebs-Cockpit. Aus „mehr Leute einstellen" wird „welchen Engpass löse ich womit?".
+        <b>Geräte</b> (Stapler, Wagen) sind <b>physisch</b> und helfen je <b>einem</b> Mitarbeiter,
+        der sie gerade nutzt – du brauchst etwa so viele wie gleichzeitig arbeitende Kräfte
+        ({lagerkraefte} Lagerkräfte). <b>Anlagen</b> (Kühlung, LKW) wirken betriebsweit. Wirkung
+        sofort im Cockpit sichtbar.
       </p>
       <div className="rows">
         {EQUIPMENT_DEFS.map((def) => {
-          const level = equipmentLevel(state, def.id);
-          const maxed = level >= def.maxLevel;
-          const price = maxed ? 0 : def.price(level + 1);
+          const owned = equipmentLevel(state, def.id);
+          const maxed = owned >= def.max;
+          const price = maxed ? 0 : def.price(owned + 1);
           const canBuy = !maxed && budget >= price;
+          const perWorker = def.kind === 'perWorker';
+          // For per-worker devices: how many more you'd want to cover the crew.
+          const shortfall = perWorker ? Math.max(0, lagerkraefte - owned) : 0;
           return (
             <div key={def.id} className="row">
               <span style={{ fontSize: 22 }}>{def.icon}</span>
@@ -42,18 +48,22 @@ export function CompanyModal({ onClose }: { onClose: () => void }) {
                 <div className="title">
                   {def.name}{' '}
                   <span className="sub">
-                    · Stufe {level}/{def.maxLevel}
+                    · {perWorker ? `Anzahl ${owned}/${def.max}` : `Stufe ${owned}/${def.max}`}
                   </span>
+                  {perWorker && (
+                    <span className={`pill ${shortfall > 0 ? 'warn' : 'good'}`} style={{ marginLeft: 6 }}>
+                      {shortfall > 0 ? `${shortfall} unter Belegschaft` : 'deckt Belegschaft'}
+                    </span>
+                  )}
                 </div>
                 <div className="sub">{def.desc}</div>
-                <div className="sub" style={{ color: level > 0 ? 'var(--good)' : 'var(--text-dim)' }}>
-                  Aktuell: {def.effectLabel(level)}
-                  {!maxed && <span style={{ color: 'var(--text-dim)' }}> → nächste Stufe: {def.effectLabel(level + 1)}</span>}
+                <div className="sub" style={{ color: owned > 0 ? 'var(--good)' : 'var(--text-dim)' }}>
+                  Aktuell: {def.effectLabel(owned)}
                 </div>
               </div>
-              <div style={{ textAlign: 'right', minWidth: 120 }}>
+              <div style={{ textAlign: 'right', minWidth: 130 }}>
                 {maxed ? (
-                  <span className="pill good">voll ausgebaut</span>
+                  <span className="pill good">{perWorker ? 'Maximum' : 'voll ausgebaut'}</span>
                 ) : (
                   <>
                     <div className="sub">{euro(price)}</div>
@@ -63,7 +73,7 @@ export function CompanyModal({ onClose }: { onClose: () => void }) {
                       title={canBuy ? undefined : 'Nicht bezahlbar'}
                       onClick={() => mutate((s) => buyEquipment(s, def.id))}
                     >
-                      Kaufen
+                      {perWorker ? '+1 Kaufen' : 'Ausbauen'}
                     </button>
                   </>
                 )}

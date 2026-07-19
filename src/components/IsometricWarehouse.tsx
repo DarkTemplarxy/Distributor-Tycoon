@@ -87,6 +87,8 @@ interface WorkerAnim {
   bob: number;
   moving: boolean;
   carrying: boolean;
+  /** Physical device this worker is currently using (Paket 2) — drawn under them. */
+  device: 'forklift' | 'cart' | null;
 }
 interface Anim {
   workers: Record<string, WorkerAnim>;
@@ -488,9 +490,16 @@ function updateAnim(dt: number, state: GameState, anim: Anim) {
     seen.add(e.id);
     let a = anim.workers[e.id];
     if (!a) {
-      a = { gx: b.minGx + 1, gy: aisleGy, bob: Math.random() * 6, moving: false, carrying: false };
+      a = { gx: b.minGx + 1, gy: aisleGy, bob: Math.random() * 6, moving: false, carrying: false, device: null };
       anim.workers[e.id] = a;
     }
+    // Which physical device (if any) this worker is using right now.
+    a.device =
+      e.task?.kind === 'putaway' && e.task.usesForklift
+        ? 'forklift'
+        : e.task?.kind === 'prep' && e.task.usesCart
+          ? 'cart'
+          : null;
     let tgt: { gx: number; gy: number };
     let carrying = false;
     if (e.task?.kind === 'prep') {
@@ -689,10 +698,31 @@ function worker(ctx: CanvasRenderingContext2D, v: View, a: WorkerAnim, shirt: st
   const s = v.s;
   const bob = a.moving ? Math.abs(Math.sin(a.bob)) * 2.2 * s : Math.sin(a.bob) * 0.8 * s;
   ctx.beginPath();
-  ctx.ellipse(sx, sy, 9 * s, 4.5 * s, 0, 0, Math.PI * 2);
+  ctx.ellipse(sx, sy, (a.device ? 12 : 9) * s, (a.device ? 6 : 4.5) * s, 0, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
   ctx.fill();
   const baseY = sy - bob;
+  // Physical device the worker is using (Paket 2) — drawn at their feet, behind
+  // the body so the worker appears to operate it.
+  if (a.device === 'forklift') {
+    ctx.fillStyle = '#e8b53a'; // body
+    roundRect(ctx, sx - 8 * s, sy - 9 * s, 12 * s, 8 * s, 1.5 * s);
+    ctx.fill();
+    ctx.fillStyle = '#2a2f38'; // mast
+    ctx.fillRect(sx + 4 * s, sy - 16 * s, 2 * s, 12 * s);
+    ctx.fillStyle = '#c9c9c9'; // forks
+    ctx.fillRect(sx + 6 * s, sy - 5 * s, 6 * s, 1.6 * s);
+    ctx.fillStyle = '#1c2026'; // wheels
+    ctx.beginPath(); ctx.arc(sx - 5 * s, sy + 0.5 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx + 2.5 * s, sy + 0.5 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
+  } else if (a.device === 'cart') {
+    ctx.strokeStyle = '#9aa4b2';
+    ctx.lineWidth = 1.6 * s;
+    ctx.strokeRect(sx - 7 * s, sy - 9 * s, 11 * s, 7 * s); // basket
+    ctx.fillStyle = '#1c2026'; // wheels
+    ctx.beginPath(); ctx.arc(sx - 5 * s, sy - 1 * s, 1.6 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx + 2 * s, sy - 1 * s, 1.6 * s, 0, Math.PI * 2); ctx.fill();
+  }
   ctx.fillStyle = shirt;
   roundRect(ctx, sx - 5 * s, baseY - 20 * s, 10 * s, 15 * s, 3 * s);
   ctx.fill();

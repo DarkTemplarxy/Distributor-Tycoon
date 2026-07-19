@@ -416,27 +416,43 @@ export const SUPPLIER_INCREASE_RANGE: [number, number] = [0.03, 0.1];
 
 // ============================================================================
 // Paket 2 — Investitionen & Ausrüstung
-// Capital upgrades that each relieve ONE bottleneck, so "hire more people" is no
-// longer the only lever. Their effect flows straight into the Betriebs-Cockpit
-// (a forklift lowers the Personal gauge; cooling protects storage). Levels are
-// bought one at a time at a rising price.
+// Two kinds of investment relieve bottlenecks so "hire more people" isn't the
+// only lever:
+//  • PER-WORKER devices (forklift, picking cart) — physical machines bought in
+//    COUNT. Each one speeds exactly ONE worker who is actively using it, so you
+//    need about as many as you have workers doing that job at once. Auto-assigned
+//    by the simulation; visible in the hall.
+//  • FACILITY upgrades (cooling, own truck) — building-wide, bought in LEVELS,
+//    they help the whole operation (can't be "per user").
+// Everything flows into the Betriebs-Cockpit.
 // ============================================================================
-/** Per-level effect strengths (multiplied by the owned level). */
-export const FORKLIFT_PUTAWAY_SPEED = 0.2; // Einlagern this much faster per level
-export const PACKSTATION_PREP_SPEED = 0.15; // Herrichten this much faster per level
+/** A single device makes its user this much faster (per-worker devices). */
+export const FORKLIFT_PUTAWAY_SPEED = 0.35; // a worker WITH a forklift einlagert this much faster
+export const PACKSTATION_PREP_SPEED = 0.3; // a worker WITH a picking cart herrichtet this much faster
+/** Per-level effect strengths (facility upgrades). */
 export const COOLING_SHELFLIFE_BONUS = 0.25; // Haltbarkeit extended per level
 export const TRUCK_LOGISTICS_SAVE = 0.2; // logistics €/Palette cheaper per level
+
+/** How many of each per-worker device you may own (soft cap ≈ max sensible crew). */
+export const MAX_FORKLIFTS = 8;
+export const MAX_CARTS = 8;
+export const FORKLIFT_PRICE = 3200; // flat, per unit — buy one per worker
+export const CART_PRICE = 2000; // flat, per unit
 
 export interface EquipmentDef {
   id: EquipmentId;
   name: string;
   icon: string;
   desc: string;
-  maxLevel: number;
-  /** Price to go from (level-1) → level. */
-  price: (level: number) => number;
-  /** Human-readable effect at a given owned level. */
-  effectLabel: (level: number) => string;
+  /** 'perWorker' = bought in count, each helps one active worker; 'facility' =
+   * bought in levels, building-wide. */
+  kind: 'perWorker' | 'facility';
+  /** Max owned count (perWorker) or max level (facility). */
+  max: number;
+  /** Price for the NEXT unit/level (n = the count/level you'd own after buying). */
+  price: (n: number) => number;
+  /** Human-readable effect for a given owned count/level. */
+  effectLabel: (n: number) => string;
 }
 
 export const EQUIPMENT_DEFS: EquipmentDef[] = [
@@ -444,26 +460,29 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     id: 'forklift',
     name: 'Gabelstapler',
     icon: '🚜',
-    desc: 'Beschleunigt das Einlagern vom Wareneingang ins Regal – entlastet die Lagerkräfte.',
-    maxLevel: 3,
-    price: (l) => 3000 * l,
-    effectLabel: (l) => (l > 0 ? `Einlagern ${Math.round(FORKLIFT_PUTAWAY_SPEED * l * 100)}% schneller` : '—'),
+    desc: 'Physisches Gerät: beschleunigt das Einlagern für EINEN Mitarbeiter, der ihn gerade fährt. Für alle gleichzeitig einlagernden Kräfte brauchst du entsprechend viele.',
+    kind: 'perWorker',
+    max: MAX_FORKLIFTS,
+    price: () => FORKLIFT_PRICE,
+    effectLabel: (n) => (n > 0 ? `${n}× · beschleunigt ${n} gleichzeitige Einlager-Vorgänge um ${Math.round(FORKLIFT_PUTAWAY_SPEED * 100)}%` : 'keiner'),
   },
   {
     id: 'packstation',
-    name: 'Kommissionier-Station',
-    icon: '🏭',
-    desc: 'Bessere Packtische – Aufträge werden schneller hergerichtet.',
-    maxLevel: 3,
-    price: (l) => 3500 * l,
-    effectLabel: (l) => (l > 0 ? `Herrichten ${Math.round(PACKSTATION_PREP_SPEED * l * 100)}% schneller` : '—'),
+    name: 'Kommissionierwagen',
+    icon: '🛒',
+    desc: 'Physisches Gerät: beschleunigt das Herrichten für EINEN Mitarbeiter, der ihn gerade nutzt. Einer je gleichzeitig herrichtender Kraft für vollen Effekt.',
+    kind: 'perWorker',
+    max: MAX_CARTS,
+    price: () => CART_PRICE,
+    effectLabel: (n) => (n > 0 ? `${n}× · beschleunigt ${n} gleichzeitige Herricht-Vorgänge um ${Math.round(PACKSTATION_PREP_SPEED * 100)}%` : 'keiner'),
   },
   {
     id: 'cooling',
     name: 'Kühlung',
     icon: '❄️',
-    desc: 'Kühlhaus verlängert die Haltbarkeit – deutlich weniger Verderb.',
-    maxLevel: 3,
+    desc: 'Betriebsweite Anlage: Kühlhaus verlängert die Haltbarkeit ALLER Ware – deutlich weniger Verderb.',
+    kind: 'facility',
+    max: 3,
     price: (l) => 2500 * l,
     effectLabel: (l) => (l > 0 ? `Haltbarkeit +${Math.round(COOLING_SHELFLIFE_BONUS * l * 100)}%` : '—'),
   },
@@ -471,8 +490,9 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     id: 'truck',
     name: 'Eigener LKW',
     icon: '🚚',
-    desc: 'Eigene Auslieferung senkt die Logistikkosten je abgeholter Palette.',
-    maxLevel: 3,
+    desc: 'Betriebsweiter Fuhrpark: eigene Auslieferung senkt die Logistikkosten je abgeholter Palette.',
+    kind: 'facility',
+    max: 3,
     price: (l) => 3000 * l,
     effectLabel: (l) => (l > 0 ? `Logistik −${Math.round(TRUCK_LOGISTICS_SAVE * l * 100)}%/Palette` : '—'),
   },
