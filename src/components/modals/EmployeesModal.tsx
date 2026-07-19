@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import {
@@ -28,9 +29,31 @@ const HIREABLE: { role: Role; benefit: string }[] = [
   { role: 'einkaeufer', benefit: 'Übernimmt die automatische Nachbestellung (bedarfsbasiert) und verhandelt Lieferanten-Preiserhöhungen herunter.' },
 ];
 
+/** Compact one-line description of a Lager worker's priority settings for the
+ * collapsed summary, so you can scan assignments without expanding each row. */
+function prefSummary(
+  e: { role: Role; preferredTask?: 'prep' | 'putaway'; preferredProduct?: string },
+  products: { id: string; name: string; emoji: string }[],
+): string | null {
+  if (e.role !== 'lager') return null;
+  const task = e.preferredTask === 'prep' ? '👷 Herrichten' : e.preferredTask === 'putaway' ? '📥 Einlagern' : null;
+  const prod = e.preferredProduct ? products.find((p) => p.id === e.preferredProduct) : null;
+  const parts = [task, prod ? `${prod.emoji} ${prod.name}` : null].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'keine Priorität';
+}
+
 export function EmployeesModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
   const weeklyPayroll = state.employees.reduce((s, e) => s + e.salary, 0);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const allOpen = state.employees.length > 0 && state.employees.every((e) => open.has(e.id));
+  const setAll = () => setOpen(allOpen ? new Set() : new Set(state.employees.map((e) => e.id)));
 
   return (
     <Modal title="Personal" icon="🧑‍💼" onClose={onClose} wide>
@@ -121,92 +144,116 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      <h3>Belegschaft</h3>
+      <div className="section-head">
+        <h3>Belegschaft</h3>
+        {state.employees.length > 1 && (
+          <button className="btn small ghost" onClick={setAll}>
+            {allOpen ? 'Alle einklappen' : 'Alle ausklappen'}
+          </button>
+        )}
+      </div>
       <div className="rows">
-        {state.employees.map((e) => (
-          <div key={e.id} className="row" style={{ flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 22 }}>{ROLE_EMOJI[e.role]}</span>
-            <div className="grow">
-              <div className="title">{e.name}</div>
-              <div className="sub">
-                {ROLE_LABEL[e.role]} · {euro(e.salary)}/Woche · {e.task ? 'arbeitet' : 'frei'}
+        {state.employees.map((e) => {
+          const isOpen = open.has(e.id);
+          const pref = prefSummary(e, state.products);
+          return (
+            <div key={e.id} className="row collapsible">
+              <div className="collapse-head" onClick={() => toggle(e.id)}>
+                <span className="collapse-chev">{isOpen ? '▾' : '▸'}</span>
+                <span style={{ fontSize: 22 }}>{ROLE_EMOJI[e.role]}</span>
+                <div className="grow">
+                  <div className="title">{e.name}</div>
+                  <div className="sub">
+                    {ROLE_LABEL[e.role]} · {euro(e.salary)}/Woche · Skill {e.skill} ·{' '}
+                    {e.task ? 'arbeitet' : 'frei'}
+                    {pref && ` · ${pref}`}
+                  </div>
+                </div>
+                <span className={`pill ${e.task ? '' : 'good'}`}>{e.task ? '⚙️ aktiv' : 'frei'}</span>
               </div>
+
+              {isOpen && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 26 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 150 }}>
+                      <div className="sub">Skill {e.skill}/100</div>
+                      <div className="progress" style={{ marginTop: 4 }}>
+                        <span style={{ width: `${e.skill}%` }} />
+                      </div>
+                    </div>
+                    <button
+                      className="btn small"
+                      disabled={e.skill >= 100}
+                      onClick={() => mutate((s) => trainEmployee(s, e.id))}
+                    >
+                      🎓 Training
+                    </button>
+                    <button
+                      className="btn small danger"
+                      disabled={!!e.task}
+                      onClick={() => mutate((s) => fireEmployee(s, e.id))}
+                    >
+                      Entlassen
+                    </button>
+                  </div>
+                  {e.role === 'lager' && (
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+                      title="Anweisung: Aufgaben mit diesem Produkt übernimmt diese Kraft zuerst (Herrichten UND Einlagern). Gibt es gerade keine passende Arbeit, packt sie ganz normal überall mit an."
+                    >
+                      <span className="sub" style={{ minWidth: 116 }}>📋 Produkt-Priorität:</span>
+                      <button
+                        className={`btn small${!e.preferredProduct ? ' primary' : ' ghost'}`}
+                        onClick={() => mutate((s) => {
+                          const emp = s.employees.find((x) => x.id === e.id);
+                          if (emp) emp.preferredProduct = undefined;
+                        })}
+                      >
+                        Alle
+                      </button>
+                      {state.products.map((p) => (
+                        <button
+                          key={p.id}
+                          className={`btn small${e.preferredProduct === p.id ? ' primary' : ' ghost'}`}
+                          onClick={() => mutate((s) => {
+                            const emp = s.employees.find((x) => x.id === e.id);
+                            if (emp) emp.preferredProduct = p.id;
+                          })}
+                        >
+                          {p.emoji} {p.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {e.role === 'lager' && (
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+                      title="Anweisung: diese Aufgabenart übernimmt die Kraft zuerst. Gibt es davon gerade nichts, hilft sie bei der anderen aus (kein Leerlauf)."
+                    >
+                      <span className="sub" style={{ minWidth: 116 }}>🧭 Aufgaben-Priorität:</span>
+                      {([
+                        [undefined, 'Beides'],
+                        ['putaway', '📥 Einlagern'],
+                        ['prep', '👷 Herrichten'],
+                      ] as const).map(([val, label]) => (
+                        <button
+                          key={label}
+                          className={`btn small${(e.preferredTask ?? undefined) === val ? ' primary' : ' ghost'}`}
+                          onClick={() => mutate((s) => {
+                            const emp = s.employees.find((x) => x.id === e.id);
+                            if (emp) emp.preferredTask = val;
+                          })}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <div style={{ minWidth: 130 }}>
-              <div className="sub">Skill {e.skill}/100</div>
-              <div className="progress" style={{ marginTop: 4 }}>
-                <span style={{ width: `${e.skill}%` }} />
-              </div>
-            </div>
-            <button
-              className="btn small"
-              disabled={e.skill >= 100}
-              onClick={() => mutate((s) => trainEmployee(s, e.id))}
-            >
-              🎓 Training
-            </button>
-            <button
-              className="btn small danger"
-              disabled={!!e.task}
-              onClick={() => mutate((s) => fireEmployee(s, e.id))}
-            >
-              Entlassen
-            </button>
-            {e.role === 'lager' && (
-              <div
-                style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}
-                title="Anweisung: Aufgaben mit diesem Produkt übernimmt diese Kraft zuerst (Herrichten UND Einlagern). Gibt es gerade keine passende Arbeit, packt sie ganz normal überall mit an."
-              >
-                <span className="sub" style={{ minWidth: 116 }}>📋 Produkt-Priorität:</span>
-                <button
-                  className={`btn small${!e.preferredProduct ? ' primary' : ' ghost'}`}
-                  onClick={() => mutate((s) => {
-                    const emp = s.employees.find((x) => x.id === e.id);
-                    if (emp) emp.preferredProduct = undefined;
-                  })}
-                >
-                  Alle
-                </button>
-                {state.products.map((p) => (
-                  <button
-                    key={p.id}
-                    className={`btn small${e.preferredProduct === p.id ? ' primary' : ' ghost'}`}
-                    onClick={() => mutate((s) => {
-                      const emp = s.employees.find((x) => x.id === e.id);
-                      if (emp) emp.preferredProduct = p.id;
-                    })}
-                  >
-                    {p.emoji} {p.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            {e.role === 'lager' && (
-              <div
-                style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}
-                title="Anweisung: diese Aufgabenart übernimmt die Kraft zuerst. Gibt es davon gerade nichts, hilft sie bei der anderen aus (kein Leerlauf)."
-              >
-                <span className="sub" style={{ minWidth: 116 }}>🧭 Aufgaben-Priorität:</span>
-                {([
-                  [undefined, 'Beides'],
-                  ['putaway', '📥 Einlagern'],
-                  ['prep', '👷 Herrichten'],
-                ] as const).map(([val, label]) => (
-                  <button
-                    key={label}
-                    className={`btn small${(e.preferredTask ?? undefined) === val ? ' primary' : ' ghost'}`}
-                    onClick={() => mutate((s) => {
-                      const emp = s.employees.find((x) => x.id === e.id);
-                      if (emp) emp.preferredTask = val;
-                    })}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <h3 style={{ marginTop: 20 }}>Einstellen</h3>

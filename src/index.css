@@ -743,6 +743,33 @@ button {
 .row .title { font-weight: 600; font-size: 14px; }
 .row .sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 
+/* Collapsible list rows (Personal- & Kunden-Übersicht): the summary line is
+   clickable; a chevron shows the open/closed state; the detail block below. */
+.row.collapsible { flex-direction: column; align-items: stretch; gap: 8px; }
+.collapse-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.collapse-chev {
+  font-size: 11px;
+  color: var(--text-dim);
+  width: 14px;
+  flex-shrink: 0;
+  transition: transform 0.12s ease;
+}
+.collapse-head:hover .collapse-chev { color: var(--text); }
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 20px 0 8px;
+}
+.section-head h3 { margin: 0; }
+
 .num-input {
   width: 84px;
   background: var(--bg);

@@ -95,6 +95,16 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
   const countOf = (t: CustomerType) => active.filter((c) => c.type === t).length;
   const productOf = (id: Product['id']) => state.products.find((p) => p.id === id);
 
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const allOpen = shown.length > 0 && shown.every((c) => open.has(c.id));
+  const setAll = () => setOpen(allOpen ? new Set() : new Set(shown.map((c) => c.id)));
+
   return (
     <Modal title="Kunden" icon="🤝" onClose={onClose} wide>
       <p className="hint">
@@ -147,6 +157,11 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
           filter={filter}
           counts={{ small: countOf('small'), medium: countOf('medium'), large: countOf('large') }}
         />
+        {shown.length > 1 && (
+          <button className="btn small ghost" style={{ marginLeft: 'auto' }} onClick={setAll}>
+            {allOpen ? 'Alle einklappen' : 'Alle ausklappen'}
+          </button>
+        )}
       </div>
       {active.length === 0 && <div className="empty">Keine aktiven Kunden.</div>}
       {active.length > 0 && shown.length === 0 && (
@@ -166,9 +181,11 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
           );
           const weeksLeft = demandInq ? Math.max(1, demandInq.demand!.deadlineWeek - week) : 0;
           const scheduledUlti = !demandInq && state.pendingUltimatums.some((u) => u.customerId === c.id);
+          const isOpen = open.has(c.id);
           return (
-            <div key={c.id} className="row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div key={c.id} className="row collapsible">
+              <div className="collapse-head" onClick={() => toggle(c.id)}>
+                <span className="collapse-chev">{isOpen ? '▾' : '▸'}</span>
                 <span style={{ fontSize: 22 }}>{c.emoji}</span>
                 <div className="grow">
                   <div className="title">
@@ -198,12 +215,24 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
                       </>
                     )}
                   </div>
-                  <div className="sub" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    Lieferzeit {c.deliveryLeadWeeks}W · Manager
+                  <div className="sub">
+                    Lieferzeit {c.deliveryLeadWeeks}W · Verspätungen {c.lateDeliveries}/{tolerance} ·
+                    Loyalität {Math.round(c.loyalty)}%
+                    {c.activeDiscount > 0 && ` · Rabatt −${Math.round(c.activeDiscount * 100)}%`}
+                  </div>
+                </div>
+                <Stars value={c.serviceRating} />
+              </div>
+
+              {isOpen && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 26 }}>
+                    <span className="sub">Betreuender Manager</span>
                     <select
                       className="num-input"
                       style={{ width: 'auto', padding: '1px 4px', fontSize: 12 }}
                       value={c.managerId}
+                      onClick={(e) => e.stopPropagation()}
                       onChange={(e) => mutate((s) => assignCustomerManager(s, c.id, e.target.value))}
                       title={`Belegt ${SLOT_COST[c.type]} Slot(s) beim betreuenden Manager`}
                     >
@@ -218,39 +247,33 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
                       })}
                     </select>
                   </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <Stars value={c.serviceRating} />
-                  <div className="sub">
-                    Verspätungen {c.lateDeliveries}/{tolerance} · Loyalität {Math.round(c.loyalty)}%
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 26 }}>
+                    {c.lines.map((l) => (
+                      <LineEditor key={l.productId} customer={c} line={l} product={productOf(l.productId)} />
+                    ))}
                   </div>
-                </div>
-              </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 34 }}>
-                {c.lines.map((l) => (
-                  <LineEditor key={l.productId} customer={c} line={l} product={productOf(l.productId)} />
-                ))}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-dim)', width: 70 }}>Rabatt</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={20}
-                  step={2}
-                  value={Math.round(c.activeDiscount * 100)}
-                  style={{ flex: 1 }}
-                  onChange={(e) => mutate((s) => setDiscount(s, c.id, Number(e.target.value) / 100))}
-                />
-                <span className="pill" style={{ width: 60, textAlign: 'center' }}>
-                  −{Math.round(c.activeDiscount * 100)}%
-                </span>
-                <span className="pill good" style={{ width: 96, textAlign: 'center' }}>
-                  Bedarf +{Math.round(uplift * 100)}%
-                </span>
-              </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 26 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-dim)', width: 70 }}>Rabatt</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={20}
+                      step={2}
+                      value={Math.round(c.activeDiscount * 100)}
+                      style={{ flex: 1 }}
+                      onChange={(e) => mutate((s) => setDiscount(s, c.id, Number(e.target.value) / 100))}
+                    />
+                    <span className="pill" style={{ width: 60, textAlign: 'center' }}>
+                      −{Math.round(c.activeDiscount * 100)}%
+                    </span>
+                    <span className="pill good" style={{ width: 96, textAlign: 'center' }}>
+                      Bedarf +{Math.round(uplift * 100)}%
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           );
         })}
