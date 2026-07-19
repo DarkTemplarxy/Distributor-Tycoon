@@ -7,6 +7,7 @@
 import {
   CONTRACT_PREMIUM,
   CONTRACT_WEEKS,
+  COOL_TILE_PRICE,
   DEMOLISH_REFUND,
   DESK_PRICE,
   EXPRESS_PO_LEAD_DAYS,
@@ -38,10 +39,15 @@ import type { CustomerLine, EquipmentId, GameState, Order, ProductId, Role, Stra
 import {
   acceptInquiry as onboardInquiry,
   availableCredit,
+  coldShelfCapacity,
+  coldShelfUsed,
   commitWeeklyOrder,
   counterAcceptChance,
   createPurchaseOrderInternal,
   equipmentLevel,
+  isCoolTile,
+  normalShelfCapacity,
+  normalShelfUsed,
   freeCapacity,
   freeDesks,
   getProduct,
@@ -54,8 +60,6 @@ import {
   releaseWorkerTask,
   repriceAcceptChance,
   resolveDemandRejection,
-  shelfCapacity,
-  shelfUsed,
   spend,
   supplierUnitPrice,
   tryPrepareOrder,
@@ -175,10 +179,10 @@ export function addProduct(state: GameState, productId: ProductId): ActionResult
     `🧺 ${def.emoji} ${def.name} ins Sortiment aufgenommen! Jetzt einkaufen & bevorraten, bevor du Kunden gewinnst.`,
     'success',
   );
-  if (def.requiresCooling && equipmentLevel(state, 'cooling') === 0) {
+  if (def.requiresCooling && coldShelfCapacity(state) === 0) {
     notify(
       state,
-      `❄️ ${def.name} ist kühlpflichtig – ohne Kühlung (Ausbau) verdirbt die Ware schnell. Kühlung nachrüsten!`,
+      `❄️ ${def.name} ist kühlpflichtig – markiere im Bau-Modus einen Kühlbereich (${COOL_TILE_PRICE}€/Kachel) und stelle Regale hinein, sonst verdirbt die Ware schnell!`,
       'warn',
     );
   }
@@ -674,6 +678,31 @@ function tileFree(state: GameState, gx: number, gy: number): boolean {
 }
 
 /** Build a shelf (+4 pallet slots) on a free storage tile. Fixed price. */
+/** Markiert eine Lager-Kachel als ❄️ Kühlbereich (COOL_TILE_PRICE). Erlaubt auf
+ * leeren Lager-Kacheln UND unter bestehenden Regalen (das Regal wird damit zum
+ * Kühlregal). Kühlware lagert ausschließlich in Regalen auf solchen Kacheln. */
+export function buildCoolZone(state: GameState, gx: number, gy: number): ActionResult {
+  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+  if (!tile || tile.zone !== 'storage') return { ok: false, message: 'Nur in der Lagerzone markierbar.' };
+  if (isCoolTile(state, gx, gy)) return { ok: false, message: 'Kachel ist bereits Kühlbereich.' };
+  if (state.warehouse.tables.some((t) => t.gx === gx && t.gy === gy)) {
+    return { ok: false, message: 'Auf Vorbereitungstischen kein Kühlbereich.' };
+  }
+  if (state.cash + availableCredit(state) < COOL_TILE_PRICE) {
+    return { ok: false, message: `Kühlbereich kostet ${COOL_TILE_PRICE}€ pro Kachel.` };
+  }
+  spend(state, COOL_TILE_PRICE);
+  if (!state.warehouse.coolTiles) state.warehouse.coolTiles = [];
+  state.warehouse.coolTiles.push({ gx, gy });
+  const hasShelf = state.warehouse.shelves.some((s) => s.gx === gx && s.gy === gy);
+  notify(
+    state,
+    `❄️ Kühlbereich markiert (${COOL_TILE_PRICE}€)${hasShelf ? ' – das Regal hier ist jetzt ein Kühlregal.' : ' – ein Regal darauf wird zum Kühlregal.'}`,
+    'info',
+  );
+  return { ok: true };
+}
+
 export function buildShelf(state: GameState, gx: number, gy: number): ActionResult {
   const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
   if (!tile || tile.zone !== 'storage') return { ok: false, message: 'Nur in der Lagerzone platzierbar.' };
@@ -711,13 +740,19 @@ export function demolishAt(state: GameState, gx: number, gy: number): ActionResu
 
   const shelf = w.shelves.find((s) => s.gx === gx && s.gy === gy);
   if (shelf) {
-    // Removing a shelf must not strand stock: capacity after removal ≥ used.
-    if (shelfUsed(state) > shelfCapacity(state) - SHELF_SLOTS * PALETTE_SIZE) {
+    // Removing a shelf must not strand stock — checked in ITS zone (a cool-tile
+    // shelf only holds cold ware, a normal shelf only normal ware).
+    const unit = SHELF_SLOTS * PALETTE_SIZE;
+    const cold = isCoolTile(state, gx, gy);
+    const stranded = cold
+      ? coldShelfUsed(state) > coldShelfCapacity(state) - unit
+      : normalShelfUsed(state) > normalShelfCapacity(state) - unit;
+    if (stranded) {
       return { ok: false, message: 'Regal (mit-)belegt – erst Bestand abverkaufen/umlagern, sonst geht Ware verloren.' };
     }
     w.shelves = w.shelves.filter((s) => s !== shelf);
     refundBack(SHELF_PRICE);
-    notify(state, `🧹 Regal abgerissen – ${Math.round(SHELF_PRICE * DEMOLISH_REFUND)}€ zurück.`, 'info');
+    notify(state, `🧹 ${cold ? 'Kühlregal' : 'Regal'} abgerissen – ${Math.round(SHELF_PRICE * DEMOLISH_REFUND)}€ zurück.`, 'info');
     return { ok: true };
   }
 
@@ -742,6 +777,15 @@ export function demolishAt(state: GameState, gx: number, gy: number): ActionResu
     w.desks = w.desks.filter((d) => d !== desk);
     refundBack(DESK_PRICE);
     notify(state, `🧹 Arbeitsplatz abgerissen – ${Math.round(DESK_PRICE * DEMOLISH_REFUND)}€ zurück.`, 'info');
+    return { ok: true };
+  }
+
+  // Leere Kühlbereich-Kachel: Markierung entfernen (Regal darauf würde oben als
+  // Kühlregal-Abriss greifen — danach kann die Markierung selbst weg).
+  if (isCoolTile(state, gx, gy)) {
+    w.coolTiles = (w.coolTiles ?? []).filter((t) => !(t.gx === gx && t.gy === gy));
+    refundBack(COOL_TILE_PRICE);
+    notify(state, `🧹 Kühlbereich-Markierung entfernt – ${Math.round(COOL_TILE_PRICE * DEMOLISH_REFUND)}€ zurück.`, 'info');
     return { ok: true };
   }
 

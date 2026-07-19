@@ -387,6 +387,11 @@ export interface GameState {
     tiles: { gx: number; gy: number; zone: 'storage' | 'ramp' | 'office' }[];
     /** Placed shelves; each holds SHELF_SLOTS pallets of PALETTE_SIZE units. */
     shelves: { id: string; gx: number; gy: number }[];
+    /** Als Kühlbereich markierte Lager-Kacheln (❄️, 500€/Kachel). Regale auf
+     * diesen Kacheln sind Kühlregale: NUR dort lagert kühlpflichtige Ware —
+     * und dort lagert AUSSCHLIESSLICH kühlpflichtige Ware. Optional für alte
+     * Spielstände (Default: keine). */
+    coolTiles?: { gx: number; gy: number }[];
     /** Placed preparation tables — limit how many workers can prep in parallel. */
     tables: { gx: number; gy: number }[];
     /** Placed office desks — each seats one office employee; hiring office staff

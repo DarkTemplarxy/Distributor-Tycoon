@@ -278,14 +278,19 @@ export interface ProductDef {
   unlockWeek: number;
   /** One-time cost to list this product with the supplier and add it to the assortment. */
   listingFee: number;
-  /** Kühlpflichtig: ohne aufgebaute Kühlung (Ausrüstung) verdirbt die Ware viel
-   * schneller (NO_COOLING_SPOILAGE_MULT). Mit Kühlung greift der normale Bonus. */
+  /** Kühlpflichtig: lagert AUSSCHLIESSLICH in Kühlregalen (Regale auf ❄️
+   * Kühlbereich-Kacheln). Ohne ein einziges Kühlregal verdirbt die Ware stark
+   * beschleunigt (NO_COOLING_SPOILAGE_MULT). */
   requiresCooling?: boolean;
 }
 
-/** Ohne Kühlung schrumpft die Haltbarkeit kühlpflichtiger Produkte auf diesen
- * Anteil – der Anreiz, für Käse/Tiefkühl/Feinkost eine Kühlung zu bauen. */
+/** Ohne Kühl-Lagerplatz schrumpft die Haltbarkeit kühlpflichtiger Produkte auf
+ * diesen Anteil – der Anreiz, für Käse/Tiefkühl/Feinkost einen Kühlbereich mit
+ * Regalen zu bauen. */
 export const NO_COOLING_SPOILAGE_MULT = 0.3;
+
+/** Kosten, eine Lager-Kachel als ❄️ Kühlbereich zu markieren. */
+export const COOL_TILE_PRICE = 500;
 
 // The full product catalog. Only products with unlockWeek 0 are in the assortment
 // at the start; the rest unlock over time (aligned to month starts: fleisch at
@@ -298,11 +303,14 @@ export const PRODUCT_DEFS: ProductDef[] = [
   { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 25, zielmarge: 40, spoilageDays: 42, unlockWeek: 2, listingFee: 500 },
   { id: 'gemuese', name: 'Gemüse', emoji: '🥦', einkaufspreis: 10, verkaufspreis: 16.5, zielmarge: 40, spoilageDays: 56, unlockWeek: 8, listingFee: 500 },
   // --- Späte Produktgruppen (Late Game): eigene Profile + steigende Listungs-
-  // gebühren als Geldsenke. Kühlpflichtige Gruppen brauchen eine gebaute Kühlung.
-  { id: 'kaese', name: 'Käse & Molkerei', emoji: '🧀', einkaufspreis: 22, verkaufspreis: 40, zielmarge: 45, spoilageDays: 30, unlockWeek: 20, listingFee: 3000, requiresCooling: true },
-  { id: 'obst', name: 'Obst & Frische', emoji: '🍎', einkaufspreis: 12, verkaufspreis: 20, zielmarge: 40, spoilageDays: 10, unlockWeek: 26, listingFee: 6000 },
-  { id: 'tiefkuehl', name: 'Tiefkühlkost', emoji: '🧊', einkaufspreis: 28, verkaufspreis: 52, zielmarge: 46, spoilageDays: 90, unlockWeek: 36, listingFee: 18000, requiresCooling: true },
-  { id: 'delikatess', name: 'Feinkost', emoji: '🦞', einkaufspreis: 60, verkaufspreis: 120, zielmarge: 50, spoilageDays: 25, unlockWeek: 48, listingFee: 45000, requiresCooling: true },
+  // gebühren. Die Freischaltung kommt bewusst FRÜHER, als man sie sich bequem
+  // leisten kann — wer sofort zugreift (Gebühr + Kühlbereich + teurer Waren-
+  // einsatz), kann sich übernehmen; wer wartet, wächst langsamer. Kühlpflichtige
+  // Gruppen lagern ausschließlich in Kühlregalen (❄️ Kühlbereich im Bau-Modus).
+  { id: 'kaese', name: 'Käse & Molkerei', emoji: '🧀', einkaufspreis: 22, verkaufspreis: 40, zielmarge: 45, spoilageDays: 30, unlockWeek: 14, listingFee: 3000, requiresCooling: true },
+  { id: 'obst', name: 'Obst & Frische', emoji: '🍎', einkaufspreis: 12, verkaufspreis: 20, zielmarge: 40, spoilageDays: 10, unlockWeek: 20, listingFee: 6000 },
+  { id: 'tiefkuehl', name: 'Tiefkühlkost', emoji: '🧊', einkaufspreis: 28, verkaufspreis: 52, zielmarge: 46, spoilageDays: 90, unlockWeek: 30, listingFee: 18000, requiresCooling: true },
+  { id: 'delikatess', name: 'Feinkost', emoji: '🦞', einkaufspreis: 60, verkaufspreis: 120, zielmarge: 50, spoilageDays: 25, unlockWeek: 42, listingFee: 45000, requiresCooling: true },
 ];
 
 export function getProductDef(id: ProductId): ProductDef {
@@ -516,9 +524,9 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
   },
   {
     id: 'cooling',
-    name: 'Kühlung',
+    name: 'Kühltechnik',
     icon: '❄️',
-    desc: 'Betriebsweite Anlage: Kühlhaus verlängert die Haltbarkeit ALLER Ware – deutlich weniger Verderb.',
+    desc: 'Betriebsweite Anlage: bessere Isolierung & Klimatisierung verlängern die Haltbarkeit ALLER Ware. (Kühlpflichtige Ware braucht zusätzlich Kühlregale – ❄️ Kühlbereich im Bau-Modus.)',
     kind: 'facility',
     max: 3,
     price: (l) => 2500 * l,

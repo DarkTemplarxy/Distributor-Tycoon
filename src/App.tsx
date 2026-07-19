@@ -8,7 +8,7 @@ import { BuildBar } from './components/BuildBar';
 import { OpsCockpit } from './components/OpsCockpit';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
-import { buildShelf, buildTable, buildInboundSlot, buildDesk, demolishAt, expandHall, expandOffice } from './game/actions';
+import { buildCoolZone, buildShelf, buildTable, buildInboundSlot, buildDesk, demolishAt, expandHall, expandOffice } from './game/actions';
 import { isInAssortment, notify } from './game/simulation';
 import {
   LARGE_UNLOCK_MONTHLY,
@@ -252,7 +252,9 @@ export function App() {
                                 ? buildInboundSlot(s, gx, gy)
                                 : buildTool === 'desk'
                                   ? buildDesk(s, gx, gy)
-                                  : null;
+                                  : buildTool === 'cool'
+                                    ? buildCoolZone(s, gx, gy)
+                                    : null;
                         // No silent refusal: surface why a placement failed.
                         if (r && !r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
                       }),

@@ -8,11 +8,14 @@
 import { useEffect, useRef } from 'react';
 import { useGame } from '../state/GameProvider';
 import {
+  coldShelfCapacity,
+  coldShelfUsed,
   hallExpansionFrontier,
   hasPickupReady,
   inboundCapacity,
   inboundStock,
   inboundUsed,
+  isCoolTile,
   officeExpansionFrontier,
   placementBlocksAccess,
   shelfCapacity,
@@ -23,7 +26,7 @@ import { PALETTE_SIZE, SHELF_SLOTS, WORK_END_HOUR, WORK_START_HOUR } from '../ga
 import { dayName, formatClock, hourOf } from '../game/util';
 import type { GameState, ProductId } from '../game/types';
 
-export type BuildTool = 'shelf' | 'table' | 'inbound' | 'expand' | 'desk' | 'officeExpand' | 'demolish';
+export type BuildTool = 'shelf' | 'table' | 'inbound' | 'expand' | 'desk' | 'officeExpand' | 'cool' | 'demolish';
 export interface BuildProps {
   tool: BuildTool | null;
   /** Place a single-tile object (shelf/table/inbound) at a grid tile. */
@@ -212,6 +215,10 @@ function validBuildTiles(state: GameState, tool: BuildTool): { gx: number; gy: n
     } else if (tool === 'desk') {
       // desk: empty, reachable office tile
       if (t.zone === 'office' && !deskAt(state, t.gx, t.gy) && placementBlocksAccess(state, t.gx, t.gy) === null) out.push(t);
+    } else if (tool === 'cool') {
+      // Kühlbereich: Lager-Kachel, noch nicht markiert, kein Tisch (leere Kachel
+      // ODER bestehendes Regal — das wird dann zum Kühlregal).
+      if (t.zone === 'storage' && !isCoolTile(state, t.gx, t.gy) && !tableAt(state, t.gx, t.gy)) out.push(t);
     } else {
       // shelf or table: empty, reachable storage tile
       if (
@@ -234,6 +241,11 @@ function demolishableTiles(state: GameState): { gx: number; gy: number }[] {
   for (const s of state.warehouse.shelves) out.push({ gx: s.gx, gy: s.gy });
   for (const t of state.warehouse.tables) out.push({ gx: t.gx, gy: t.gy });
   for (const d of state.warehouse.desks) out.push({ gx: d.gx, gy: d.gy });
+  // Leere Kühlbereich-Kacheln: Markierung entfernbar (mit Regal greift erst der
+  // Regal-Abriss auf derselben Kachel).
+  for (const c of state.warehouse.coolTiles ?? []) {
+    if (!state.warehouse.shelves.some((s) => s.gx === c.gx && s.gy === c.gy)) out.push({ gx: c.gx, gy: c.gy });
+  }
   return out;
 }
 
@@ -917,16 +929,28 @@ function draw(
     false,
   );
 
-  // Floor tiles (office tiles get the darker office floor).
+  // Floor tiles (office tiles get the darker office floor; ❄️ Kühlbereich-
+  // Kacheln bekommen einen eisblauen Boden).
   for (const t of state.warehouse.tiles) {
     const checker = (t.gx + t.gy) % 2 === 0;
-    const fill =
-      t.zone === 'ramp'
+    const cool = t.zone === 'storage' && isCoolTile(state, t.gx, t.gy);
+    const fill = cool
+      ? checker ? '#a9cfdd' : '#9cc6d6'
+      : t.zone === 'ramp'
         ? checker ? C.rampFloor : C.rampFloorAlt
         : t.zone === 'office'
           ? checker ? C.officeFloor : shade(C.officeFloor, 0.92)
           : checker ? C.floor : C.floorAlt;
     tileQuad(ctx, v, t.gx, t.gy, fill, true);
+    if (cool) {
+      // Dezentes ❄ in der Kachelmitte, damit die Zone auch ohne Farbsehen lesbar ist.
+      const [sx, sy] = iso(v, t.gx + 0.5, t.gy + 0.5);
+      ctx.fillStyle = 'rgba(30,90,120,0.55)';
+      ctx.font = `${Math.max(8, 11 * v.s)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('❄', sx, sy);
+    }
   }
 
   // Zone labels.
@@ -1120,7 +1144,8 @@ function draw(
   // progresses — surface that so a stalled Herrichtung at night isn't confusing.
   const hr = hourOf(state.totalDays);
   const feierabend = hr < WORK_START_HOUR || hr >= WORK_END_HOUR;
-  const hud = `🏭 Regal ${shelfUsed(state)}/${shelfCapacity(state)}  ·  Wareneingang ${inboundUsed(state)}/${inboundCapacity(state)}  ·  Fertig ${ready.length}  ·  ${dayName(state.totalDays)} ${formatClock(state.totalDays)}${feierabend ? '  ·  😴 Feierabend · ⏩ ×16' : ''}`;
+  const coldCap = coldShelfCapacity(state);
+  const hud = `🏭 Regal ${shelfUsed(state) - coldShelfUsed(state)}/${shelfCapacity(state) - coldCap}${coldCap > 0 ? `  ·  ❄ Kühl ${coldShelfUsed(state)}/${coldCap}` : ''}  ·  Wareneingang ${inboundUsed(state)}/${inboundCapacity(state)}  ·  Fertig ${ready.length}  ·  ${dayName(state.totalDays)} ${formatClock(state.totalDays)}${feierabend ? '  ·  😴 Feierabend · ⏩ ×16' : ''}`;
   ctx.font = `600 12px 'Segoe UI', sans-serif`;
   ctx.textAlign = 'left';
   const pad = 10;

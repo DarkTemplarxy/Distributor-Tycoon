@@ -1,5 +1,6 @@
 import { useGame } from '../state/GameProvider';
 import {
+  COOL_TILE_PRICE,
   DESK_PRICE,
   INBOUND_SLOT_PRICE,
   RENT_PER_EXPANSION,
@@ -19,6 +20,7 @@ const TOOLS: { id: BuildTool; icon: string; label: string; hint: string }[] = [
   { id: 'expand', icon: '🏗️', label: 'Erweiterung', hint: `+4 Kacheln (rechts/hinten) · Miete +${RENT_PER_EXPANSION} €/Monat` },
   { id: 'desk', icon: '🪑', label: 'Arbeitsplatz', hint: 'Sitzplatz für 1 Büro-Mitarbeiter' },
   { id: 'officeExpand', icon: '🏢', label: 'Bürogebiet', hint: `+4 Bürokacheln (links) · Miete +${RENT_PER_EXPANSION} €/Monat` },
+  { id: 'cool', icon: '❄️', label: 'Kühlbereich', hint: 'Lager-Kachel markieren: Regale darauf werden Kühlregale – NUR dort lagert kühlpflichtige Ware (Käse, Tiefkühl, Feinkost), und dort lagert nichts anderes.' },
 ];
 
 export function BuildBar({
@@ -41,9 +43,11 @@ export function BuildBar({
           ? INBOUND_SLOT_PRICE
           : id === 'desk'
             ? DESK_PRICE
-            : id === 'officeExpand'
-              ? officeExpansionPrice(state.warehouse.officeExpansions)
-              : hallExpansionPrice(state.warehouse.expansions);
+            : id === 'cool'
+              ? COOL_TILE_PRICE
+              : id === 'officeExpand'
+                ? officeExpansionPrice(state.warehouse.officeExpansions)
+                : hallExpansionPrice(state.warehouse.expansions);
 
   return (
     <div
@@ -96,7 +100,7 @@ export function BuildBar({
         );
       })}
       <button
-        title="Abreißen: Regal/Tisch/Arbeitsplatz anklicken – 50 % des Preises zurück."
+        title="Abreißen: Regal/Tisch/Arbeitsplatz/Kühlbereich-Markierung anklicken – 50 % des Preises zurück."
         onClick={() => onSelect(tool === 'demolish' ? null : 'demolish')}
         style={{
           display: 'flex',

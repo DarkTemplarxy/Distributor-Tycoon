@@ -221,6 +221,54 @@ export function shelfFree(state: GameState): number {
   return Math.max(0, shelfCapacity(state) - shelfUsed(state));
 }
 
+// --- ❄️ Kühlbereich ---------------------------------------------------------
+// Als Kühlbereich markierte Lager-Kacheln machen die Regale darauf zu
+// Kühlregalen. Die Lagerkapazität ist damit PARTITIONIERT: kühlpflichtige Ware
+// (Käse/Tiefkühl/Feinkost) lagert AUSSCHLIESSLICH in Kühlregalen, alle andere
+// Ware ausschließlich in normalen Regalen.
+
+export function coolTiles(state: GameState): { gx: number; gy: number }[] {
+  return state.warehouse.coolTiles ?? [];
+}
+export function isCoolTile(state: GameState, gx: number, gy: number): boolean {
+  return coolTiles(state).some((t) => t.gx === gx && t.gy === gy);
+}
+/** Kühlregale = Regale, die auf einer Kühlbereich-Kachel stehen. */
+export function coldShelfCount(state: GameState): number {
+  return state.warehouse.shelves.filter((s) => isCoolTile(state, s.gx, s.gy)).length;
+}
+export function coldShelfCapacity(state: GameState): number {
+  return coldShelfCount(state) * SHELF_SLOTS * PALETTE_SIZE;
+}
+export function coldShelfUsed(state: GameState): number {
+  return state.products.reduce(
+    (s, p) => s + (getProductDef(p.id).requiresCooling ? shelfStock(p) : 0),
+    0,
+  );
+}
+export function coldShelfFree(state: GameState): number {
+  return Math.max(0, coldShelfCapacity(state) - coldShelfUsed(state));
+}
+export function normalShelfCapacity(state: GameState): number {
+  return shelfCapacity(state) - coldShelfCapacity(state);
+}
+export function normalShelfUsed(state: GameState): number {
+  return shelfUsed(state) - coldShelfUsed(state);
+}
+export function normalShelfFree(state: GameState): number {
+  return Math.max(0, normalShelfCapacity(state) - normalShelfUsed(state));
+}
+/** Freier Regalplatz für DIESES Produkt (kalt → Kühlregale, sonst normale). */
+export function shelfFreeFor(state: GameState, productId: ProductId): number {
+  return getProductDef(productId).requiresCooling ? coldShelfFree(state) : normalShelfFree(state);
+}
+/** Regal-Gesamtkapazität, die diesem Produkt überhaupt offensteht. */
+export function shelfCapacityFor(state: GameState, productId: ProductId): number {
+  return getProductDef(productId).requiresCooling
+    ? coldShelfCapacity(state)
+    : normalShelfCapacity(state);
+}
+
 /** Total inbound (Wareneingang) capacity and how much is free right now. */
 export function inboundCapacity(state: GameState): number {
   return state.warehouse.inboundSlots * PALETTE_SIZE;
@@ -630,19 +678,20 @@ export function truckCostPerPallet(state: GameState): number {
 }
 /** Effective shelf life for a product's fresh batches: cooling extends it, the
  * Frische-Spezialist strategy shortens it. Kühlpflichtige Gruppen (Käse, Tiefkühl,
- * Feinkost) verderben ohne gebaute Kühlung stark beschleunigt. */
+ * Feinkost) verderben stark beschleunigt, solange es KEINE Kühlregale gibt
+ * (❄️ Kühlbereich im Bau-Modus + Regal darauf) — die Ware steht dann warm. */
 export function spoilageDaysFor(state: GameState, product: Product): number {
-  const coolingLevel = equipmentLevel(state, 'cooling');
-  const cooling = 1 + COOLING_SHELFLIFE_BONUS * coolingLevel;
+  const cooling = 1 + COOLING_SHELFLIFE_BONUS * equipmentLevel(state, 'cooling');
   const strat = getStrategyDef(state.strategy).spoilageFactor;
   const needsCold = !!getProductDef(product.id).requiresCooling;
-  const coldPenalty = needsCold && coolingLevel === 0 ? NO_COOLING_SPOILAGE_MULT : 1;
+  const coldPenalty = needsCold && coldShelfCapacity(state) === 0 ? NO_COOLING_SPOILAGE_MULT : 1;
   return Math.max(1, Math.round(product.spoilageDays * cooling * strat * coldPenalty));
 }
 
-/** Kühlpflichtiges Produkt im Sortiment, aber keine Kühlung gebaut → Warnung. */
+/** Kühlpflichtiges Produkt im Sortiment, aber kein Kühlregal (Kühlbereich-Kachel
+ * mit Regal darauf) → Warnung: die Ware kann nirgends kalt lagern. */
 export function coldChainGap(state: GameState): boolean {
-  if (equipmentLevel(state, 'cooling') > 0) return false;
+  if (coldShelfCapacity(state) > 0) return false;
   return state.products.some((p) => getProductDef(p.id).requiresCooling);
 }
 
@@ -1033,7 +1082,9 @@ function assignPutaway(state: GameState, product: Product, opts?: { strictTask?:
   const pick = pickLagerWorker(state, 'putaway', product.id, opts?.strictTask);
   const worker = pick && state.employees.find((e) => e.id === pick.id);
   if (!worker) return false;
-  const qty = Math.min(PALETTE_SIZE, inboundStock(product), shelfFree(state));
+  // Zonen-Regel: kühlpflichtige Ware passt nur in freie KÜHLregale, alle andere
+  // nur in freie normale Regale (shelfFreeFor).
+  const qty = Math.min(PALETTE_SIZE, inboundStock(product), shelfFreeFor(state, product.id));
   if (qty <= 0) return false;
 
   // Take qty from inbound (FIFO by expiry) and remember the earliest expiry.
@@ -1130,7 +1181,6 @@ function autoAssignWork(state: GameState): void {
   // One assignment round: prep due orders first (revenue, needs a free table),
   // then put remaining idle workers on put-away. `strict` restricts each step to
   // workers who prioritise that task type (used by the first pass).
-  const capacity = shelfCapacity(state);
   const round = (strict: boolean) => {
     let idle = idleCount();
     // Serve orders in the SAME order the Aufträge-Panel shows them: late first,
@@ -1156,7 +1206,9 @@ function autoAssignWork(state: GameState): void {
       if (idle === 0 || freeTables(state) <= 0) break;
       const have = avail[order.productId] ?? 0;
       if (have < order.quantity) {
-        if (order.quantity <= capacity) avail[order.productId] = 0;
+        // Reservation nur, wenn das Lager den Auftrag überhaupt fassen KÖNNTE —
+        // für Kühlware zählt dabei nur die Kühlregal-Kapazität.
+        if (order.quantity <= shelfCapacityFor(state, order.productId)) avail[order.productId] = 0;
         continue;
       }
       if (tryPrepareOrder(state, order, { strictTask: strict }) === null) {
@@ -1164,11 +1216,15 @@ function autoAssignWork(state: GameState): void {
         idle -= 1;
       }
     }
-    while (idle > 0 && shelfFree(state) > 0) {
+    while (idle > 0) {
+      // Nur Produkte einlagern, die in IHRER Zone noch Platz haben (Kühlware →
+      // Kühlregale, sonst normale Regale) — Kühlware im Wareneingang blockiert
+      // so nie das Einlagern normaler Ware und umgekehrt.
       const free = state.employees.filter((e) => e.role === 'lager' && !e.task);
+      const fits = (p: Product) => inboundStock(p) > 0 && shelfFreeFor(state, p.id) > 0;
       const product =
-        state.products.find((p) => inboundStock(p) > 0 && free.some((w) => w.preferredProduct === p.id)) ??
-        state.products.find((p) => inboundStock(p) > 0);
+        state.products.find((p) => fits(p) && free.some((w) => w.preferredProduct === p.id)) ??
+        state.products.find(fits);
       if (!product || !assignPutaway(state, product, { strictTask: strict })) break;
       idle -= 1;
     }

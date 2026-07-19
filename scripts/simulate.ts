@@ -34,6 +34,7 @@ import { createInitialState } from '../src/game/init.ts';
 import {
   advance,
   coldChainGap,
+  coldShelfFree,
   freeCapacity,
   freeDesks,
   hallExpansionFrontier,
@@ -46,11 +47,11 @@ import {
 } from '../src/game/simulation.ts';
 import {
   acceptInquiry,
+  buildCoolZone,
   buildDesk,
   buildInboundSlot,
   buildShelf,
   buildTable,
-  buyEquipment,
   counterOffer,
   expandHall,
   expandOffice,
@@ -323,9 +324,22 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
       }
     }
 
-    // --- bot: a sensible operator builds cooling once it carries a cold-chain
-    // product (Käse/Tiefkühl/Feinkost) — otherwise that ware spoils fast. ---
-    if (strategy === 'sinnvoll' && coldChainGap(s)) buyEquipment(s, 'cooling');
+    // --- bot: a sensible operator builds a cool zone + shelf once it carries a
+    // cold-chain product (Käse/Tiefkühl/Feinkost) — the ware can ONLY be stored
+    // in shelves on cool tiles; without one it spoils fast in inbound. Also
+    // extend the zone when cold shelf space runs low. ---
+    if (strategy === 'sinnvoll') {
+      const needsColdSpace =
+        coldChainGap(s) ||
+        (s.products.some((p) => getProductDef(p.id).requiresCooling) && coldShelfFree(s) < 40);
+      if (needsColdSpace && s.cash > 4000) {
+        const t = freeStorageTile(s);
+        if (t) {
+          buildCoolZone(s, t.gx, t.gy);
+          buildShelf(s, t.gx, t.gy);
+        }
+      }
+    }
 
     // --- bot: order the deficit whenever the weekly window opens ---
     if (s.pendingOrderWeek != null) orderDeficit(s);

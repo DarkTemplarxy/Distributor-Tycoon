@@ -29,7 +29,7 @@ export function CompanyModal({ onClose }: { onClose: () => void }) {
       <p className="hint" style={{ marginTop: 2 }}>
         <b>Geräte</b> (Stapler, Wagen) sind <b>physisch</b> und helfen je <b>einem</b> Mitarbeiter,
         der sie gerade nutzt – du brauchst etwa so viele wie gleichzeitig arbeitende Kräfte
-        ({lagerkraefte} Lagerkräfte). <b>Anlagen</b> (Kühlung, LKW) wirken betriebsweit. Wirkung
+        ({lagerkraefte} Lagerkräfte). <b>Anlagen</b> (Kühltechnik, LKW) wirken betriebsweit. Wirkung
         sofort im Cockpit sichtbar.
       </p>
       <div className="rows">

@@ -35,6 +35,7 @@ import {
   PALETTE_SIZE,
   PAYMENT_DELAY_DAYS_BY_TYPE,
   PO_LEAD_DAYS,
+  COOL_TILE_PRICE,
   NO_COOLING_SPOILAGE_MULT,
   PRODUCT_DEFS,
   PRODUCT_VOLUME_FACTOR,
@@ -344,7 +345,8 @@ const ENTRIES: WikiEntry[] = [
           und <b>🛒 Kommissionierwagen</b> (Herrichten) – helfen je <b>einem</b> Mitarbeiter, der sie
           gerade benutzt, und sind in der Halle sichtbar. Für vollen Effekt brauchst du etwa so
           viele wie gleichzeitig arbeitende Lagerkräfte (du kaufst sie in Stückzahl). <b>Anlagen</b>{' '}
-          wirken betriebsweit: <b>❄️ Kühlung</b> (längere Haltbarkeit für ALLE Ware) und{' '}
+          wirken betriebsweit: <b>❄️ Kühltechnik</b> (längere Haltbarkeit für ALLE Ware – ersetzt
+          aber KEINE Kühlregale für kühlpflichtige Ware) und{' '}
           <b>🚚 eigener LKW</b> (niedrigere Logistikkosten). Alles wirkt sofort im Cockpit.
         </p>
         <p>
@@ -419,11 +421,18 @@ const ENTRIES: WikiEntry[] = [
         </p>
         <p>
           <b>Späte Produktgruppen</b> (🧀 Käse, 🍎 Obst, 🧊 Tiefkühl, 🦞 Feinkost) schalten über Jahr
-          1–2 frei: höhere Margen, aber steigende <b>Listungsgebühren</b> (bis 45.000€) als
-          Investitionsentscheidung. Mit <b>❄️</b> markierte Gruppen sind <b>kühlpflichtig</b> – ohne
-          gebaute <b>Kühlung</b> (Ausbau) verdirbt ihre Ware stark beschleunigt (auf{' '}
-          {Math.round(NO_COOLING_SPOILAGE_MULT * 100)}% der Haltbarkeit). Erst Kühlung bauen, dann
-          listen und bevorraten.
+          1–2 frei – bewusst <b>bevor</b> man sie sich bequem leisten kann: höhere Margen, aber
+          steigende <b>Listungsgebühren</b> (bis 45.000€). Wer sofort zugreift, kann sich übernehmen;
+          wer wartet, wächst langsamer – deine Entscheidung.
+        </p>
+        <p>
+          <b>❄️ Kühlkette:</b> Kühlpflichtige Gruppen (❄️-Markierung) lagern{' '}
+          <b>ausschließlich in Kühlregalen</b> – Regale auf Kacheln, die im Bau-Modus als{' '}
+          <b>Kühlbereich</b> markiert wurden ({COOL_TILE_PRICE}€ pro Kachel, auch nachträglich unter
+          bestehenden Regalen). Umgekehrt lagert in Kühlregalen <b>nur</b> Kühlware – die Kapazität
+          ist also fest aufgeteilt. Gibt es <b>kein</b> Kühlregal, steht kühlpflichtige Ware warm und
+          verdirbt auf {Math.round(NO_COOLING_SPOILAGE_MULT * 100)}% der Haltbarkeit. Erst
+          Kühlbereich + Regale bauen, dann listen und bevorraten.
         </p>
         <p>
           Abgelaufene Ware wird zum Einkaufswert abgeschrieben. Bei stornierten Aufträgen kommt
