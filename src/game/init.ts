@@ -144,6 +144,21 @@ function makeWarehouse(): GameState['warehouse'] {
   return { tiles, shelves, tables, desks, inboundSlots: 6, abholzone: 3, expansions: 0, officeExpansions: 0 };
 }
 
+/** Die Start-Halle des Standorts Süd (L3): reine Lager-Halle OHNE Bürobereich —
+ * die Verwaltung sitzt zentral im Hauptlager. Grundausstattung: 3 Regale,
+ * 1 Tisch, 4 Anlieferplätze; ausbaubar wie das Hauptlager. */
+export function makeBranchWarehouse(): GameState['warehouse'] {
+  const tiles: GameState['warehouse']['tiles'] = [];
+  for (let gy = 0; gy <= 5; gy++) {
+    for (let gx = 0; gx <= 6; gx++) {
+      tiles.push({ gx, gy, zone: gy >= 4 ? 'ramp' : 'storage' });
+    }
+  }
+  const shelves = [1, 2, 3].map((gx) => ({ id: uid('shelf'), gx, gy: 0 }));
+  const tables = [{ gx: 3, gy: 3 }];
+  return { tiles, shelves, tables, desks: [], inboundSlots: 4, abholzone: 3, expansions: 0, officeExpansions: 0 };
+}
+
 /** The one order that is already open when the game starts — the tutorial's very
  * first action (BEAT 0: press Herrichten). Small customer, covered by the 80
  * starter fish, so it can be prepared and shipped immediately. */

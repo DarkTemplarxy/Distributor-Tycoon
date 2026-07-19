@@ -1,9 +1,14 @@
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { availableCredit, equipmentLevel } from '../../game/simulation';
-import { buyEquipment, setStrategy } from '../../game/actions';
+import { availableCredit, branchOpen, equipmentLevel, notify } from '../../game/simulation';
+import { buyEquipment, openBranch, setStrategy } from '../../game/actions';
 import {
+  BRANCH_PRICE,
+  BRANCH_RENT,
+  BRANCH_UNLOCK_MONTHLY,
   EQUIPMENT_DEFS,
+  monthlyRevenue,
+  SITE_META,
   STRATEGY_DEFS,
   STRATEGY_COOLDOWN_WEEKS,
 } from '../../game/constants';
@@ -25,6 +30,49 @@ export function CompanyModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="Unternehmen · Ausbau & Strategie" icon="🏢" onClose={onClose} wide>
+      <h3>🌍 Standorte (Konzern)</h3>
+      {(() => {
+        const rev = monthlyRevenue(state);
+        const unlocked = rev >= BRANCH_UNLOCK_MONTHLY;
+        const open = branchOpen(state);
+        return (
+          <div className="row" style={{ marginBottom: 14 }}>
+            <span style={{ fontSize: 24 }}>{SITE_META.sued.emoji}</span>
+            <div className="grow">
+              <div className="title">{SITE_META.sued.name}</div>
+              <div className="sub">
+                {open
+                  ? `Eröffnet – neue Region Süd mit eigenen Kunden. Exklusiv dort lieferbar: 🍷 Wein & 🫒 Oliven (Fisch nur per Transfer aus Nord). Miete +${euro(BRANCH_RENT)}/Monat.`
+                  : `Erschließt die Region Süd: neuer Kundenstamm + exklusive Regionalprodukte (🍷 Wein, 🫒 Oliven). Eigene Halle, eigenes Lagerpersonal – die Verwaltung bleibt zentral. Ab ${euro(BRANCH_UNLOCK_MONTHLY)} Monatsumsatz (aktuell ${euro(rev)}).`}
+              </div>
+            </div>
+            {open ? (
+              <span className="pill good">Eröffnet W{(state.branchOpenedWeek ?? 0) + 1}</span>
+            ) : (
+              <button
+                className="btn primary small"
+                disabled={!unlocked || budget < BRANCH_PRICE}
+                title={
+                  !unlocked
+                    ? `Ab ${euro(BRANCH_UNLOCK_MONTHLY)} Monatsumsatz.`
+                    : budget < BRANCH_PRICE
+                      ? `Eröffnung kostet ${euro(BRANCH_PRICE)}.`
+                      : 'Vorsicht: Eröffnung + Personal + Warenaufbau kosten zusammen deutlich mehr – wer sich übernimmt, riskiert die Kasse.'
+                }
+                onClick={() =>
+                  mutate((s) => {
+                    const r = openBranch(s);
+                    if (!r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
+                  })
+                }
+              >
+                Eröffnen ({euro(BRANCH_PRICE)})
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
       <h3>🏗️ Investitionen & Ausrüstung</h3>
       <p className="hint" style={{ marginTop: 2 }}>
         <b>Geräte</b> (Stapler, Wagen) sind <b>physisch</b> und helfen je <b>einem</b> Mitarbeiter,

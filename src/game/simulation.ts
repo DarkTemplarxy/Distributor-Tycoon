@@ -62,6 +62,11 @@ import {
   POACH_COURT_WEEKS,
   POACH_LOYALTY_CEILING,
   POACH_EXPOSURE_FULL,
+  supplierDeliversTo,
+  SITE_META,
+  BRANCH_RENT,
+  BRANCH_MARKET_BONUS,
+  BRANCH_INQUIRY_SHARE,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
   REPRICE_ACCEPT_FLOOR,
@@ -112,6 +117,8 @@ import type {
   CustomerLine,
   CustomerType,
   EquipmentId,
+  SiteId,
+  Transfer,
   GameState,
   Inquiry,
   NotificationType,
@@ -209,25 +216,53 @@ export function inventoryTotal(product: Product): number {
   return product.batches.reduce((sum, b) => sum + b.quantity, 0);
 }
 
-/** Units on shelves — the only stock available to prepare orders. */
-export function shelfStock(product: Product): number {
-  return product.batches.reduce((s, b) => s + (b.location === 'shelf' ? b.quantity : 0), 0);
+/** Units on shelves AT THIS SITE — the only stock available to prepare orders. */
+export function shelfStock(product: Product, site: SiteId = 'hq'): number {
+  return product.batches.reduce(
+    (s, b) => s + (b.location === 'shelf' && (b.siteId ?? 'hq') === site ? b.quantity : 0),
+    0,
+  );
 }
 
-/** Units sitting in the inbound zone, waiting to be put away onto shelves. */
-export function inboundStock(product: Product): number {
-  return product.batches.reduce((s, b) => s + (b.location === 'inbound' ? b.quantity : 0), 0);
+/** Units in the inbound zone AT THIS SITE, waiting to be shelved. */
+export function inboundStock(product: Product, site: SiteId = 'hq'): number {
+  return product.batches.reduce(
+    (s, b) => s + (b.location === 'inbound' && (b.siteId ?? 'hq') === site ? b.quantity : 0),
+    0,
+  );
 }
 
-/** Total shelf capacity in units: shelves × slots × palette size. */
-export function shelfCapacity(state: GameState): number {
-  return state.warehouse.shelves.length * SHELF_SLOTS * PALETTE_SIZE;
+// --- Standorte (L3) ---------------------------------------------------------
+export function branchOpen(state: GameState): boolean {
+  return !!state.branchWarehouse;
 }
-export function shelfUsed(state: GameState): number {
-  return state.products.reduce((s, p) => s + shelfStock(p), 0);
+/** Das Warehouse des Standorts ('hq' = Hauptlager, 'sued' = Standort Süd). */
+export function warehouseOf(state: GameState, site: SiteId = 'hq'): GameState['warehouse'] {
+  return site === 'sued' && state.branchWarehouse ? state.branchWarehouse : state.warehouse;
 }
-export function shelfFree(state: GameState): number {
-  return Math.max(0, shelfCapacity(state) - shelfUsed(state));
+export function siteOfCustomer(c: { region?: SiteId } | undefined): SiteId {
+  return c?.region ?? 'hq';
+}
+export function siteOfEmployee(e: { siteId?: SiteId }): SiteId {
+  return e.siteId ?? 'hq';
+}
+export function siteOfOrder(state: GameState, order: { customerId: string }): SiteId {
+  return siteOfCustomer(state.customers.find((c) => c.id === order.customerId));
+}
+/** Alle aktiven Standorte (fürs Auto-Assign u. Ä.). */
+export function activeSites(state: GameState): SiteId[] {
+  return branchOpen(state) ? ['hq', 'sued'] : ['hq'];
+}
+
+/** Total shelf capacity in units at a site: shelves × slots × palette size. */
+export function shelfCapacity(state: GameState, site: SiteId = 'hq'): number {
+  return warehouseOf(state, site).shelves.length * SHELF_SLOTS * PALETTE_SIZE;
+}
+export function shelfUsed(state: GameState, site: SiteId = 'hq'): number {
+  return state.products.reduce((s, p) => s + shelfStock(p, site), 0);
+}
+export function shelfFree(state: GameState, site: SiteId = 'hq'): number {
+  return Math.max(0, shelfCapacity(state, site) - shelfUsed(state, site));
 }
 
 // --- ❄️ Kühlbereich ---------------------------------------------------------
@@ -236,67 +271,70 @@ export function shelfFree(state: GameState): number {
 // (Käse/Tiefkühl/Feinkost) lagert AUSSCHLIESSLICH in Kühlregalen, alle andere
 // Ware ausschließlich in normalen Regalen.
 
-export function coolTiles(state: GameState): { gx: number; gy: number }[] {
-  return state.warehouse.coolTiles ?? [];
+export function coolTiles(state: GameState, site: SiteId = 'hq'): { gx: number; gy: number }[] {
+  return warehouseOf(state, site).coolTiles ?? [];
 }
-export function isCoolTile(state: GameState, gx: number, gy: number): boolean {
-  return coolTiles(state).some((t) => t.gx === gx && t.gy === gy);
+export function isCoolTile(state: GameState, gx: number, gy: number, site: SiteId = 'hq'): boolean {
+  return coolTiles(state, site).some((t) => t.gx === gx && t.gy === gy);
 }
 /** Kühlregale = Regale, die auf einer Kühlbereich-Kachel stehen. */
-export function coldShelfCount(state: GameState): number {
-  return state.warehouse.shelves.filter((s) => isCoolTile(state, s.gx, s.gy)).length;
+export function coldShelfCount(state: GameState, site: SiteId = 'hq'): number {
+  return warehouseOf(state, site).shelves.filter((s) => isCoolTile(state, s.gx, s.gy, site)).length;
 }
-export function coldShelfCapacity(state: GameState): number {
-  return coldShelfCount(state) * SHELF_SLOTS * PALETTE_SIZE;
+export function coldShelfCapacity(state: GameState, site: SiteId = 'hq'): number {
+  return coldShelfCount(state, site) * SHELF_SLOTS * PALETTE_SIZE;
 }
-export function coldShelfUsed(state: GameState): number {
+export function coldShelfUsed(state: GameState, site: SiteId = 'hq'): number {
   return state.products.reduce(
-    (s, p) => s + (getProductDef(p.id).requiresCooling ? shelfStock(p) : 0),
+    (s, p) => s + (getProductDef(p.id).requiresCooling ? shelfStock(p, site) : 0),
     0,
   );
 }
-export function coldShelfFree(state: GameState): number {
-  return Math.max(0, coldShelfCapacity(state) - coldShelfUsed(state));
+export function coldShelfFree(state: GameState, site: SiteId = 'hq'): number {
+  return Math.max(0, coldShelfCapacity(state, site) - coldShelfUsed(state, site));
 }
-export function normalShelfCapacity(state: GameState): number {
-  return shelfCapacity(state) - coldShelfCapacity(state);
+export function normalShelfCapacity(state: GameState, site: SiteId = 'hq'): number {
+  return shelfCapacity(state, site) - coldShelfCapacity(state, site);
 }
-export function normalShelfUsed(state: GameState): number {
-  return shelfUsed(state) - coldShelfUsed(state);
+export function normalShelfUsed(state: GameState, site: SiteId = 'hq'): number {
+  return shelfUsed(state, site) - coldShelfUsed(state, site);
 }
-export function normalShelfFree(state: GameState): number {
-  return Math.max(0, normalShelfCapacity(state) - normalShelfUsed(state));
+export function normalShelfFree(state: GameState, site: SiteId = 'hq'): number {
+  return Math.max(0, normalShelfCapacity(state, site) - normalShelfUsed(state, site));
 }
 /** Freier Regalplatz für DIESES Produkt (kalt → Kühlregale, sonst normale). */
-export function shelfFreeFor(state: GameState, productId: ProductId): number {
-  return getProductDef(productId).requiresCooling ? coldShelfFree(state) : normalShelfFree(state);
+export function shelfFreeFor(state: GameState, productId: ProductId, site: SiteId = 'hq'): number {
+  return getProductDef(productId).requiresCooling
+    ? coldShelfFree(state, site)
+    : normalShelfFree(state, site);
 }
 /** Regal-Gesamtkapazität, die diesem Produkt überhaupt offensteht. */
-export function shelfCapacityFor(state: GameState, productId: ProductId): number {
+export function shelfCapacityFor(state: GameState, productId: ProductId, site: SiteId = 'hq'): number {
   return getProductDef(productId).requiresCooling
-    ? coldShelfCapacity(state)
-    : normalShelfCapacity(state);
+    ? coldShelfCapacity(state, site)
+    : normalShelfCapacity(state, site);
 }
 
 /** Total inbound (Wareneingang) capacity and how much is free right now. */
-export function inboundCapacity(state: GameState): number {
-  return state.warehouse.inboundSlots * PALETTE_SIZE;
+export function inboundCapacity(state: GameState, site: SiteId = 'hq'): number {
+  return warehouseOf(state, site).inboundSlots * PALETTE_SIZE;
 }
-export function inboundUsed(state: GameState): number {
-  return state.products.reduce((s, p) => s + inboundStock(p), 0);
+export function inboundUsed(state: GameState, site: SiteId = 'hq'): number {
+  return state.products.reduce((s, p) => s + inboundStock(p, site), 0);
 }
-export function inboundFree(state: GameState): number {
-  return Math.max(0, inboundCapacity(state) - inboundUsed(state));
+export function inboundFree(state: GameState, site: SiteId = 'hq'): number {
+  return Math.max(0, inboundCapacity(state, site) - inboundUsed(state, site));
 }
 
 export function getProduct(state: GameState, id: ProductId): Product {
   return state.products.find((p) => p.id === id)!;
 }
 
-export function incomingPO(state: GameState, id: ProductId): number {
+export function incomingPO(state: GameState, id: ProductId, site?: SiteId): number {
   let sum = 0;
   for (const po of state.purchaseOrders) {
     if (po.status !== 'pending') continue;
+    if (site && (po.siteId ?? 'hq') !== site) continue;
     for (const item of po.items) if (item.productId === id) sum += item.quantity;
   }
   return sum;
@@ -335,6 +373,9 @@ export function catalogStatus(state: GameState): CatalogEntry[] {
   const week = weekOf(state.totalDays);
   return PRODUCT_DEFS.map((def) => {
     if (isInAssortment(state, def.id)) return { def, status: 'active' };
+    if (def.exclusiveSite === 'sued' && !branchOpen(state)) {
+      return { def, status: 'locked', reason: 'braucht Standort Süd' };
+    }
     if (week >= def.unlockWeek) return { def, status: 'addable' };
     return { def, status: 'locked', reason: `ab Woche ${def.unlockWeek + 1}` };
   });
@@ -342,12 +383,12 @@ export function catalogStatus(state: GameState): CatalogEntry[] {
 
 /** Remove `qty` units of SHELF stock from a product, FIFO (soonest expiry
  * first). Inbound stock is never used to fill orders. */
-function deductInventory(product: Product, qty: number): void {
+function deductInventory(product: Product, qty: number, site: SiteId = 'hq'): void {
   let remaining = qty;
   product.batches.sort((a, b) => a.expiryDay - b.expiryDay);
   for (const batch of product.batches) {
     if (remaining <= 0) break;
-    if (batch.location !== 'shelf') continue;
+    if (batch.location !== 'shelf' || (batch.siteId ?? 'hq') !== site) continue;
     const take = Math.min(batch.quantity, remaining);
     batch.quantity -= take;
     remaining -= take;
@@ -379,12 +420,13 @@ export function blockAnchor(block: ExpansionBlock): { gx: number; gy: number } {
  * (ramp/dock) and the office side (gx < 0) stay fixed. The office grows left
  * (−gx) and back (−gy) — away from the hall.
  */
-function expansionFrontier(state: GameState, zone: 'hall' | 'office'): ExpansionBlock[] {
-  const zoneTiles = state.warehouse.tiles.filter((t) =>
+function expansionFrontier(state: GameState, zone: 'hall' | 'office', site: SiteId = 'hq'): ExpansionBlock[] {
+  const w = warehouseOf(state, site);
+  const zoneTiles = w.tiles.filter((t) =>
     zone === 'office' ? t.zone === 'office' : t.zone !== 'office',
   );
   if (zoneTiles.length === 0) return [];
-  const occupied = new Set(state.warehouse.tiles.map((t) => cellKey(t.gx, t.gy)));
+  const occupied = new Set(w.tiles.map((t) => cellKey(t.gx, t.gy)));
   const inZone = new Set(zoneTiles.map((t) => cellKey(t.gx, t.gy)));
   const gxs = zoneTiles.map((t) => t.gx);
   const gys = zoneTiles.map((t) => t.gy);
@@ -434,11 +476,12 @@ function expansionFrontier(state: GameState, zone: 'hall' | 'office'): Expansion
 // --- Walkability (Begehbarkeits-Regel, Entscheidungen R2) --------------------
 
 /** Whether a placed object (shelf, table or desk) occupies the cell. */
-function objectAt(state: GameState, gx: number, gy: number): boolean {
+function objectAt(state: GameState, gx: number, gy: number, site: SiteId = 'hq'): boolean {
+  const w = warehouseOf(state, site);
   return (
-    state.warehouse.shelves.some((s) => s.gx === gx && s.gy === gy) ||
-    state.warehouse.tables.some((t) => t.gx === gx && t.gy === gy) ||
-    state.warehouse.desks.some((d) => d.gx === gx && d.gy === gy)
+    w.shelves.some((s) => s.gx === gx && s.gy === gy) ||
+    w.tables.some((t) => t.gx === gx && t.gy === gy) ||
+    w.desks.some((d) => d.gx === gx && d.gy === gy)
   );
 }
 
@@ -452,14 +495,21 @@ const N4 = [
 /** Free orthogonal neighbors of a cell: tiles that exist (no wall/edge) and
  * hold no object. `blocked` treats one extra cell as occupied — the candidate
  * placement being validated. */
-function freeNeighbors(state: GameState, gx: number, gy: number, blocked?: { gx: number; gy: number }): number {
+function freeNeighbors(
+  state: GameState,
+  gx: number,
+  gy: number,
+  blocked?: { gx: number; gy: number },
+  site: SiteId = 'hq',
+): number {
   let n = 0;
+  const w = warehouseOf(state, site);
   for (const [dx, dy] of N4) {
     const x = gx + dx;
     const y = gy + dy;
     if (blocked && blocked.gx === x && blocked.gy === y) continue;
-    if (!state.warehouse.tiles.some((t) => t.gx === x && t.gy === y)) continue;
-    if (objectAt(state, x, y)) continue;
+    if (!w.tiles.some((t) => t.gx === x && t.gy === y)) continue;
+    if (objectAt(state, x, y, site)) continue;
     n += 1;
   }
   return n;
@@ -473,15 +523,20 @@ function freeNeighbors(state: GameState, gx: number, gy: number, blocked?: { gx:
  * add free area and can never violate the rule. Existing saves enjoy
  * Bestandsschutz — only NEW placements are validated.
  */
-export function placementBlocksAccess(state: GameState, gx: number, gy: number): string | null {
-  if (freeNeighbors(state, gx, gy) === 0) {
+export function placementBlocksAccess(
+  state: GameState,
+  gx: number,
+  gy: number,
+  site: SiteId = 'hq',
+): string | null {
+  if (freeNeighbors(state, gx, gy, undefined, site) === 0) {
     return 'Objekt wäre nicht erreichbar – mindestens eine Nachbarkachel muss frei bleiben.';
   }
   for (const [dx, dy] of N4) {
     const x = gx + dx;
     const y = gy + dy;
-    if (!objectAt(state, x, y)) continue;
-    if (freeNeighbors(state, x, y, { gx, gy }) === 0) {
+    if (!objectAt(state, x, y, site)) continue;
+    if (freeNeighbors(state, x, y, { gx, gy }, site) === 0) {
       return 'Würde ein Nachbar-Objekt einmauern – dessen letzte freie Seite bleibt frei.';
     }
   }
@@ -491,25 +546,35 @@ export function placementBlocksAccess(state: GameState, gx: number, gy: number):
 /** Current monthly rent: base + RENT_PER_EXPANSION per built 2×2 block (hall
  * and office alike) — expansion carries running costs. */
 export function currentMonthlyRent(state: GameState): number {
-  return MONTHLY_RENT + RENT_PER_EXPANSION * (state.warehouse.expansions + state.warehouse.officeExpansions);
+  const hq =
+    MONTHLY_RENT + RENT_PER_EXPANSION * (state.warehouse.expansions + state.warehouse.officeExpansions);
+  const branch = state.branchWarehouse
+    ? BRANCH_RENT + RENT_PER_EXPANSION * state.branchWarehouse.expansions
+    : 0;
+  return hq + branch;
 }
 
-export function hallExpansionFrontier(state: GameState): ExpansionBlock[] {
-  return expansionFrontier(state, 'hall');
+export function hallExpansionFrontier(state: GameState, site: SiteId = 'hq'): ExpansionBlock[] {
+  return expansionFrontier(state, 'hall', site);
 }
 export function officeExpansionFrontier(state: GameState): ExpansionBlock[] {
-  return expansionFrontier(state, 'office');
+  return expansionFrontier(state, 'office'); // Büro gibt es nur am Hauptlager
 }
 
 /** Whether `block` is one of the currently offered frontier blocks. Shared by
  * the build actions so overlay, click handling and the mutation agree. */
-export function isFrontierBlock(state: GameState, zone: 'hall' | 'office', block: ExpansionBlock): boolean {
+export function isFrontierBlock(
+  state: GameState,
+  zone: 'hall' | 'office',
+  block: ExpansionBlock,
+  site: SiteId = 'hq',
+): boolean {
   if (block.length !== 4) return false;
   const key = block
     .map((c) => cellKey(c.gx, c.gy))
     .sort()
     .join('|');
-  return expansionFrontier(state, zone).some(
+  return expansionFrontier(state, zone, site).some(
     (b) =>
       b
         .map((c) => cellKey(c.gx, c.gy))
@@ -626,10 +691,11 @@ export function hasEinkaeufer(state: GameState): boolean {
  * scaled by the company strategy (Mengen-Discounter orders more, Frische-Spezialist
  * a touch less). Applied at this single source so the cockpit, the order outlook
  * and the Einkäufer all see the same figure. */
-export function weeklyDemand(state: GameState, productId: ProductId): number {
+export function weeklyDemand(state: GameState, productId: ProductId, site?: SiteId): number {
   let sum = 0;
   for (const c of state.customers) {
     if (!c.active) continue;
+    if (site && siteOfCustomer(c) !== site) continue;
     for (const l of c.lines) if (l.productId === productId) sum += l.volume;
   }
   return Math.round(sum * strategyDemandFactor(state));
@@ -689,11 +755,11 @@ export function truckCostPerPallet(state: GameState): number {
  * Frische-Spezialist strategy shortens it. Kühlpflichtige Gruppen (Käse, Tiefkühl,
  * Feinkost) verderben stark beschleunigt, solange es KEINE Kühlregale gibt
  * (❄️ Kühlbereich im Bau-Modus + Regal darauf) — die Ware steht dann warm. */
-export function spoilageDaysFor(state: GameState, product: Product): number {
+export function spoilageDaysFor(state: GameState, product: Product, site: SiteId = 'hq'): number {
   const cooling = 1 + COOLING_SHELFLIFE_BONUS * equipmentLevel(state, 'cooling');
   const strat = getStrategyDef(state.strategy).spoilageFactor;
   const needsCold = !!getProductDef(product.id).requiresCooling;
-  const coldPenalty = needsCold && coldShelfCapacity(state) === 0 ? NO_COOLING_SPOILAGE_MULT : 1;
+  const coldPenalty = needsCold && coldShelfCapacity(state, site) === 0 ? NO_COOLING_SPOILAGE_MULT : 1;
   return Math.max(1, Math.round(product.spoilageDays * cooling * strat * coldPenalty));
 }
 
@@ -967,8 +1033,11 @@ function pickLagerWorker(
   kind: 'prep' | 'putaway',
   productId: ProductId,
   strictTask = false,
+  site: SiteId = 'hq',
 ): { id: string } | undefined {
-  let free = state.employees.filter((e) => e.role === 'lager' && !e.task);
+  let free = state.employees.filter(
+    (e) => e.role === 'lager' && !e.task && siteOfEmployee(e) === site,
+  );
   if (strictTask) free = free.filter((e) => e.preferredTask === kind);
   if (free.length === 0) return undefined;
   const taskScore = (e: { preferredTask?: 'prep' | 'putaway' }) =>
@@ -980,13 +1049,13 @@ function pickLagerWorker(
     .sort((a, b) => taskScore(a) - taskScore(b) || prodScore(a) - prodScore(b))[0];
 }
 
-/** Workers currently preparing (each occupies one prep table). */
-function preppingCount(state: GameState): number {
-  return state.employees.filter((e) => e.task?.kind === 'prep').length;
+/** Workers currently preparing AT THIS SITE (each occupies one prep table). */
+function preppingCount(state: GameState, site: SiteId = 'hq'): number {
+  return state.employees.filter((e) => e.task?.kind === 'prep' && siteOfEmployee(e) === site).length;
 }
-/** Free prep tables = tables not currently in use. Limits parallel preparation. */
-function freeTables(state: GameState): number {
-  return state.warehouse.tables.length - preppingCount(state);
+/** Free prep tables at a site = tables not currently in use. */
+function freeTables(state: GameState, site: SiteId = 'hq'): number {
+  return warehouseOf(state, site).tables.length - preppingCount(state, site);
 }
 
 /**
@@ -1000,14 +1069,16 @@ export function tryPrepareOrder(
 ): string | null {
   if (order.status !== 'pending') return 'Auftrag ist nicht offen.';
   const product = getProduct(state, order.productId);
-  if (shelfStock(product) < order.quantity) return 'Nicht genug Regal-Bestand.';
-  if (freeTables(state) <= 0) return 'Kein freier Vorbereitungstisch.';
+  // Standort des Kunden: Bestand, Tisch und Personal zählen NUR dort.
+  const site = siteOfOrder(state, order);
+  if (shelfStock(product, site) < order.quantity) return 'Nicht genug Regal-Bestand.';
+  if (freeTables(state, site) <= 0) return 'Kein freier Vorbereitungstisch.';
   // Task- and product-priority aware worker pick (see pickLagerWorker).
-  const pick = pickLagerWorker(state, 'prep', order.productId, opts?.strictTask);
+  const pick = pickLagerWorker(state, 'prep', order.productId, opts?.strictTask, site);
   const worker = pick && state.employees.find((e) => e.id === pick.id);
   if (!worker) return 'Kein freier Lagermitarbeiter.';
 
-  deductInventory(product, order.quantity);
+  deductInventory(product, order.quantity, site);
   const paletteId = uid('pal');
   state.palettes.push({
     id: paletteId,
@@ -1016,6 +1087,7 @@ export function tryPrepareOrder(
     productId: order.productId,
     quantity: order.quantity,
     status: 'preparing',
+    siteId: site,
   });
   order.paletteId = paletteId;
   order.status = 'preparing';
@@ -1035,7 +1107,9 @@ export function tryPrepareOrder(
   // Occupy the lowest prep table not held by another prep task — exclusive by
   // construction (the freeTables gate above guarantees one is available).
   const usedTables = new Set(
-    state.employees.map((e) => (e.task?.kind === 'prep' ? (e.task.tableIndex ?? -1) : -1)),
+    state.employees.map((e) =>
+      e.task?.kind === 'prep' && siteOfEmployee(e) === site ? (e.task.tableIndex ?? -1) : -1,
+    ),
   );
   let tableIndex = 0;
   while (usedTables.has(tableIndex)) tableIndex += 1;
@@ -1069,7 +1143,8 @@ function updateEmployees(state: GameState, deltaDays: number): void {
       if (task.kind === 'prep') {
         completePreparation(state, task.orderId);
       } else {
-        // Put-away done: the pallet (carried in transit) lands on a shelf.
+        // Put-away done: the pallet (carried in transit) lands on a shelf at
+        // the worker's own site.
         const product = getProduct(state, task.productId);
         product.batches.push({
           id: uid('batch'),
@@ -1077,6 +1152,7 @@ function updateEmployees(state: GameState, deltaDays: number): void {
           quantity: task.quantity,
           expiryDay: task.expiryDay,
           location: 'shelf',
+          siteId: siteOfEmployee(emp),
         });
       }
     }
@@ -1086,21 +1162,26 @@ function updateEmployees(state: GameState, deltaDays: number): void {
 /** Assign one idle worker to put a pallet away (inbound → shelf). The pallet
  * leaves the inbound zone immediately (carried in transit) so two workers can't
  * grab the same goods. Returns true if a task was started. */
-function assignPutaway(state: GameState, product: Product, opts?: { strictTask?: boolean }): boolean {
+function assignPutaway(
+  state: GameState,
+  product: Product,
+  opts?: { strictTask?: boolean },
+  site: SiteId = 'hq',
+): boolean {
   // Task- and product-priority aware worker pick (see pickLagerWorker).
-  const pick = pickLagerWorker(state, 'putaway', product.id, opts?.strictTask);
+  const pick = pickLagerWorker(state, 'putaway', product.id, opts?.strictTask, site);
   const worker = pick && state.employees.find((e) => e.id === pick.id);
   if (!worker) return false;
   // Zonen-Regel: kühlpflichtige Ware passt nur in freie KÜHLregale, alle andere
-  // nur in freie normale Regale (shelfFreeFor).
-  const qty = Math.min(PALETTE_SIZE, inboundStock(product), shelfFreeFor(state, product.id));
+  // nur in freie normale Regale (shelfFreeFor) — jeweils AN DIESEM Standort.
+  const qty = Math.min(PALETTE_SIZE, inboundStock(product, site), shelfFreeFor(state, product.id, site));
   if (qty <= 0) return false;
 
   // Take qty from inbound (FIFO by expiry) and remember the earliest expiry.
   let remaining = qty;
   let expiry = Infinity;
   const inbound = product.batches
-    .filter((b) => b.location === 'inbound')
+    .filter((b) => b.location === 'inbound' && (b.siteId ?? 'hq') === site)
     .sort((a, b) => a.expiryDay - b.expiryDay);
   for (const b of inbound) {
     if (remaining <= 0) break;
@@ -1118,15 +1199,17 @@ function assignPutaway(state: GameState, product: Product, opts?: { strictTask?:
   // Work at the lowest inbound slot no other putaway task occupies (falls back
   // to round-robin only if there are more putaway workers than slots).
   const usedSlots = new Set(
-    state.employees.map((e) => (e.task?.kind === 'putaway' ? (e.task.slotIndex ?? -1) : -1)),
+    state.employees.map((e) =>
+      e.task?.kind === 'putaway' && siteOfEmployee(e) === site ? (e.task.slotIndex ?? -1) : -1,
+    ),
   );
   let slotIndex = 0;
-  while (usedSlots.has(slotIndex) && slotIndex < state.warehouse.inboundSlots - 1) slotIndex += 1;
+  while (usedSlots.has(slotIndex) && slotIndex < warehouseOf(state, site).inboundSlots - 1) slotIndex += 1;
   worker.task = {
     kind: 'putaway',
     productId: product.id,
     quantity: qty,
-    expiryDay: expiry === Infinity ? state.totalDays + spoilageDaysFor(state, product) : expiry,
+    expiryDay: expiry === Infinity ? state.totalDays + spoilageDaysFor(state, product, site) : expiry,
     slotIndex,
     usesForklift,
     totalDays: days,
@@ -1157,6 +1240,7 @@ export function releaseWorkerTask(state: GameState, employeeId: string): void {
         quantity: order.quantity,
         expiryDay: state.totalDays + Math.round(product.spoilageDays / 2),
         location: 'shelf',
+        siteId: siteOfEmployee(emp),
       });
       state.palettes = state.palettes.filter((p) => p.id !== order.paletteId);
       order.paletteId = undefined;
@@ -1170,6 +1254,7 @@ export function releaseWorkerTask(state: GameState, employeeId: string): void {
       quantity: task.quantity,
       expiryDay: task.expiryDay,
       location: 'inbound',
+      siteId: siteOfEmployee(emp),
     });
   }
   emp.task = undefined;
@@ -1190,13 +1275,19 @@ function autoAssignWork(state: GameState): void {
   // One assignment round: prep due orders first (revenue, needs a free table),
   // then put remaining idle workers on put-away. `strict` restricts each step to
   // workers who prioritise that task type (used by the first pass).
-  const round = (strict: boolean) => {
-    let idle = idleCount();
+  // Jeder Standort arbeitet mit SEINEN Kräften, SEINEN Tischen und SEINEM
+  // Bestand — die Zuweisungslogik läuft je Standort identisch.
+  const round = (strict: boolean, site: SiteId) => {
+    const idleAt = () =>
+      state.employees.filter((e) => e.role === 'lager' && !e.task && siteOfEmployee(e) === site)
+        .length;
+    let idle = idleAt();
+    if (idle === 0) return;
     // Serve orders in the SAME order the Aufträge-Panel shows them: late first,
     // then earliest due week, then oldest. This makes the visible list the actual
     // service order instead of a hidden due-week-only rule.
     const pending = state.orders
-      .filter((o) => o.status === 'pending')
+      .filter((o) => o.status === 'pending' && siteOfOrder(state, o) === site)
       .sort(
         (a, b) =>
           Number(b.late) - Number(a.late) ||
@@ -1210,14 +1301,14 @@ function autoAssignWork(state: GameState): void {
     // up faster. Reservation is per product (unrelated products stay servable) and
     // only for orders the warehouse could actually hold (no permanent dead-block).
     const avail: Record<string, number> = {};
-    for (const p of state.products) avail[p.id] = shelfStock(p);
+    for (const p of state.products) avail[p.id] = shelfStock(p, site);
     for (const order of pending) {
-      if (idle === 0 || freeTables(state) <= 0) break;
+      if (idle === 0 || freeTables(state, site) <= 0) break;
       const have = avail[order.productId] ?? 0;
       if (have < order.quantity) {
         // Reservation nur, wenn das Lager den Auftrag überhaupt fassen KÖNNTE —
         // für Kühlware zählt dabei nur die Kühlregal-Kapazität.
-        if (order.quantity <= shelfCapacityFor(state, order.productId)) avail[order.productId] = 0;
+        if (order.quantity <= shelfCapacityFor(state, order.productId, site)) avail[order.productId] = 0;
         continue;
       }
       if (tryPrepareOrder(state, order, { strictTask: strict }) === null) {
@@ -1229,12 +1320,14 @@ function autoAssignWork(state: GameState): void {
       // Nur Produkte einlagern, die in IHRER Zone noch Platz haben (Kühlware →
       // Kühlregale, sonst normale Regale) — Kühlware im Wareneingang blockiert
       // so nie das Einlagern normaler Ware und umgekehrt.
-      const free = state.employees.filter((e) => e.role === 'lager' && !e.task);
-      const fits = (p: Product) => inboundStock(p) > 0 && shelfFreeFor(state, p.id) > 0;
+      const free = state.employees.filter(
+        (e) => e.role === 'lager' && !e.task && siteOfEmployee(e) === site,
+      );
+      const fits = (p: Product) => inboundStock(p, site) > 0 && shelfFreeFor(state, p.id, site) > 0;
       const product =
         state.products.find((p) => fits(p) && free.some((w) => w.preferredProduct === p.id)) ??
         state.products.find(fits);
-      if (!product || !assignPutaway(state, product, { strictTask: strict })) break;
+      if (!product || !assignPutaway(state, product, { strictTask: strict }, site)) break;
       idle -= 1;
     }
   };
@@ -1242,8 +1335,10 @@ function autoAssignWork(state: GameState): void {
   // Pass 1: task specialists get their preferred work first (Einlagern-only crews
   // shelve, Herrichten-only crews pack). Pass 2: everyone still idle fills in on
   // whatever is left — so a specialist never sits idle when the other job waits.
-  round(true);
-  round(false);
+  for (const site of activeSites(state)) {
+    round(true, site);
+    round(false, site);
+  }
 }
 
 // --- Customer orders --------------------------------------------------------
@@ -1501,7 +1596,8 @@ function receiveDuePurchaseOrders(state: GameState): void {
     if (po.status !== 'pending') continue;
     if (po.deliveryDay > state.totalDays) continue;
 
-    let room = inboundFree(state);
+    const site = po.siteId ?? 'hq';
+    let room = inboundFree(state, site);
     let unloadedAny = false;
     for (const item of po.items) {
       if (room <= 0) break;
@@ -1512,8 +1608,9 @@ function receiveDuePurchaseOrders(state: GameState): void {
         id: uid('batch'),
         productId: item.productId,
         quantity: take,
-        expiryDay: state.totalDays + spoilageDaysFor(state, product),
+        expiryDay: state.totalDays + spoilageDaysFor(state, product, site),
         location: 'inbound',
+        siteId: site,
       });
       item.quantity -= take;
       room -= take;
@@ -1530,6 +1627,46 @@ function receiveDuePurchaseOrders(state: GameState): void {
   }
   // Drop fully-received POs to keep the list tidy.
   state.purchaseOrders = state.purchaseOrders.filter((po) => po.status === 'pending');
+}
+
+/** Angekommene Standort-Transfers entladen: die Ware landet im Wareneingang des
+ * Ziel-Standorts (Original-Haltbarkeit bleibt). Ist der Wareneingang voll,
+ * wartet der LKW und versucht es beim nächsten Tick erneut. */
+function processTransfers(state: GameState): void {
+  if (!state.transfers || state.transfers.length === 0) return;
+  const remaining: Transfer[] = [];
+  for (const t of state.transfers) {
+    if (t.arrivalDay > state.totalDays) {
+      remaining.push(t);
+      continue;
+    }
+    const room = inboundFree(state, t.toSite);
+    if (room <= 0) {
+      remaining.push(t); // Wareneingang voll – LKW wartet
+      continue;
+    }
+    const take = Math.min(t.quantity, room);
+    const product = getProduct(state, t.productId);
+    product.batches.push({
+      id: uid('batch'),
+      productId: t.productId,
+      quantity: take,
+      expiryDay: t.expiryDay,
+      location: 'inbound',
+      siteId: t.toSite,
+    });
+    t.quantity -= take;
+    if (t.quantity > 0) remaining.push(t);
+    else {
+      notify(
+        state,
+        `🚚 Transfer angekommen: ${take}× ${product.emoji} ${product.name} im Wareneingang ${SITE_META[t.toSite].short}.`,
+        'success',
+        { channel: 'log' },
+      );
+    }
+  }
+  state.transfers = remaining;
 }
 
 function collectDuePayments(state: GameState): void {
@@ -1554,12 +1691,15 @@ function collectDuePayments(state: GameState): void {
 export function createPurchaseOrderInternal(
   state: GameState,
   items: { productId: ProductId; quantity: number }[],
-  opts?: { priceMultiplier?: number; leadDays?: number },
+  opts?: { priceMultiplier?: number; leadDays?: number; siteId?: SiteId },
 ): PurchaseOrder | null {
+  const site = opts?.siteId ?? 'hq';
   const mult = opts?.priceMultiplier ?? 1;
   let total = 0;
   const poItems = items
-    .filter((i) => i.quantity > 0)
+    // Regional-Regel (L3): der Lieferant bringt exklusive Produkte nur an ihren
+    // Standort (Fisch → Nord, Wein/Oliven → Süd). Anderes fliegt hier raus.
+    .filter((i) => i.quantity > 0 && supplierDeliversTo(i.productId, site))
     .map((i) => {
       // Contract price if one is running, else spot; then the bulk discount for
       // ordering a large quantity of THIS product in one go.
@@ -1584,6 +1724,7 @@ export function createPurchaseOrderInternal(
         : (weekOf(state.totalDays) + 1) * DAYS_PER_WEEK,
     totalCost: total,
     status: 'pending',
+    siteId: site,
   };
   state.purchaseOrders.push(po);
   return po;
@@ -1629,16 +1770,19 @@ export interface OrderOutlook {
  * backlog, what's on hand / in transit, what spoils within the week, and the
  * resulting deficit.
  */
-export function orderOutlook(state: GameState, productId: ProductId): OrderOutlook {
+export function orderOutlook(state: GameState, productId: ProductId, site: SiteId = 'hq'): OrderOutlook {
   const product = getProduct(state, productId);
-  const stock = inventoryTotal(product);
-  const incoming = incomingPO(state, productId);
+  const stock = shelfStock(product, site) + inboundStock(product, site);
+  const incoming = incomingPO(state, productId, site);
   const week = weekOf(state.totalDays);
   const fixDemand = Math.round(
-    weeklyDemand(state, productId) * seasonalMultiplier(productId, week + 1),
+    weeklyDemand(state, productId, site) * seasonalMultiplier(productId, week + 1),
   );
   const backlog = state.orders
-    .filter((o) => o.productId === productId && o.status === 'pending')
+    .filter(
+      (o) =>
+        o.productId === productId && o.status === 'pending' && siteOfOrder(state, o) === site,
+    )
     .reduce((s, o) => s + o.quantity, 0);
   const expiring = expiringWithinDays(product, state.totalDays, DAYS_PER_WEEK);
   const deficit = Math.max(0, Math.round(backlog + fixDemand - stock - incoming + expiring));
@@ -1647,8 +1791,8 @@ export function orderOutlook(state: GameState, productId: ProductId): OrderOutlo
 
 /** Cancel & refund the current week's still-pending PO (used when the player
  * overrides the Einkäufer / re-submits the weekly order). */
-function refundCurrentWeekPo(state: GameState): void {
-  const id = state.currentWeekPoId;
+function refundCurrentWeekPo(state: GameState, site: SiteId = 'hq'): void {
+  const id = site === 'sued' ? state.currentWeekPoIdSued : state.currentWeekPoId;
   if (!id) return;
   const idx = state.purchaseOrders.findIndex((p) => p.id === id && p.status === 'pending');
   if (idx >= 0) {
@@ -1657,7 +1801,8 @@ function refundCurrentWeekPo(state: GameState): void {
     state.weekAcc.purchases -= po.totalCost;
     state.purchaseOrders.splice(idx, 1);
   }
-  state.currentWeekPoId = null;
+  if (site === 'sued') state.currentWeekPoIdSued = null;
+  else state.currentWeekPoId = null;
 }
 
 /** Place (or replace) the current week's purchase order in one shot. Any order
@@ -1666,11 +1811,13 @@ function refundCurrentWeekPo(state: GameState): void {
 export function commitWeeklyOrder(
   state: GameState,
   items: { productId: ProductId; quantity: number }[],
+  site: SiteId = 'hq',
 ): PurchaseOrder | null {
-  refundCurrentWeekPo(state);
-  const po = createPurchaseOrderInternal(state, items);
-  state.currentWeekPoId = po ? po.id : null;
-  state.pendingOrderWeek = null;
+  refundCurrentWeekPo(state, site);
+  const po = createPurchaseOrderInternal(state, items, { siteId: site });
+  if (site === 'sued') state.currentWeekPoIdSued = po ? po.id : null;
+  else state.currentWeekPoId = po ? po.id : null;
+  if (site === 'hq') state.pendingOrderWeek = null;
   return po;
 }
 
@@ -1695,27 +1842,29 @@ function processWeeklyOrder(state: GameState, week: number): void {
   // leftover stock.
   const buffer = Math.max(0, state.settings.buyerOrderBuffer ?? 0);
   let budget = state.cash + availableCredit(state);
-  const items: { productId: ProductId; quantity: number }[] = [];
-  for (const product of state.products) {
-    const outlook = orderOutlook(state, product.id);
-    if (outlook.deficit <= 0) continue;
-    const unit = supplierUnitPrice(state, product.id);
-    if (unit <= 0) continue;
-    const target = Math.ceil(outlook.deficit * (1 + buffer));
-    const affordable = Math.min(target, Math.floor(budget / unit));
-    if (affordable <= 0) continue;
-    items.push({ productId: product.id, quantity: affordable });
-    budget -= affordable * unit;
-  }
-  const po = commitWeeklyOrder(state, items);
-  if (po) {
+  for (const site of activeSites(state)) {
+    const items: { productId: ProductId; quantity: number }[] = [];
+    for (const product of state.products) {
+      if (!supplierDeliversTo(product.id, site)) continue; // Regionalware: nur per Transfer
+      const outlook = orderOutlook(state, product.id, site);
+      if (outlook.deficit <= 0) continue;
+      const unit = supplierUnitPrice(state, product.id);
+      if (unit <= 0) continue;
+      const target = Math.ceil(outlook.deficit * (1 + buffer));
+      const affordable = Math.min(target, Math.floor(budget / unit));
+      if (affordable <= 0) continue;
+      items.push({ productId: product.id, quantity: affordable });
+      budget -= affordable * unit;
+    }
+    const po = commitWeeklyOrder(state, items, site);
+    if (!po) continue;
     const summary = po.items
       .map((i) => `${i.quantity}× ${getProduct(state, i.productId).name}`)
       .join(', ');
     const bufNote = buffer > 0 ? ` (inkl. +${Math.round(buffer * 100)}% Puffer)` : '';
     notify(
       state,
-      `✓ Einkäufer deckt die fixe Nachfrage${bufNote}: ${summary} (${Math.round(po.totalCost)}€) – Lieferung nächsten Montag.`,
+      `✓ Einkäufer deckt ${SITE_META[site].short}${bufNote}: ${summary} (${Math.round(po.totalCost)}€) – Lieferung nächsten Montag.`,
       'success',
     );
   }
@@ -1735,9 +1884,12 @@ function unlockedTypes(state: GameState): CustomerType[] {
  * (past their unlockWeek — never before). */
 export function listableUnlistedProducts(state: GameState): ProductId[] {
   const week = weekOf(state.totalDays);
-  return PRODUCT_DEFS.filter((d) => d.unlockWeek <= week && !isInAssortment(state, d.id)).map(
-    (d) => d.id,
-  );
+  return PRODUCT_DEFS.filter(
+    (d) =>
+      d.unlockWeek <= week &&
+      !isInAssortment(state, d.id) &&
+      !(d.exclusiveSite === 'sued' && !branchOpen(state)),
+  ).map((d) => d.id);
 }
 
 /** Live product if listed (its VK may have been re-priced by the player),
@@ -1823,7 +1975,11 @@ export function salesAcquisitionPower(state: GameState): number {
  * so a pile of small customers never suppresses the rare medium/large tiers. */
 export function typeInquiryChance(state: GameState, type: CustomerType): number {
   const count = state.customers.filter((c) => c.active && c.type === type).length;
-  const market = INQUIRY_MARKET[type] + salesAcquisitionPower(state) * SALES_MARKET_PER_REP;
+  // Ein eröffneter Standort erschließt eine NEUE Region → der erreichbare Markt
+  // wächst (BRANCH_MARKET_BONUS) — der Sinn der Expansion gegen die Sättigung.
+  const regionFactor = branchOpen(state) ? BRANCH_MARKET_BONUS : 1;
+  const market =
+    (INQUIRY_MARKET[type] + salesAcquisitionPower(state) * SALES_MARKET_PER_REP) * regionFactor;
   return INQUIRY_BASE_CHANCE[type] * (market / (market + count));
 }
 
@@ -1840,6 +1996,10 @@ function generateNewInquiry(state: GameState, type: CustomerType): void {
   const week = weekOf(state.totalDays);
   const preferred = pickInquiryProduct(state);
   const product = inquiryProductInfo(state, preferred);
+  // Region: mit offenem Standort Süd stammt ein Teil der Anfragen aus der neuen
+  // Region — nur der dortige Standort kann sie beliefern.
+  const region: SiteId =
+    branchOpen(state) && Math.random() < BRANCH_INQUIRY_SHARE ? 'sued' : 'hq';
   const inquiry: Inquiry = {
     id: uid('inq'),
     name: uniqueCustomerName(state, type),
@@ -1851,12 +2011,13 @@ function generateNewInquiry(state: GameState, type: CustomerType): void {
     createdWeek: week,
     expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
     status: 'open',
+    region,
   };
   state.inquiries.push(inquiry);
   const unlistedHint = isInAssortment(state, preferred) ? '' : ' (noch nicht gelistet!)';
   notify(
     state,
-    `📨 Neue Kundenanfrage: ${inquiry.name} (${type}) sucht ${product.name}${unlistedHint}.`,
+    `📨 Neue Kundenanfrage (${SITE_META[region].short}): ${inquiry.name} (${type}) sucht ${product.name}${unlistedHint}.`,
     'info',
   );
 }
@@ -2375,6 +2536,7 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
     activeDiscount: 0,
     sinceWeek: week,
     active: true,
+    region: inq.region,
   };
   state.customers.push(customer);
   inq.status = 'accepted';
@@ -3028,6 +3190,7 @@ export function advance(state: GameState, realDeltaMs: number): void {
   updateEmployees(state, workingDelta(prev, next));
   autoAssignWork(state);
   receiveDuePurchaseOrders(state);
+  processTransfers(state);
   collectDuePayments(state);
 
   // Bankruptcy check.

@@ -3,39 +3,49 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import {
   availableCredit,
+  branchOpen,
   hasActiveContract,
   hasEinkaeufer,
   orderOutlook,
   supplierUnitPrice,
 } from '../../game/simulation';
+import type { SiteId } from '../../game/types';
 import {
   cancelSupplyContract,
   placeWeeklyOrder,
   signSupplyContract,
   type ActionResult,
 } from '../../game/actions';
-import { CONTRACT_PREMIUM, CONTRACT_WEEKS, VOLUME_DISCOUNT_TIERS } from '../../game/constants';
+import { CONTRACT_PREMIUM, CONTRACT_WEEKS, SITE_META, supplierDeliversTo, VOLUME_DISCOUNT_TIERS } from '../../game/constants';
 import { euro, weekOf } from '../../game/util';
 import { PRODUCT_COLOR } from '../shared';
 
 export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
   const einkaeufer = hasEinkaeufer(state);
+  const hasBranch = branchOpen(state);
+  // L3: für welchen Standort diese Bestellung gilt — jeder Standort hat sein
+  // eigenes Wochen-Bestellfenster (der Lieferant liefert direkt dorthin).
+  const [orderSite, setOrderSite] = useState<SiteId>('hq');
 
   // This week's already-placed order (auto by the Einkäufer or a manual order the
   // player made earlier this week). Present => show a summary + override.
+  const currentPoId = orderSite === 'sued' ? state.currentWeekPoIdSued : state.currentWeekPoId;
   const currentPo = state.purchaseOrders.find(
-    (p) => p.id === state.currentWeekPoId && p.status === 'pending',
+    (p) => p.id === currentPoId && p.status === 'pending',
   );
   const [editing, setEditing] = useState(false);
 
-  // Facts are computed once when the screen opens (the game is paused during the
-  // Saturday prompt, so they stay stable). No recommendation — quantities start
-  // at 0 and the player decides based on the fixed demand shown per product.
+  // Facts are computed per site when the screen opens/switches. Regional-
+  // exklusive Produkte (Fisch nur Nord, Wein/Oliven nur Süd) erscheinen nur im
+  // Fenster ihres Standorts.
   const recs = useMemo(
-    () => state.products.map((p) => ({ product: p, rec: orderOutlook(state, p.id) })),
+    () =>
+      state.products
+        .filter((p) => supplierDeliversTo(p.id, orderSite))
+        .map((p) => ({ product: p, rec: orderOutlook(state, p.id, orderSite) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [orderSite],
   );
 
   const [qty, setQty] = useState<Record<string, number>>({});
@@ -45,7 +55,7 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const priceOf = (id: string) => supplierUnitPrice(state, id as never);
   const week = weekOf(state.totalDays);
   const bestTier = VOLUME_DISCOUNT_TIERS[VOLUME_DISCOUNT_TIERS.length - 1]; // smallest threshold
-  const total = state.products.reduce((sum, p) => sum + (qty[p.id] || 0) * priceOf(p.id), 0);
+  const total = recs.reduce((sum, { product: p }) => sum + (qty[p.id] || 0) * priceOf(p.id), 0);
   const refundable = currentPo ? currentPo.totalCost : 0;
   const budget = state.cash + availableCredit(state) + refundable;
 
@@ -60,12 +70,19 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   };
 
   const submit = () => {
-    const items = state.products.map((p) => ({ productId: p.id, quantity: qty[p.id] || 0 }));
+    const items = recs.map(({ product: p }) => ({ productId: p.id, quantity: qty[p.id] || 0 }));
     let result: ActionResult = { ok: false };
     mutate((s) => {
-      result = placeWeeklyOrder(s, items);
+      result = placeWeeklyOrder(s, items, orderSite);
     });
-    if (result.ok) onClose();
+    if (result.ok) {
+      if (orderSite === 'hq' && hasBranch) {
+        // Nach der Nord-Bestellung direkt zum Süd-Fenster wechseln.
+        setOrderSite('sued');
+        setQty({});
+        setEditing(false);
+      } else onClose();
+    }
   };
 
   return (
@@ -76,6 +93,30 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
         Bestellmengen deiner Kunden), was auf Lager ist und was zuläuft. Lieferung kommt{' '}
         <b>Montag</b>.
       </p>
+
+      {hasBranch && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <span className="sub">Bestellung für Standort:</span>
+          {(['hq', 'sued'] as const).map((st) => (
+            <button
+              key={st}
+              className={`btn small${orderSite === st ? ' primary' : ' ghost'}`}
+              onClick={() => {
+                setOrderSite(st);
+                setQty({});
+                setEditing(false);
+              }}
+            >
+              {SITE_META[st].emoji} {SITE_META[st].short}
+            </button>
+          ))}
+          <span className="sub" style={{ fontStyle: 'italic' }}>
+            {orderSite === 'sued'
+              ? 'Süd bekommt 🍷/🫒 exklusiv – Fisch nur per Transfer aus Nord.'
+              : 'Nord bekommt 🐟 exklusiv – Wein/Oliven nur per Transfer aus Süd.'}
+          </span>
+        </div>
+      )}
 
       <div
         className="row"

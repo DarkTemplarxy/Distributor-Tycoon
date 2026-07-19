@@ -11,6 +11,8 @@ export const PRODUCT_COLOR: Record<ProductId, string> = {
   obst: 'var(--obst)',
   tiefkuehl: 'var(--tiefkuehl)',
   delikatess: 'var(--delikatess)',
+  wein: 'var(--wein)',
+  oliven: 'var(--oliven)',
 };
 
 export function Stars({ value }: { value: number }) {

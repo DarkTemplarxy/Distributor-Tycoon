@@ -190,6 +190,9 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
                 <div className="grow">
                   <div className="title">
                     {c.name} <span className="pill">{TYPE_LABEL[c.type]}</span>{' '}
+                    {c.region === 'sued' && (
+                      <span className="pill" title="Region Süd – wird vom Standort Süd beliefert.">🏗️ Süd</span>
+                    )}{' '}
                     <span className="pill good">~{Math.round(weeklyRevenue)}€/Woche</span>
                     {demandInq && (
                       <>

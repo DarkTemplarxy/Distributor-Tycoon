@@ -23,6 +23,9 @@ import {
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_PRICE_TIERS,
   LARGE_UNLOCK_MONTHLY,
+  BRANCH_PRICE,
+  BRANCH_RENT,
+  BRANCH_UNLOCK_MONTHLY,
   COMPETITOR_DEFS,
   LOYALTY_CHURN_THRESHOLD,
   POACH_LOYALTY_CEILING,
@@ -220,6 +223,32 @@ const ENTRIES: WikiEntry[] = [
           Sie bestimmen die Verspätungs-Toleranz (bei zu vielen kündigt der Kunde), die{' '}
           <b>Verhandlungschancen</b> und die Preis-Obergrenze. Es gilt: erst zuverlässig liefern,
           dann Preise anheben.
+        </p>
+      </>
+    ),
+  },
+  {
+    icon: '🌍',
+    title: 'Standorte & Konzern',
+    keywords: 'standort süd filiale expansion region transfer konzern zweigstelle wein oliven',
+    body: (
+      <>
+        <p>
+          Ab {Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz kannst du im 🏢{' '}
+          <b>Ausbau</b> den <b>Standort Süd</b> eröffnen ({BRANCH_PRICE.toLocaleString('de-DE')}€ +{' '}
+          {BRANCH_RENT.toLocaleString('de-DE')}€ Monatsmiete): eine eigene, ausbaubare Halle mit
+          eigenem Lagerpersonal. Er erschließt die <b>Region Süd</b> — neue Kunden, die NUR von dort
+          beliefert werden können. Die <b>Verwaltung</b> (Büro, KAMs, Einkäufer, Vertrieb) bleibt
+          zentral im Hauptlager: ein Konzern, zwei Betriebe.
+        </p>
+        <p>
+          <b>Regionalprodukte:</b> 🍷 Wein & 🫒 Oliven liefert der Lieferant NUR nach Süd, 🐟 Fisch
+          NUR nach Nord. Will ein Kunde das Produkt der anderen Region, fährst du es per{' '}
+          <b>🚚 Transfer</b> (Inventar-Fenster, Kosten je Palette, ~1 Tag) vom Regal des einen in
+          den Wareneingang des anderen Standorts — die Haltbarkeit reist mit. Jeder Standort hat
+          sein eigenes Samstags-Bestellfenster; der Umschalter über der Halle wechselt die Ansicht.
+          Vorsicht: Eröffnung + Personal + Warenaufbau summieren sich — wer zu früh expandiert,
+          kann sich übernehmen.
         </p>
       </>
     ),

@@ -14,7 +14,27 @@ export type ProductId =
   | 'kaese'
   | 'obst'
   | 'tiefkuehl'
-  | 'delikatess';
+  | 'delikatess'
+  | 'wein'
+  | 'oliven';
+
+/** Standorte (L3): 'hq' = Hauptlager Nord (immer da), 'sued' = Standort Süd
+ * (eröffenbar). Alle siteId-Felder sind optional; undefined bedeutet 'hq' —
+ * so bleiben alte Spielstände ohne Migration gültig. */
+export type SiteId = 'hq' | 'sued';
+
+/** Ein laufender Waren-Transfer zwischen Standorten (LKW unterwegs). */
+export interface Transfer {
+  id: string;
+  productId: ProductId;
+  quantity: number;
+  fromSite: SiteId;
+  toSite: SiteId;
+  /** Original-Resthaltbarkeit bleibt beim Transfer erhalten. */
+  expiryDay: number;
+  arrivalDay: number;
+  cost: number;
+}
 
 export type CustomerType = 'small' | 'medium' | 'large';
 
@@ -46,6 +66,8 @@ export interface Batch {
   /** Absolute game-day (state.totalDays) on which this batch spoils. */
   expiryDay: number;
   location: 'shelf' | 'inbound';
+  /** Standort dieser Charge (L3). Undefined = 'hq' (Hauptlager). */
+  siteId?: SiteId;
 }
 
 export interface Product {
@@ -112,6 +134,9 @@ export interface Customer {
   /** Konkurrenz (L2): bis zu dieser Woche wirbt ein Wettbewerber aktiv um diesen
    * Kunden (UI-Pill „🎯 umworben"). Optional für alte Spielstände. */
   courtedUntilWeek?: number;
+  /** Heimat-Region des Kunden (L3): beliefert wird er vom dortigen Standort.
+   * Undefined = 'hq' (Region Nord). */
+  region?: SiteId;
   /** Delivery lead time in weeks (1 small / 2 medium / 3 large). */
   deliveryLeadWeeks: number;
   /** Annual volatility as a fraction (0.4 / 0.2 / 0.1). */
@@ -153,6 +178,9 @@ export interface Inquiry {
    * ordering customer; accepting creates one Order that the normal pipeline
    * fulfils (or misses, hitting service). Optional for save compatibility. */
   bigOrder?: { quantity: number; dueWeek: number };
+  /** Region des anfragenden Kunden (L3). Undefined = 'hq' (Nord). Süd-Anfragen
+   * erscheinen nur mit eröffnetem Standort Süd. */
+  region?: SiteId;
 }
 
 /** A scheduled stage-2 escalation: after a rejected/expired wish, the same
@@ -186,6 +214,8 @@ export interface Palette {
   productId: ProductId;
   quantity: number;
   status: PaletteStatus;
+  /** Standort, an dem die Palette steht (L3). Undefined = 'hq'. */
+  siteId?: SiteId;
 }
 
 export interface PurchaseOrderItem {
@@ -201,6 +231,8 @@ export interface PurchaseOrder {
   deliveryDay: number;
   totalCost: number;
   status: 'pending' | 'received';
+  /** Ziel-Standort der Lieferung (L3). Undefined = 'hq'. */
+  siteId?: SiteId;
 }
 
 export interface ScheduledPayment {
@@ -262,6 +294,9 @@ export interface Employee {
    * help with the other when there is no preferred work (soft, not exclusive).
    * Undefined = both. Optional for save compatibility. */
   preferredTask?: 'putaway' | 'prep';
+  /** Einsatz-Standort (L3, nur Lagerkräfte). Undefined = 'hq'. Büro-Rollen sind
+   * immer zentral (Konzern-Verwaltung im Hauptlager). */
+  siteId?: SiteId;
   task?: WorkerTask;
 }
 
@@ -436,6 +471,8 @@ export interface GameState {
   /** Id of the purchase order placed for the current week (auto by the Einkäufer
    * or manually), so it can be shown as "already ordered" and overridden. */
   currentWeekPoId: string | null;
+  /** Wochen-PO des Standorts Süd (L3), analog zu currentWeekPoId. Optional. */
+  currentWeekPoIdSued?: string | null;
   /** Units demanded per product during the currently-running week (accumulates
    * as customer orders come in). Rolled into demandLog at the weekly rollover. */
   demandThisWeek: Partial<Record<ProductId, number>>;
@@ -457,6 +494,15 @@ export interface GameState {
   competitors?: Competitor[];
   /** Zuletzt berechneter Marktanteil des Spielers (0..1). */
   marketShare?: number;
+
+  /** Standort Süd (L3): eigene Halle, wenn eröffnet. Undefined = nicht eröffnet.
+   * Gleiche Struktur wie `warehouse` — alle Bau-/Kapazitäts-Helfer laufen über
+   * warehouseOf(state, siteId). */
+  branchWarehouse?: GameState['warehouse'];
+  /** Woche der Standort-Eröffnung (für Reports/Meilensteine). */
+  branchOpenedWeek?: number;
+  /** Laufende Waren-Transfers zwischen Standorten (L3). */
+  transfers?: Transfer[];
 
   stats: GameStats;
   /** Progress on "Onkels Notizbuch" milestones (see MILESTONE_DEFS). Checks run

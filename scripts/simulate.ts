@@ -53,6 +53,7 @@ import {
   buildShelf,
   buildTable,
   counterOffer,
+  openBranch,
   expandHall,
   expandOffice,
   hireEmployee,
@@ -61,6 +62,7 @@ import {
   setCustomerLinePrice,
 } from '../src/game/actions.ts';
 import {
+  BRANCH_PRICE,
   getProductDef,
   LARGE_UNLOCK_MONTHLY,
   MEDIUM_UNLOCK_MONTHLY,
@@ -128,10 +130,15 @@ const activeCustomers = (s: GameState) => s.customers.filter((c) => c.active).le
 
 /** Order the deficit for every product — the "order the recommendation" step. */
 function orderDeficit(s: GameState) {
-  placeWeeklyOrder(
-    s,
-    s.products.map((p) => ({ productId: p.id, quantity: orderOutlook(s, p.id).deficit })),
-  );
+  // Je Standort bestellen (der Lieferant liefert direkt dorthin); exklusive
+  // Produkte filtert placeWeeklyOrder selbst heraus.
+  for (const site of (s.branchWarehouse ? (['hq', 'sued'] as const) : (['hq'] as const))) {
+    placeWeeklyOrder(
+      s,
+      s.products.map((p) => ({ productId: p.id, quantity: orderOutlook(s, p.id, site).deficit })),
+      site,
+    );
+  }
   s.pendingOrderWeek = null;
 }
 
@@ -321,6 +328,20 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
           if (inq.targetPrice >= target) acceptInquiry(s, inq.id);
           else counterOffer(s, inq.id, target);
         }
+      }
+    }
+
+    // --- bot: Konzern-Expansion (L3) — der besonnene Bot eröffnet den Standort
+    // Süd erst mit dickem Kassenpuffer (Eröffnung + Anlauf kosten real mehr)
+    // und stellt dann dort Lagerkräfte ein.
+    if (strategy === 'sinnvoll' && !s.branchWarehouse && s.cash > BRANCH_PRICE + 60000) {
+      openBranch(s);
+    }
+    if (strategy === 'sinnvoll' && s.branchWarehouse) {
+      const suedCrew = s.employees.filter((e) => e.role === 'lager' && e.siteId === 'sued').length;
+      const suedCustomers = s.customers.filter((c) => c.active && c.region === 'sued').length;
+      if (suedCrew < Math.min(4, 1 + Math.ceil(suedCustomers / 4)) && s.cash > 8000) {
+        hireEmployee(s, 'lager', 'sued');
       }
     }
 

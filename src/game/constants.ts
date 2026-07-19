@@ -2,7 +2,7 @@
 // Tunable game constants. Everything the designer might want to tweak lives here.
 // ============================================================================
 
-import type { CustomerType, EquipmentId, GameState, ProductId, Role, StrategyId } from './types';
+import type { CustomerType, EquipmentId, GameState, ProductId, Role, SiteId, StrategyId } from './types';
 
 export const SAVE_VERSION = 17;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
@@ -256,6 +256,8 @@ export const PRODUCT_VOLUME_FACTOR: Record<ProductId, number> = {
   obst: 1.3,
   tiefkuehl: 1.0,
   delikatess: 0.5,
+  wein: 0.7,
+  oliven: 1.0,
 };
 
 /** Discount → demand uplift curve (progressive). Fractions. */
@@ -282,6 +284,10 @@ export interface ProductDef {
    * Kühlbereich-Kacheln). Ohne ein einziges Kühlregal verdirbt die Ware stark
    * beschleunigt (NO_COOLING_SPOILAGE_MULT). */
   requiresCooling?: boolean;
+  /** Regional-exklusiv (L3): der Lieferant liefert dieses Produkt NUR an diesen
+   * Standort. Am anderen Standort kommt es ausschließlich per LKW-Transfer an.
+   * Undefined = überall lieferbar. */
+  exclusiveSite?: SiteId;
 }
 
 /** Ohne Kühl-Lagerplatz schrumpft die Haltbarkeit kühlpflichtiger Produkte auf
@@ -311,7 +317,51 @@ export const PRODUCT_DEFS: ProductDef[] = [
   { id: 'obst', name: 'Obst & Frische', emoji: '🍎', einkaufspreis: 12, verkaufspreis: 20, zielmarge: 40, spoilageDays: 10, unlockWeek: 20, listingFee: 6000 },
   { id: 'tiefkuehl', name: 'Tiefkühlkost', emoji: '🧊', einkaufspreis: 28, verkaufspreis: 52, zielmarge: 46, spoilageDays: 90, unlockWeek: 30, listingFee: 18000, requiresCooling: true },
   { id: 'delikatess', name: 'Feinkost', emoji: '🦞', einkaufspreis: 60, verkaufspreis: 120, zielmarge: 50, spoilageDays: 25, unlockWeek: 42, listingFee: 45000, requiresCooling: true },
+  // --- Süd-Regionalprodukte (L3): nur mit eröffnetem Standort Süd listbar, der
+  // Lieferant liefert sie NUR dorthin. Nord-Kunden bekommen sie per Transfer.
+  { id: 'wein', name: 'Wein & Sekt', emoji: '🍷', einkaufspreis: 35, verkaufspreis: 62, zielmarge: 44, spoilageDays: 180, unlockWeek: 26, listingFee: 12000, exclusiveSite: 'sued' },
+  { id: 'oliven', name: 'Antipasti & Oliven', emoji: '🫒', einkaufspreis: 18, verkaufspreis: 33, zielmarge: 45, spoilageDays: 35, unlockWeek: 26, listingFee: 9000, requiresCooling: true, exclusiveSite: 'sued' },
 ];
+
+/** Umgekehrt ist 🐟 Fisch Küstenware: der Lieferant bringt ihn nur ans
+ * HAUPTLAGER (Nord) — der Süden bekommt Fisch ausschließlich per Transfer.
+ * (Als Konstante statt im def, damit alte Spielstände/Tests unberührt bleiben,
+ * solange kein Standort existiert.) */
+export const HQ_EXCLUSIVE_PRODUCTS: ProductId[] = ['fisch'];
+
+/** Liefert der Lieferant dieses Produkt an diesen Standort? */
+export function supplierDeliversTo(productId: ProductId, siteId: SiteId): boolean {
+  const def = getProductDef(productId);
+  if (def.exclusiveSite) return def.exclusiveSite === siteId;
+  if (HQ_EXCLUSIVE_PRODUCTS.includes(productId)) return siteId === 'hq';
+  return true;
+}
+
+// ============================================================================
+// Standorte (L3) — Konzern-Gameplay: das Hauptlager (Nord) plus ein eröffenbarer
+// Standort Süd mit eigener Halle, eigenem Regionalmarkt und Regionalprodukten.
+// Verwaltung (Büro, KAMs, Einkäufer, Vertrieb) bleibt zentral im Hauptlager.
+// ============================================================================
+
+export const SITE_META: Record<SiteId, { name: string; short: string; emoji: string }> = {
+  hq: { name: 'Hauptlager Nord', short: 'Nord', emoji: '🏭' },
+  sued: { name: 'Standort Süd', short: 'Süd', emoji: '🏗️' },
+};
+/** Eröffnung des Standorts Süd — bewusst VOR der bequemen Leistbarkeit
+ * freigeschaltet (gleicher Spannungs-Loop wie bei den Produktgruppen). */
+export const BRANCH_UNLOCK_MONTHLY = 250_000;
+export const BRANCH_PRICE = 120_000;
+/** Zusätzliche Monatsmiete des Standorts (wächst mit dessen Erweiterungen wie im
+ * Hauptlager über RENT_PER_EXPANSION). */
+export const BRANCH_RENT = 1_500;
+/** Eröffnet der Standort eine neue Region, wächst der erreichbare Markt: Faktor
+ * auf die Marktgrößen der Akquise (Anti-Sättigung — der Sinn der Expansion). */
+export const BRANCH_MARKET_BONUS = 1.6;
+/** Anteil neuer Anfragen aus Region Süd, sobald der Standort offen ist. */
+export const BRANCH_INQUIRY_SHARE = 0.45;
+/** LKW-Transfer zwischen Standorten: Kosten je Palette + Fahrzeit in Tagen. */
+export const TRANSFER_COST_PER_PALLET = 90;
+export const TRANSFER_DAYS = 1;
 
 export function getProductDef(id: ProductId): ProductDef {
   return PRODUCT_DEFS.find((d) => d.id === id)!;
@@ -327,6 +377,8 @@ export const SEASONAL_TREND: Record<ProductId, [number, number, number, number]>
   obst: [0.8, 1.0, 1.4, 1.0], // Frisches Obst boomt im Sommer
   tiefkuehl: [1.0, 0.95, 1.35, 0.95], // Tiefkühl (Eis!) im Sommer
   delikatess: [1.15, 0.9, 0.85, 1.3], // Feinkost zu den Feiertagen (Q4/Winter)
+  wein: [1.1, 0.95, 1.0, 1.35], // Wein zu den Festen (Q4)
+  oliven: [0.9, 1.05, 1.3, 1.0], // Antipasti im Sommer
 };
 
 export const QUARTER_LABEL = ['Q1 · Winter', 'Q2 · Frühjahr', 'Q3 · Sommer', 'Q4 · Herbst'];

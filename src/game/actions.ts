@@ -31,11 +31,18 @@ import {
   SLOT_COST,
   SHELF_SLOTS,
   STRATEGY_COOLDOWN_WEEKS,
+  supplierDeliversTo,
+  SITE_META,
+  BRANCH_PRICE,
+  BRANCH_UNLOCK_MONTHLY,
+  monthlyRevenue,
+  TRANSFER_COST_PER_PALLET,
+  TRANSFER_DAYS,
   TABLE_PRICE,
   TRAINING_COST,
   TRAINING_SKILL_GAIN,
 } from './constants';
-import type { CustomerLine, EquipmentId, GameState, Order, ProductId, Role, StrategyId } from './types';
+import type { CustomerLine, EquipmentId, GameState, Order, ProductId, Role, SiteId, StrategyId } from './types';
 import {
   acceptInquiry as onboardInquiry,
   availableCredit,
@@ -60,11 +67,15 @@ import {
   releaseWorkerTask,
   repriceAcceptChance,
   resolveDemandRejection,
+  branchOpen,
+  siteOfOrder,
+  shelfStock,
+  warehouseOf,
   spend,
   supplierUnitPrice,
   tryPrepareOrder,
 } from './simulation';
-import { buildProduct } from './init';
+import { buildProduct, makeBranchWarehouse } from './init';
 import { clamp, uid, weekOf } from './util';
 import { STEP } from './tutorial';
 
@@ -84,8 +95,9 @@ export interface ActionResult {
 export function placeWeeklyOrder(
   state: GameState,
   items: { productId: ProductId; quantity: number }[],
+  site: SiteId = 'hq',
 ): ActionResult {
-  const valid = items.filter((i) => i.quantity > 0);
+  const valid = items.filter((i) => i.quantity > 0 && supplierDeliversTo(i.productId, site));
   let total = 0;
   for (const item of valid) {
     const sp = state.supplier.products.find((s) => s.productId === item.productId)!;
@@ -93,15 +105,16 @@ export function placeWeeklyOrder(
   }
   // commitWeeklyOrder refunds this week's existing order first, so that amount is
   // available again toward the new one.
+  const currentId = site === 'sued' ? state.currentWeekPoIdSued : state.currentWeekPoId;
   const current = state.purchaseOrders.find(
-    (p) => p.id === state.currentWeekPoId && p.status === 'pending',
+    (p) => p.id === currentId && p.status === 'pending',
   );
   const refundable = current ? current.totalCost : 0;
   if (state.cash + availableCredit(state) + refundable < total) {
     return { ok: false, message: `Nicht genug Kapital (${Math.round(total)}€ nötig).` };
   }
 
-  const po = commitWeeklyOrder(state, valid);
+  const po = commitWeeklyOrder(state, valid, site);
   if (po) {
     notify(
       state,
@@ -219,9 +232,17 @@ export function restockForOrder(state: GameState, orderId: string): ActionResult
     return { ok: false, message: `Express-Nachbestellung ${Math.round(cost)}€ nicht bezahlbar.` };
   }
 
+  const site = siteOfOrder(state, order);
+  if (!supplierDeliversTo(order.productId, site)) {
+    return {
+      ok: false,
+      message: `Der Lieferant bringt ${product.name} nicht nach ${SITE_META[site].short} – per 🚚 Transfer vom anderen Standort beschaffen.`,
+    };
+  }
   createPurchaseOrderInternal(state, [{ productId: order.productId, quantity: shortfall }], {
     priceMultiplier: surcharge,
     leadDays: EXPRESS_PO_LEAD_DAYS,
+    siteId: site,
   });
   notify(
     state,
@@ -233,12 +254,19 @@ export function restockForOrder(state: GameState, orderId: string): ActionResult
 
 // --- Employees --------------------------------------------------------------
 
-export function hireEmployee(state: GameState, role: Role): ActionResult {
+export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'): ActionResult {
   const salary = ROLE_SALARY[role];
   const upfront = salary * HIRE_WEEKS_UPFRONT;
-  // Office roles need a free desk to sit at (warehouse workers don't).
+  // Office roles need a free desk to sit at (warehouse workers don't) — die
+  // Verwaltung sitzt IMMER zentral im Hauptlager (Konzern-Regel, L3).
   if (role !== 'lager' && freeDesks(state) <= 0) {
     return { ok: false, message: 'Kein freier Arbeitsplatz – baue erst einen Schreibtisch im Büro.' };
+  }
+  if (role !== 'lager' && site !== 'hq') {
+    return { ok: false, message: 'Büro-Personal sitzt zentral im Hauptlager.' };
+  }
+  if (site === 'sued' && !state.branchWarehouse) {
+    return { ok: false, message: 'Standort Süd ist noch nicht eröffnet.' };
   }
   if (state.cash + availableCredit(state) < upfront) {
     return { ok: false, message: `Einstellung kostet ${upfront}€ (4 Wochen im Voraus).` };
@@ -253,6 +281,7 @@ export function hireEmployee(state: GameState, role: Role): ActionResult {
     role,
     salary,
     skill: 45,
+    siteId: role === 'lager' && site === 'sued' ? 'sued' : undefined,
   });
   notify(state, `🧑‍💼 ${name} eingestellt (${salary}€/Woche, ${upfront}€ Vorkasse).`, 'success');
 
@@ -669,11 +698,12 @@ export function repayCredit(state: GameState, amount: number): ActionResult {
 
 // --- Build mode (warehouse) -------------------------------------------------
 
-function tileFree(state: GameState, gx: number, gy: number): boolean {
+function tileFree(state: GameState, gx: number, gy: number, site: SiteId = 'hq'): boolean {
+  const w = warehouseOf(state, site);
   return (
-    !state.warehouse.shelves.some((s) => s.gx === gx && s.gy === gy) &&
-    !state.warehouse.tables.some((t) => t.gx === gx && t.gy === gy) &&
-    !state.warehouse.desks.some((d) => d.gx === gx && d.gy === gy)
+    !w.shelves.some((s) => s.gx === gx && s.gy === gy) &&
+    !w.tables.some((t) => t.gx === gx && t.gy === gy) &&
+    !w.desks.some((d) => d.gx === gx && d.gy === gy)
   );
 }
 
@@ -681,20 +711,21 @@ function tileFree(state: GameState, gx: number, gy: number): boolean {
 /** Markiert eine Lager-Kachel als ❄️ Kühlbereich (COOL_TILE_PRICE). Erlaubt auf
  * leeren Lager-Kacheln UND unter bestehenden Regalen (das Regal wird damit zum
  * Kühlregal). Kühlware lagert ausschließlich in Regalen auf solchen Kacheln. */
-export function buildCoolZone(state: GameState, gx: number, gy: number): ActionResult {
-  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+export function buildCoolZone(state: GameState, gx: number, gy: number, site: SiteId = 'hq'): ActionResult {
+  const w = warehouseOf(state, site);
+  const tile = w.tiles.find((t) => t.gx === gx && t.gy === gy);
   if (!tile || tile.zone !== 'storage') return { ok: false, message: 'Nur in der Lagerzone markierbar.' };
-  if (isCoolTile(state, gx, gy)) return { ok: false, message: 'Kachel ist bereits Kühlbereich.' };
-  if (state.warehouse.tables.some((t) => t.gx === gx && t.gy === gy)) {
+  if (isCoolTile(state, gx, gy, site)) return { ok: false, message: 'Kachel ist bereits Kühlbereich.' };
+  if (w.tables.some((t) => t.gx === gx && t.gy === gy)) {
     return { ok: false, message: 'Auf Vorbereitungstischen kein Kühlbereich.' };
   }
   if (state.cash + availableCredit(state) < COOL_TILE_PRICE) {
     return { ok: false, message: `Kühlbereich kostet ${COOL_TILE_PRICE}€ pro Kachel.` };
   }
   spend(state, COOL_TILE_PRICE);
-  if (!state.warehouse.coolTiles) state.warehouse.coolTiles = [];
-  state.warehouse.coolTiles.push({ gx, gy });
-  const hasShelf = state.warehouse.shelves.some((s) => s.gx === gx && s.gy === gy);
+  if (!w.coolTiles) w.coolTiles = [];
+  w.coolTiles.push({ gx, gy });
+  const hasShelf = w.shelves.some((s) => s.gx === gx && s.gy === gy);
   notify(
     state,
     `❄️ Kühlbereich markiert (${COOL_TILE_PRICE}€)${hasShelf ? ' – das Regal hier ist jetzt ein Kühlregal.' : ' – ein Regal darauf wird zum Kühlregal.'}`,
@@ -703,37 +734,128 @@ export function buildCoolZone(state: GameState, gx: number, gy: number): ActionR
   return { ok: true };
 }
 
-export function buildShelf(state: GameState, gx: number, gy: number): ActionResult {
-  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+export function buildShelf(state: GameState, gx: number, gy: number, site: SiteId = 'hq'): ActionResult {
+  const w = warehouseOf(state, site);
+  const tile = w.tiles.find((t) => t.gx === gx && t.gy === gy);
   if (!tile || tile.zone !== 'storage') return { ok: false, message: 'Nur in der Lagerzone platzierbar.' };
-  if (!tileFree(state, gx, gy)) return { ok: false, message: 'Kachel bereits belegt.' };
-  const access = placementBlocksAccess(state, gx, gy);
+  if (!tileFree(state, gx, gy, site)) return { ok: false, message: 'Kachel bereits belegt.' };
+  const access = placementBlocksAccess(state, gx, gy, site);
   if (access) return { ok: false, message: access };
   if (state.cash + availableCredit(state) < SHELF_PRICE) return { ok: false, message: `Regal kostet ${SHELF_PRICE}€.` };
   spend(state, SHELF_PRICE);
-  state.warehouse.shelves.push({ id: uid('shelf'), gx, gy });
+  w.shelves.push({ id: uid('shelf'), gx, gy });
   notify(state, `🧱 Regal gebaut (${SHELF_PRICE}€) – +${SHELF_SLOTS * PALETTE_SIZE} Lagerplätze.`, 'info');
   return { ok: true };
 }
 
 /** Build a prep table on a free storage tile — more parallel Herrichtung. */
-export function buildTable(state: GameState, gx: number, gy: number): ActionResult {
-  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+export function buildTable(state: GameState, gx: number, gy: number, site: SiteId = 'hq'): ActionResult {
+  const w = warehouseOf(state, site);
+  const tile = w.tiles.find((t) => t.gx === gx && t.gy === gy);
   if (!tile || tile.zone !== 'storage') return { ok: false, message: 'Nur in der Lagerzone platzierbar.' };
-  if (!tileFree(state, gx, gy)) return { ok: false, message: 'Kachel bereits belegt.' };
-  const access = placementBlocksAccess(state, gx, gy);
+  if (!tileFree(state, gx, gy, site)) return { ok: false, message: 'Kachel bereits belegt.' };
+  const access = placementBlocksAccess(state, gx, gy, site);
   if (access) return { ok: false, message: access };
   if (state.cash + availableCredit(state) < TABLE_PRICE) return { ok: false, message: `Tisch kostet ${TABLE_PRICE}€.` };
   spend(state, TABLE_PRICE);
-  state.warehouse.tables.push({ gx, gy });
+  w.tables.push({ gx, gy });
   notify(state, `🔧 Vorbereitungstisch gebaut (${TABLE_PRICE}€) – mehr paralleles Herrichten.`, 'info');
   return { ok: true };
 }
 
 /** Tear down the shelf, table or desk on a tile and refund part of its price.
  * Refuses (with a reason) if the structure is in use or holding stock. */
-export function demolishAt(state: GameState, gx: number, gy: number): ActionResult {
-  const w = state.warehouse;
+// --- Standorte (L3) ---------------------------------------------------------
+
+/** Eröffnet den Standort Süd: neue Halle, neuer Regionalmarkt, Regionalprodukte.
+ * Freigeschaltet ab BRANCH_UNLOCK_MONTHLY Monatsumsatz — bewusst bevor man es
+ * sich bequem leisten kann (Übernahme-Risiko ist Teil des Spiels). */
+export function openBranch(state: GameState): ActionResult {
+  if (state.branchWarehouse) return { ok: false, message: 'Standort Süd ist bereits eröffnet.' };
+  if (monthlyRevenue(state) < BRANCH_UNLOCK_MONTHLY) {
+    return {
+      ok: false,
+      message: `Ab ${Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz möglich.`,
+    };
+  }
+  if (state.cash + availableCredit(state) < BRANCH_PRICE) {
+    return { ok: false, message: `Eröffnung kostet ${BRANCH_PRICE}€.` };
+  }
+  spend(state, BRANCH_PRICE);
+  state.branchWarehouse = makeBranchWarehouse();
+  state.branchOpenedWeek = weekOf(state.totalDays);
+  notify(
+    state,
+    `🎉 ${SITE_META.sued.name} eröffnet (${BRANCH_PRICE}€)! Neue Region: Süd-Kunden fragen bald an, 🍷 Wein & 🫒 Oliven sind dort listbar. Lagerkräfte einstellen (Personal → Standort Süd) und bestellen nicht vergessen.`,
+    'success',
+  );
+  return { ok: true };
+}
+
+/** LKW-Transfer zwischen den Standorten: nimmt Regal-Bestand am Absender und
+ * liefert ihn nach TRANSFER_DAYS in den Wareneingang des Ziels (Haltbarkeit
+ * bleibt erhalten; dort muss er normal eingelagert werden). */
+export function transferStock(
+  state: GameState,
+  productId: ProductId,
+  quantity: number,
+  fromSite: SiteId,
+  toSite: SiteId,
+): ActionResult {
+  if (!branchOpen(state)) return { ok: false, message: 'Standort Süd ist noch nicht eröffnet.' };
+  if (fromSite === toSite) return { ok: false, message: 'Gleicher Standort.' };
+  const product = getProduct(state, productId);
+  const qty = Math.round(quantity);
+  if (qty <= 0) return { ok: false, message: 'Menge ungültig.' };
+  if (shelfStock(product, fromSite) < qty) {
+    return { ok: false, message: `Nur ${shelfStock(product, fromSite)}× ${product.name} im Regal ${SITE_META[fromSite].short}.` };
+  }
+  const cost = Math.ceil(qty / PALETTE_SIZE) * TRANSFER_COST_PER_PALLET;
+  if (state.cash + availableCredit(state) < cost) {
+    return { ok: false, message: `Transport kostet ${cost}€ – nicht bezahlbar.` };
+  }
+  // Bestand FIFO am Absender entnehmen; die früheste Haltbarkeit reist mit
+  // (konservativ — kein Frische-Reset durch Umlagern).
+  let earliest = Infinity;
+  for (const b of product.batches) {
+    if (b.location === 'shelf' && (b.siteId ?? 'hq') === fromSite) {
+      earliest = Math.min(earliest, b.expiryDay);
+    }
+  }
+  const deduct = qty;
+  let remaining = deduct;
+  product.batches.sort((a, b) => a.expiryDay - b.expiryDay);
+  for (const b of product.batches) {
+    if (remaining <= 0) break;
+    if (b.location !== 'shelf' || (b.siteId ?? 'hq') !== fromSite) continue;
+    const take = Math.min(b.quantity, remaining);
+    b.quantity -= take;
+    remaining -= take;
+  }
+  product.batches = product.batches.filter((b) => b.quantity > 0);
+  spend(state, cost);
+  state.weekAcc.logistics += cost;
+  if (!state.transfers) state.transfers = [];
+  state.transfers.push({
+    id: uid('trans'),
+    productId,
+    quantity: qty,
+    fromSite,
+    toSite,
+    expiryDay: earliest === Infinity ? state.totalDays + product.spoilageDays : earliest,
+    arrivalDay: state.totalDays + TRANSFER_DAYS,
+    cost,
+  });
+  notify(
+    state,
+    `🚚 Transfer unterwegs: ${qty}× ${product.emoji} ${product.name} ${SITE_META[fromSite].short} → ${SITE_META[toSite].short} (${cost}€, ~${TRANSFER_DAYS} Tag).`,
+    'info',
+  );
+  return { ok: true };
+}
+
+export function demolishAt(state: GameState, gx: number, gy: number, site: SiteId = 'hq'): ActionResult {
+  const w = warehouseOf(state, site);
   const refundBack = (price: number) => {
     state.cash += Math.round(price * DEMOLISH_REFUND);
   };
@@ -743,10 +865,10 @@ export function demolishAt(state: GameState, gx: number, gy: number): ActionResu
     // Removing a shelf must not strand stock — checked in ITS zone (a cool-tile
     // shelf only holds cold ware, a normal shelf only normal ware).
     const unit = SHELF_SLOTS * PALETTE_SIZE;
-    const cold = isCoolTile(state, gx, gy);
+    const cold = isCoolTile(state, gx, gy, site);
     const stranded = cold
-      ? coldShelfUsed(state) > coldShelfCapacity(state) - unit
-      : normalShelfUsed(state) > normalShelfCapacity(state) - unit;
+      ? coldShelfUsed(state, site) > coldShelfCapacity(state, site) - unit
+      : normalShelfUsed(state, site) > normalShelfCapacity(state, site) - unit;
     if (stranded) {
       return { ok: false, message: 'Regal (mit-)belegt – erst Bestand abverkaufen/umlagern, sonst geht Ware verloren.' };
     }
@@ -759,7 +881,7 @@ export function demolishAt(state: GameState, gx: number, gy: number): ActionResu
   const table = w.tables.find((t) => t.gx === gx && t.gy === gy);
   if (table) {
     // Table indices are referenced by active prep tasks — only remove when idle.
-    if (state.employees.some((e) => e.task?.kind === 'prep')) {
+    if (state.employees.some((e) => e.task?.kind === 'prep' && (e.siteId ?? 'hq') === site)) {
       return { ok: false, message: 'Es wird gerade hergerichtet – erst abwarten, dann Tisch abreißen.' };
     }
     w.tables = w.tables.filter((t) => t !== table);
@@ -782,7 +904,7 @@ export function demolishAt(state: GameState, gx: number, gy: number): ActionResu
 
   // Leere Kühlbereich-Kachel: Markierung entfernen (Regal darauf würde oben als
   // Kühlregal-Abriss greifen — danach kann die Markierung selbst weg).
-  if (isCoolTile(state, gx, gy)) {
+  if (isCoolTile(state, gx, gy, site)) {
     w.coolTiles = (w.coolTiles ?? []).filter((t) => !(t.gx === gx && t.gy === gy));
     refundBack(COOL_TILE_PRICE);
     notify(state, `🧹 Kühlbereich-Markierung entfernt – ${Math.round(COOL_TILE_PRICE * DEMOLISH_REFUND)}€ zurück.`, 'info');
@@ -793,16 +915,17 @@ export function demolishAt(state: GameState, gx: number, gy: number): ActionResu
 }
 
 /** Add an inbound pallet slot (Wareneingang +1) on a free ramp tile. */
-export function buildInboundSlot(state: GameState, gx: number, gy: number): ActionResult {
-  const tile = state.warehouse.tiles.find((t) => t.gx === gx && t.gy === gy);
+export function buildInboundSlot(state: GameState, gx: number, gy: number, site: SiteId = 'hq'): ActionResult {
+  const w = warehouseOf(state, site);
+  const tile = w.tiles.find((t) => t.gx === gx && t.gy === gy);
   if (!tile || tile.zone !== 'ramp') return { ok: false, message: 'Nur im Rampenbereich platzierbar.' };
-  const rampCount = state.warehouse.tiles.filter((t) => t.zone === 'ramp').length;
-  if (state.warehouse.inboundSlots + state.warehouse.abholzone >= rampCount) {
+  const rampCount = w.tiles.filter((t) => t.zone === 'ramp').length;
+  if (w.inboundSlots + w.abholzone >= rampCount) {
     return { ok: false, message: 'Kein Platz mehr im Rampenbereich.' };
   }
   if (state.cash + availableCredit(state) < INBOUND_SLOT_PRICE) return { ok: false, message: `Anlieferungsplatz kostet ${INBOUND_SLOT_PRICE}€.` };
   spend(state, INBOUND_SLOT_PRICE);
-  state.warehouse.inboundSlots += 1;
+  w.inboundSlots += 1;
   notify(state, `📥 Anlieferungsplatz gebaut (${INBOUND_SLOT_PRICE}€) – Wareneingang +${PALETTE_SIZE}.`, 'info');
   return { ok: true };
 }
@@ -810,19 +933,20 @@ export function buildInboundSlot(state: GameState, gx: number, gy: number): Acti
 /** Expand the hall by one 2×2 block (4 storage tiles). Only scaling cost. The
  * block must be on the current expansion frontier (dynamically recomputed from
  * the hall shape), so UI and mutation can never disagree. */
-export function expandHall(state: GameState, block: { gx: number; gy: number }[]): ActionResult {
-  if (!isFrontierBlock(state, 'hall', block)) {
+export function expandHall(state: GameState, block: { gx: number; gy: number }[], site: SiteId = 'hq'): ActionResult {
+  const w = warehouseOf(state, site);
+  if (!isFrontierBlock(state, 'hall', block, site)) {
     return { ok: false, message: 'Hier kann die Halle nicht erweitert werden.' };
   }
-  const price = hallExpansionPrice(state.warehouse.expansions);
+  const price = hallExpansionPrice(w.expansions);
   if (state.cash + availableCredit(state) < price) return { ok: false, message: `Erweiterung kostet ${price}€.` };
   for (const c of block) {
-    if (!state.warehouse.tiles.some((t) => t.gx === c.gx && t.gy === c.gy)) {
-      state.warehouse.tiles.push({ gx: c.gx, gy: c.gy, zone: 'storage' });
+    if (!w.tiles.some((t) => t.gx === c.gx && t.gy === c.gy)) {
+      w.tiles.push({ gx: c.gx, gy: c.gy, zone: 'storage' });
     }
   }
   spend(state, price);
-  state.warehouse.expansions += 1;
+  w.expansions += 1;
   notify(state, `🏗️ Halle erweitert (${price}€) – 4 neue Lagerkacheln, Miete +${RENT_PER_EXPANSION}€/Monat.`, 'info');
   return { ok: true };
 }

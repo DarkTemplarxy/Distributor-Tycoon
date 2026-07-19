@@ -24,7 +24,30 @@ import {
 } from '../game/simulation';
 import { PALETTE_SIZE, SHELF_SLOTS, WORK_END_HOUR, WORK_START_HOUR } from '../game/constants';
 import { dayName, formatClock, hourOf } from '../game/util';
-import type { GameState, ProductId } from '../game/types';
+import type { GameState, ProductId, SiteId } from '../game/types';
+
+/**
+ * Standort-Projektion (L3): für die Süd-Ansicht bauen wir eine leichte Kopie des
+ * States, in der `warehouse` die Süd-Halle ist und Chargen/Kräfte/Paletten auf
+ * den Standort gefiltert (und auf 'hq' normalisiert) sind. Damit funktionieren
+ * ALLE bestehenden Renderer-Helfer unverändert — sie sehen einfach die Welt des
+ * gewählten Standorts. Nur Lese-Pfad; Mutationen laufen über die Actions mit
+ * explizitem site-Parameter.
+ */
+function projectBranchView(raw: GameState): GameState {
+  return {
+    ...raw,
+    warehouse: raw.branchWarehouse!,
+    employees: raw.employees.filter((e) => e.role === 'lager' && (e.siteId ?? 'hq') === 'sued'),
+    palettes: raw.palettes.filter((pal) => (pal.siteId ?? 'hq') === 'sued'),
+    products: raw.products.map((pr) => ({
+      ...pr,
+      batches: pr.batches
+        .filter((b) => (b.siteId ?? 'hq') === 'sued')
+        .map((b) => ({ ...b, siteId: undefined })),
+    })),
+  };
+}
 
 export type BuildTool = 'shelf' | 'table' | 'inbound' | 'expand' | 'desk' | 'officeExpand' | 'cool' | 'demolish';
 export interface BuildProps {
@@ -46,6 +69,8 @@ const PROD_HEX: Record<ProductId, string> = {
   obst: '#ff9f45',
   tiefkuehl: '#7ad0e6',
   delikatess: '#c98bd6',
+  wein: '#b0629e',
+  oliven: '#9aa84f',
 };
 const C = {
   skyTop: '#12303a',
@@ -273,13 +298,17 @@ function shade(hex: string, f: number): string {
 export function IsometricWarehouse({
   build,
   onOpenOffice,
+  site = 'hq',
 }: {
   build?: BuildProps;
   /** Left-click on an office tile (outside build mode) — go see the office
    * staff (opens the Personal screen). */
   onOpenOffice?: () => void;
+  /** Angezeigter Standort (L3): 'hq' = Hauptlager, 'sued' = Standort Süd. */
+  site?: SiteId;
 }) {
-  const { state } = useGame();
+  const { state: rawState } = useGame();
+  const state = site === 'sued' && rawState.branchWarehouse ? projectBranchView(rawState) : rawState;
   const stateRef = useRef(state);
   stateRef.current = state;
   const buildRef = useRef(build);

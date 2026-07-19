@@ -15,7 +15,9 @@ import {
   MEDIUM_UNLOCK_MONTHLY,
   monthlyRevenue,
   PRODUCT_DEFS,
+  SITE_META,
 } from './game/constants';
+import type { SiteId } from './game/types';
 import { euro, weekOf } from './game/util';
 import { Toasts } from './components/Toasts';
 import { TutorialLayer } from './components/TutorialLayer';
@@ -58,6 +60,10 @@ export type ModalId =
 export function App() {
   const { state, mutate, togglePause, setPaused, newGame } = useGame();
   const [modal, setModal] = useState<ModalId>(null);
+  // L3: welcher Standort in der Halle angezeigt wird ('hq' | 'sued').
+  const [activeSite, setActiveSite] = useState<SiteId>('hq');
+  const siteAvailable = !!state.branchWarehouse;
+  const site: SiteId = siteAvailable ? activeSite : 'hq';
   const [restartOpen, setRestartOpen] = useState(false);
   const [buildMode, setBuildMode] = useState(false);
   const [buildTool, setBuildTool] = useState<BuildTool | null>(null);
@@ -237,7 +243,7 @@ export function App() {
 
       <div className={`main${state.settings.ordersPanelCollapsed ? ' orders-collapsed' : ''}`}>
         <div className="col-left" style={{ position: 'relative' }}>
-          {buildMode && <BuildBar tool={buildTool} onSelect={setBuildTool} onExit={exitBuild} />}
+          {buildMode && <BuildBar tool={buildTool} onSelect={setBuildTool} onExit={exitBuild} site={site} />}
           <IsometricWarehouse
             build={
               buildMode
@@ -247,15 +253,15 @@ export function App() {
                       mutate((s) => {
                         const r =
                           buildTool === 'shelf'
-                            ? buildShelf(s, gx, gy)
+                            ? buildShelf(s, gx, gy, site)
                             : buildTool === 'table'
-                              ? buildTable(s, gx, gy)
+                              ? buildTable(s, gx, gy, site)
                               : buildTool === 'inbound'
-                                ? buildInboundSlot(s, gx, gy)
+                                ? buildInboundSlot(s, gx, gy, site)
                                 : buildTool === 'desk'
                                   ? buildDesk(s, gx, gy)
                                   : buildTool === 'cool'
-                                    ? buildCoolZone(s, gx, gy)
+                                    ? buildCoolZone(s, gx, gy, site)
                                     : null;
                         // No silent refusal: surface why a placement failed.
                         if (r && !r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
@@ -263,22 +269,49 @@ export function App() {
                     onExpand: (block) =>
                       mutate((s) => {
                         if (buildTool === 'officeExpand') expandOffice(s, block);
-                        else expandHall(s, block);
+                        else expandHall(s, block, site);
                       }),
                     onDemolish: (gx, gy) =>
                       mutate((s) => {
-                        const r = demolishAt(s, gx, gy);
+                        const r = demolishAt(s, gx, gy, site);
                         if (!r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
                       }),
                   }
                 : undefined
             }
             onOpenOffice={
-              isFeatureUnlocked(state.tutorial, 'employees')
+              site === 'hq' && isFeatureUnlocked(state.tutorial, 'employees')
                 ? () => openModal('employees')
                 : undefined
             }
+            site={site}
           />
+          {siteAvailable && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 10,
+                bottom: 44,
+                zIndex: 5,
+                display: 'flex',
+                gap: 4,
+                background: 'rgba(12,18,24,0.9)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 9,
+                padding: 4,
+              }}
+            >
+              {(['hq', 'sued'] as const).map((id) => (
+                <button
+                  key={id}
+                  className={`btn small${site === id ? ' primary' : ' ghost'}`}
+                  onClick={() => setActiveSite(id)}
+                >
+                  {SITE_META[id].emoji} {SITE_META[id].short}
+                </button>
+              ))}
+            </div>
+          )}
           {!buildMode && isFeatureUnlocked(state.tutorial, 'build') && (
             <OpsCockpit onOpen={openModal} onBuild={enterBuild} />
           )}

@@ -1,10 +1,13 @@
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { incomingPO, inboundStock, shelfStock } from '../../game/simulation';
+import { branchOpen, incomingPO, inboundStock, shelfStock } from '../../game/simulation';
+import { transferStock } from '../../game/actions';
+import { PALETTE_SIZE, SITE_META } from '../../game/constants';
 import { PRODUCT_COLOR } from '../shared';
 
 export function InventoryModal({ onClose }: { onClose: () => void }) {
-  const { state } = useGame();
+  const { state, mutate } = useGame();
+  const hasBranch = branchOpen(state);
 
   return (
     <Modal title="Inventar & Verderblichkeit" icon="📦" onClose={onClose} wide>
@@ -37,11 +40,40 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
                     {shelf} Stk <span className="sub">im Regal</span>
                   </div>
                   <div className="sub">
+                    {hasBranch && (
+                      <>
+                        🏭 {shelfStock(product, 'hq')} · 🏗️ Süd {shelfStock(product, 'sued')} ·{' '}
+                      </>
+                    )}
                     {inbound > 0 && <>📥 {inbound} im Wareneingang · </>}
                     {incoming > 0 ? `+${incoming} unterwegs` : inbound === 0 ? 'nichts unterwegs' : ''}
                   </div>
                 </div>
               </div>
+
+              {hasBranch && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="sub" style={{ minWidth: 100 }}>🚚 Transfer (1 Palette):</span>
+                  {([['hq', 'sued'], ['sued', 'hq']] as const).map(([from, to]) => (
+                    <button
+                      key={from}
+                      className="btn small ghost"
+                      disabled={shelfStock(product, from) < PALETTE_SIZE}
+                      title={`${PALETTE_SIZE}× vom Regal ${SITE_META[from].short} in den Wareneingang ${SITE_META[to].short} fahren (Kosten je Palette, ~1 Tag).`}
+                      onClick={() =>
+                        mutate((s) => transferStock(s, product.id, PALETTE_SIZE, from, to))
+                      }
+                    >
+                      {SITE_META[from].short} → {SITE_META[to].short}
+                    </button>
+                  ))}
+                  {(state.transfers ?? []).filter((t) => t.productId === product.id).length > 0 && (
+                    <span className="pill">
+                      🚚 {(state.transfers ?? []).filter((t) => t.productId === product.id).reduce((a, t) => a + t.quantity, 0)} unterwegs
+                    </span>
+                  )}
+                </div>
+              )}
 
               {batches.length === 0 && <div className="empty" style={{ padding: 6 }}>Kein Bestand.</div>}
               {batches.map((b) => {
@@ -51,10 +83,11 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
                 return (
                   <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span
-                      style={{ width: 78, fontVariantNumeric: 'tabular-nums' }}
-                      title={b.location === 'inbound' ? 'Im Wareneingang' : 'Im Regal'}
+                      style={{ width: 104, fontVariantNumeric: 'tabular-nums' }}
+                      title={`${b.location === 'inbound' ? 'Im Wareneingang' : 'Im Regal'} · ${SITE_META[b.siteId ?? 'hq'].name}`}
                     >
                       {b.location === 'inbound' ? '📥' : '🗄️'} {b.quantity}×
+                      {hasBranch && <span className="sub"> {SITE_META[b.siteId ?? 'hq'].short}</span>}
                     </span>
                     <div className="progress" style={{ flex: 1, marginTop: 0 }}>
                       <span

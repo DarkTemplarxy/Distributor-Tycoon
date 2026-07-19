@@ -221,6 +221,9 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                 <div className="grow">
                   <div className="title">
                     {inq.name} <span className="pill">{TYPE_LABEL[inq.type]}</span>{' '}
+                    {inq.region === 'sued' && (
+                      <span className="pill" title="Region Süd – nur der Standort Süd kann diesen Kunden beliefern.">🏗️ Süd</span>
+                    )}{' '}
                     {isExpansion ? (
                       <span className="pill good">🔁 Bestandskunde: {inq.name}</span>
                     ) : (

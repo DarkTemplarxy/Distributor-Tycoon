@@ -12,6 +12,7 @@ import {
 import { availableCredit } from '../game/simulation';
 import { euro } from '../game/util';
 import type { BuildTool } from './IsometricWarehouse';
+import type { SiteId } from '../game/types';
 
 const TOOLS: { id: BuildTool; icon: string; label: string; hint: string }[] = [
   { id: 'shelf', icon: '🧱', label: 'Regal', hint: '+4 Palettenplätze' },
@@ -27,13 +28,17 @@ export function BuildBar({
   tool,
   onSelect,
   onExit,
+  site = 'hq',
 }: {
   tool: BuildTool | null;
   onSelect: (t: BuildTool | null) => void;
   onExit: () => void;
+  /** Aktiver Standort — am Standort Süd gibt es kein Büro (Verwaltung zentral). */
+  site?: SiteId;
 }) {
   const { state } = useGame();
   const budget = state.cash + availableCredit(state);
+  const tools = TOOLS.filter((t) => site === 'hq' || (t.id !== 'desk' && t.id !== 'officeExpand'));
   const priceOf = (id: BuildTool) =>
     id === 'shelf'
       ? SHELF_PRICE
@@ -69,7 +74,7 @@ export function BuildBar({
       }}
     >
       <span style={{ fontWeight: 700, fontSize: 14, marginRight: 4 }}>🏗️ Bau-Modus</span>
-      {TOOLS.map((t) => {
+      {tools.map((t) => {
         const price = priceOf(t.id);
         const active = tool === t.id;
         const afford = budget >= price;

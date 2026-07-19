@@ -7,11 +7,13 @@ import {
   ROLE_EMOJI,
   ROLE_LABEL,
   ROLE_SALARY,
+  SITE_META,
   SLOT_COST,
   TRAINING_COST,
   WEEKS_PER_MONTH,
 } from '../../game/constants';
 import {
+  branchOpen,
   currentMonthlyRent,
   deskCount,
   expectedNewInquiriesPerWeek,
@@ -45,6 +47,7 @@ function prefSummary(
 export function EmployeesModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
   const weeklyPayroll = state.employees.reduce((s, e) => s + e.salary, 0);
+  const hasBranch = branchOpen(state);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (id: string) =>
     setOpen((prev) => {
@@ -166,6 +169,7 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
                   <div className="sub">
                     {ROLE_LABEL[e.role]} · {euro(e.salary)}/Woche · Skill {e.skill} ·{' '}
                     {e.task ? 'arbeitet' : 'frei'}
+                    {hasBranch && e.role === 'lager' && ` · ${SITE_META[e.siteId ?? 'hq'].emoji} ${SITE_META[e.siteId ?? 'hq'].short}`}
                     {pref && ` · ${pref}`}
                   </div>
                 </div>
@@ -280,14 +284,29 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
                 <div className="sub">{euro(ROLE_SALARY[role])}/Woche</div>
                 <div className="sub">Vorkasse {euro(upfront)}</div>
               </div>
-              <button
-                className="btn primary small"
-                disabled={noDesk}
-                title={noDesk ? 'Erst einen Schreibtisch im Büro bauen (Bau-Modus).' : undefined}
-                onClick={() => mutate((s) => hireEmployee(s, role))}
-              >
-                Einstellen
-              </button>
+              {role === 'lager' && hasBranch ? (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {(['hq', 'sued'] as const).map((st) => (
+                    <button
+                      key={st}
+                      className="btn primary small"
+                      title={`Lagerkraft am ${SITE_META[st].name} einstellen.`}
+                      onClick={() => mutate((s) => hireEmployee(s, role, st))}
+                    >
+                      {SITE_META[st].emoji} {SITE_META[st].short}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button
+                  className="btn primary small"
+                  disabled={noDesk}
+                  title={noDesk ? 'Erst einen Schreibtisch im Büro bauen (Bau-Modus).' : undefined}
+                  onClick={() => mutate((s) => hireEmployee(s, role))}
+                >
+                  Einstellen
+                </button>
+              )}
             </div>
           );
         })}
