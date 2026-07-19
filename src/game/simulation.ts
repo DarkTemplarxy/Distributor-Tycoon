@@ -886,6 +886,31 @@ function prepDaysFor(quantity: number, skill: number, bundleSize = 1, usesCart =
   return packDays + walkDays;
 }
 
+/**
+ * Pick the best free Lager worker for a task, honouring BOTH instructions:
+ * task-type priority first (prefers this kind > no preference > prefers the other
+ * kind), then product priority (prefers this product > none > another). `strictTask`
+ * (used by the first auto-assign pass) restricts to workers who prefer exactly
+ * this task type, so specialists get their own work before anyone falls back.
+ */
+function pickLagerWorker(
+  state: GameState,
+  kind: 'prep' | 'putaway',
+  productId: ProductId,
+  strictTask = false,
+): { id: string } | undefined {
+  let free = state.employees.filter((e) => e.role === 'lager' && !e.task);
+  if (strictTask) free = free.filter((e) => e.preferredTask === kind);
+  if (free.length === 0) return undefined;
+  const taskScore = (e: { preferredTask?: 'prep' | 'putaway' }) =>
+    e.preferredTask === kind ? 0 : !e.preferredTask ? 1 : 2;
+  const prodScore = (e: { preferredProduct?: ProductId }) =>
+    e.preferredProduct === productId ? 0 : !e.preferredProduct ? 1 : 2;
+  return free
+    .slice()
+    .sort((a, b) => taskScore(a) - taskScore(b) || prodScore(a) - prodScore(b))[0];
+}
+
 /** Workers currently preparing (each occupies one prep table). */
 function preppingCount(state: GameState): number {
   return state.employees.filter((e) => e.task?.kind === 'prep').length;
@@ -899,18 +924,18 @@ function freeTables(state: GameState): number {
  * Try to start preparing an order: needs enough SHELF stock, a free prep table
  * and a free worker. Returns a reason string on failure, or null on success.
  */
-export function tryPrepareOrder(state: GameState, order: Order): string | null {
+export function tryPrepareOrder(
+  state: GameState,
+  order: Order,
+  opts?: { strictTask?: boolean },
+): string | null {
   if (order.status !== 'pending') return 'Auftrag ist nicht offen.';
   const product = getProduct(state, order.productId);
   if (shelfStock(product) < order.quantity) return 'Nicht genug Regal-Bestand.';
   if (freeTables(state) <= 0) return 'Kein freier Vorbereitungstisch.';
-  // Product priority: a worker who prioritises THIS product takes it first, then
-  // workers without a preference, then anyone (priority, not exclusivity).
-  const free = state.employees.filter((e) => e.role === 'lager' && !e.task);
-  const worker =
-    free.find((e) => e.preferredProduct === order.productId) ??
-    free.find((e) => !e.preferredProduct) ??
-    free[0];
+  // Task- and product-priority aware worker pick (see pickLagerWorker).
+  const pick = pickLagerWorker(state, 'prep', order.productId, opts?.strictTask);
+  const worker = pick && state.employees.find((e) => e.id === pick.id);
   if (!worker) return 'Kein freier Lagermitarbeiter.';
 
   deductInventory(product, order.quantity);
@@ -992,13 +1017,10 @@ function updateEmployees(state: GameState, deltaDays: number): void {
 /** Assign one idle worker to put a pallet away (inbound → shelf). The pallet
  * leaves the inbound zone immediately (carried in transit) so two workers can't
  * grab the same goods. Returns true if a task was started. */
-function assignPutaway(state: GameState, product: Product): boolean {
-  // Same priority rule as prep: matching preference first, then no preference.
-  const free = state.employees.filter((e) => e.role === 'lager' && !e.task);
-  const worker =
-    free.find((e) => e.preferredProduct === product.id) ??
-    free.find((e) => !e.preferredProduct) ??
-    free[0];
+function assignPutaway(state: GameState, product: Product, opts?: { strictTask?: boolean }): boolean {
+  // Task- and product-priority aware worker pick (see pickLagerWorker).
+  const pick = pickLagerWorker(state, 'putaway', product.id, opts?.strictTask);
+  const worker = pick && state.employees.find((e) => e.id === pick.id);
   if (!worker) return false;
   const qty = Math.min(PALETTE_SIZE, inboundStock(product), shelfFree(state));
   if (qty <= 0) return false;
@@ -1091,30 +1113,38 @@ export function releaseWorkerTask(state: GameState, employeeId: string): void {
  */
 function autoAssignWork(state: GameState): void {
   if (!state.settings.autoPrep) return;
-  let idle = state.employees.filter((e) => e.role === 'lager' && !e.task).length;
-  if (idle === 0) return;
+  const idleCount = () => state.employees.filter((e) => e.role === 'lager' && !e.task).length;
+  if (idleCount() === 0) return;
 
-  // 1. Prep due orders from shelf stock (bounded by free tables).
-  const pending = state.orders
-    .filter((o) => o.status === 'pending')
-    .sort((a, b) => a.dueWeek - b.dueWeek || a.createdDay - b.createdDay);
-  for (const order of pending) {
-    if (idle === 0 || freeTables(state) <= 0) break;
-    const product = getProduct(state, order.productId);
-    if (shelfStock(product) < order.quantity) continue;
-    if (tryPrepareOrder(state, order) === null) idle -= 1;
-  }
+  // One assignment round: prep due orders first (revenue, needs a free table),
+  // then put remaining idle workers on put-away. `strict` restricts each step to
+  // workers who prioritise that task type (used by the first pass).
+  const round = (strict: boolean) => {
+    let idle = idleCount();
+    const pending = state.orders
+      .filter((o) => o.status === 'pending')
+      .sort((a, b) => a.dueWeek - b.dueWeek || a.createdDay - b.createdDay);
+    for (const order of pending) {
+      if (idle === 0 || freeTables(state) <= 0) break;
+      const product = getProduct(state, order.productId);
+      if (shelfStock(product) < order.quantity) continue;
+      if (tryPrepareOrder(state, order, { strictTask: strict }) === null) idle -= 1;
+    }
+    while (idle > 0 && shelfFree(state) > 0) {
+      const free = state.employees.filter((e) => e.role === 'lager' && !e.task);
+      const product =
+        state.products.find((p) => inboundStock(p) > 0 && free.some((w) => w.preferredProduct === p.id)) ??
+        state.products.find((p) => inboundStock(p) > 0);
+      if (!product || !assignPutaway(state, product, { strictTask: strict })) break;
+      idle -= 1;
+    }
+  };
 
-  // 2. Put remaining idle workers on put-away (no table needed). Products a free
-  // worker has prioritised are shelved first, then anything in the inbound zone.
-  while (idle > 0 && shelfFree(state) > 0) {
-    const free = state.employees.filter((e) => e.role === 'lager' && !e.task);
-    const product =
-      state.products.find((p) => inboundStock(p) > 0 && free.some((w) => w.preferredProduct === p.id)) ??
-      state.products.find((p) => inboundStock(p) > 0);
-    if (!product || !assignPutaway(state, product)) break;
-    idle -= 1;
-  }
+  // Pass 1: task specialists get their preferred work first (Einlagern-only crews
+  // shelve, Herrichten-only crews pack). Pass 2: everyone still idle fills in on
+  // whatever is left — so a specialist never sits idle when the other job waits.
+  round(true);
+  round(false);
 }
 
 // --- Customer orders --------------------------------------------------------

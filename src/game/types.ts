@@ -237,6 +237,11 @@ export interface Employee {
    * take anything (priority, not exclusivity). Undefined = no preference.
    * Optional for save compatibility. */
   preferredProduct?: ProductId;
+  /** Instruction (Lager only): which task TYPE this worker prioritises —
+   * 'putaway' (Einlagern) or 'prep' (Herrichten). They do it first, but still
+   * help with the other when there is no preferred work (soft, not exclusive).
+   * Undefined = both. Optional for save compatibility. */
+  preferredTask?: 'putaway' | 'prep';
   task?: WorkerTask;
 }
 

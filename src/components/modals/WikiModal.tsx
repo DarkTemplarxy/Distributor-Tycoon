@@ -457,8 +457,11 @@ const ENTRIES: WikiEntry[] = [
         </p>
         <p>
           <b>Lagermitarbeiter</b> richten Ware her. Jeder Kraft kannst du eine{' '}
-          <b>Produkt-Priorität</b> geben (z. B. 🐟 Fisch): Aufgaben mit diesem Produkt übernimmt sie
-          zuerst – beim Herrichten UND Einlagern; ohne passende Arbeit hilft sie normal überall.{' '}
+          <b>Produkt-Priorität</b> geben (z. B. 🐟 Fisch) UND eine{' '}
+          <b>Aufgaben-Priorität</b> (Einlagern vs. Herrichten): die bevorzugte Aufgabe/das bevorzugte
+          Produkt übernimmt sie zuerst; gibt es davon gerade nichts, hilft sie überall aus – so
+          kannst du z. B. ein Team fürs Einlagern und eines fürs Kommissionieren aufstellen, ganz
+          ohne Leerlauf.{' '}
           <b>Key Account Manager</b> geben Betreuungs-Slots für mehr Kunden – neue Kunden füllen die
           Manager <b>nacheinander</b> (der vollste zuerst), sodass die übrigen ganze Slot-Blöcke für
           große Kunden freihalten. <b>Vertriebsmitarbeiter</b> vergrößern deinen Markt und bringen so mehr

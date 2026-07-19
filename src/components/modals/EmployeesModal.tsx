@@ -181,6 +181,30 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             )}
+            {e.role === 'lager' && (
+              <div
+                style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}
+                title="Anweisung: diese Aufgabenart übernimmt die Kraft zuerst. Gibt es davon gerade nichts, hilft sie bei der anderen aus (kein Leerlauf)."
+              >
+                <span className="sub" style={{ minWidth: 116 }}>🧭 Aufgaben-Priorität:</span>
+                {([
+                  [undefined, 'Beides'],
+                  ['putaway', '📥 Einlagern'],
+                  ['prep', '👷 Herrichten'],
+                ] as const).map(([val, label]) => (
+                  <button
+                    key={label}
+                    className={`btn small${(e.preferredTask ?? undefined) === val ? ' primary' : ' ghost'}`}
+                    onClick={() => mutate((s) => {
+                      const emp = s.employees.find((x) => x.id === e.id);
+                      if (emp) emp.preferredTask = val;
+                    })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
