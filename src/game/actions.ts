@@ -30,6 +30,7 @@ import {
   SHELF_PRICE,
   SLOT_COST,
   SHELF_SLOTS,
+  STANDORTLEITER_AUTO,
   STRATEGY_COOLDOWN_WEEKS,
   supplierDeliversTo,
   SITE_META,
@@ -64,6 +65,11 @@ import {
   managers,
   notify,
   placementBlocksAccess,
+  shelfFree,
+  coldShelfFree,
+  inboundFree,
+  coldChainGap,
+  hallExpansionFrontier,
   releaseWorkerTask,
   repriceAcceptChance,
   resolveDemandRejection,
@@ -257,22 +263,29 @@ export function restockForOrder(state: GameState, orderId: string): ActionResult
 export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'): ActionResult {
   const salary = ROLE_SALARY[role];
   const upfront = salary * HIRE_WEEKS_UPFRONT;
-  // Office roles need a free desk to sit at (warehouse workers don't) — die
-  // Verwaltung sitzt IMMER zentral im Hauptlager (Konzern-Regel, L3).
-  if (role !== 'lager' && freeDesks(state) <= 0) {
+  // Site-bound roles work AT a location: warehouse workers, and the Standortleiter
+  // who runs it. Central office roles (KAM/Einkäufer/Vertrieb) sit at HQ and need a
+  // desk (Konzern-Verwaltung im Hauptlager, L3).
+  const siteBound = role === 'lager' || role === 'standortleiter';
+  if (!siteBound && freeDesks(state) <= 0) {
     return { ok: false, message: 'Kein freier Arbeitsplatz – baue erst einen Schreibtisch im Büro.' };
   }
-  if (role !== 'lager' && site !== 'hq') {
+  if (!siteBound && site !== 'hq') {
     return { ok: false, message: 'Büro-Personal sitzt zentral im Hauptlager.' };
   }
   if (site === 'sued' && !state.branchWarehouse) {
     return { ok: false, message: 'Standort Süd ist noch nicht eröffnet.' };
   }
+  // A site is led by at most ONE Standortleiter (the UI hides the option once led).
+  if (role === 'standortleiter' && state.employees.some((e) => e.role === 'standortleiter' && (e.siteId ?? 'hq') === site)) {
+    return { ok: false, message: `${SITE_META[site].name} hat bereits einen Standortleiter.` };
+  }
   if (state.cash + availableCredit(state) < upfront) {
     return { ok: false, message: `Einstellung kostet ${upfront}€ (4 Wochen im Voraus).` };
   }
-  const count = state.employees.filter((e) => e.role === role).length + 1;
-  const name = `${ROLE_LABEL[role]} ${count}`;
+  const name = role === 'standortleiter'
+    ? `Standortleiter ${SITE_META[site].short}`
+    : `${ROLE_LABEL[role]} ${state.employees.filter((e) => e.role === role).length + 1}`;
   spend(state, upfront);
   state.weekAcc.salaries += upfront;
   state.employees.push({
@@ -280,9 +293,14 @@ export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'):
     name,
     role,
     salary,
-    skill: 45,
-    siteId: role === 'lager' && site === 'sued' ? 'sued' : undefined,
+    // A manager starts more capable than a fresh floor hire.
+    skill: role === 'standortleiter' ? 60 : 45,
+    siteId: role === 'standortleiter' ? site : role === 'lager' && site === 'sued' ? 'sued' : undefined,
   });
+  if (role === 'standortleiter') {
+    notify(state, `🧑‍✈️ ${name} übernimmt ${SITE_META[site].name} – führt den Standort ab jetzt automatisch (Personal, Ausbau, Training). Du steuerst nur noch übers Konzern-Cockpit.`, 'success');
+    return { ok: true };
+  }
   notify(state, `🧑‍💼 ${name} eingestellt (${salary}€/Woche, ${upfront}€ Vorkasse).`, 'success');
 
   // A newly hired Einkäufer takes over the weekly Monday order: from now on the
@@ -982,4 +1000,110 @@ export function expandOffice(state: GameState, block: { gx: number; gy: number }
   state.warehouse.officeExpansions += 1;
   notify(state, `🏢 Bürogebiet erweitert (${price}€) – 4 neue Bürokacheln, Miete +${RENT_PER_EXPANSION}€/Monat.`, 'info');
   return { ok: true };
+}
+
+// ============================================================================
+// Konzern-Delegation: Standortleiter (headless Auto-Führung eines Standorts).
+// Vom Lagersimulator zum Konzern — ab einer gewissen Größe gibst du einen Standort
+// an einen Standortleiter ab und führst ihn nur noch übers Cockpit. Die Auto-Führung
+// läuft pro Sim-Tick aus dem Treiber (GameProvider / Harness), ganz ohne UI — genau
+// so, wie die ganze Wirtschaft schon headless im Balancing-Harness läuft.
+// ============================================================================
+
+/** Der Standortleiter eines Standorts (führt ihn automatisch), falls vorhanden. */
+export function siteManager(state: GameState, site: SiteId): GameState['employees'][number] | undefined {
+  return state.employees.find((e) => e.role === 'standortleiter' && (e.siteId ?? 'hq') === site);
+}
+
+/** Eine freie, begehbarkeits-legale Lagerkachel des Standorts (für Auto-Bauten). */
+function freeStorageTileAt(state: GameState, site: SiteId): { gx: number; gy: number } | null {
+  const w = warehouseOf(state, site);
+  for (const t of w.tiles) {
+    if (t.zone !== 'storage') continue;
+    if (w.shelves.some((x) => x.gx === t.gx && x.gy === t.gy)) continue;
+    if (w.tables.some((x) => x.gx === t.gx && x.gy === t.gy)) continue;
+    if (placementBlocksAccess(state, t.gx, t.gy, site)) continue;
+    return t;
+  }
+  return null;
+}
+
+/** Wochenvolumen (Einheiten) der aktiven Kunden in der Region dieses Standorts. */
+export function siteWeeklyVolume(state: GameState, site: SiteId): number {
+  return state.customers
+    .filter((c) => c.active && (c.region ?? 'hq') === site)
+    .reduce((sum, c) => sum + c.lines.reduce((a, l) => a + l.volume, 0), 0);
+}
+
+/**
+ * Headless Auto-Führung EINES Standorts durch seinen Standortleiter — pro Sim-Tick
+ * aus dem Treiber aufgerufen. Skaliert den Betrieb an die Nachfrage: Lagerkräfte nach
+ * Volumen, Packtische je Crew, Kühl-/Normalregale & Rampe voraus, Crew hochtrainieren.
+ * Hält eine Kassen-Reserve (skaliert mit dem Umsatz), damit ein delegierter Standort
+ * die Firma nie leer räumt. Genau EINE bauliche/personelle Änderung pro Tick, damit
+ * der Ausbau graduell bleibt und Kasse nie schlagartig einbricht. Beschaffung bleibt
+ * zentral (Einkäufer/Spieler) — der Standortleiter kümmert sich um Betrieb & Ausbau.
+ * No-op, wenn kein Standortleiter zugewiesen ist.
+ */
+export function autoManageSite(state: GameState, site: SiteId): void {
+  if (!siteManager(state, site)) return;
+  if (site === 'sued' && !state.branchWarehouse) return;
+
+  const A = STANDORTLEITER_AUTO;
+  const reserve = Math.max(A.RESERVE_FLOOR, monthlyRevenue(state) * A.RESERVE_PER_MONTHLY);
+  const afford = (cost: number) => state.cash - cost >= reserve;
+
+  const w = warehouseOf(state, site);
+  const vol = siteWeeklyVolume(state, site);
+  const crew = state.employees.filter((e) => e.role === 'lager' && (e.siteId ?? 'hq') === site).length;
+
+  // 1. Staff Lager to weekly volume.
+  const wantCrew = Math.min(A.MAX_LAGER, Math.max(site === 'hq' ? 2 : 1, Math.ceil(vol / A.UNITS_PER_WORKER)));
+  if (crew < wantCrew && afford(6_000)) {
+    hireEmployee(state, 'lager', site);
+    return; // one structural change per tick keeps the ramp gradual
+  }
+
+  // 2. Prep tables scale with the crew (the core throughput lever).
+  if (w.tables.length < Math.min(A.MAX_TABLES, Math.floor(crew / A.LAGER_PER_TABLE)) && afford(4_000)) {
+    const t = freeStorageTileAt(state, site);
+    if (t) { buildTable(state, t.gx, t.gy, site); return; }
+  }
+
+  // 3. Cold shelving when the site carries cold ware and runs low.
+  const carriesCold = state.products.some(
+    (p) => getProductDef(p.id).requiresCooling && supplierDeliversTo(p.id, site),
+  );
+  if (carriesCold && (coldChainGap(state) || coldShelfFree(state, site) < 80) && afford(4_000)) {
+    const t = freeStorageTileAt(state, site);
+    if (t) { buildCoolZone(state, t.gx, t.gy, site); buildShelf(state, t.gx, t.gy, site); return; }
+  }
+
+  // 4. Normal shelf headroom vs volume (expand the hall if the floor is full).
+  if (shelfFree(state, site) < Math.max(200, vol * 0.7) && afford(5_000)) {
+    const t = freeStorageTileAt(state, site);
+    if (t) { buildShelf(state, t.gx, t.gy, site); return; }
+    const blk = hallExpansionFrontier(state, site)[0];
+    if (blk) { expandHall(state, blk, site); return; }
+  }
+
+  // 5. Inbound dock so Monday deliveries don't jam.
+  if (inboundFree(state, site) < 80 && afford(8_000)) {
+    const ramp = w.tiles.find((t) => t.zone === 'ramp');
+    if (ramp) { buildInboundSlot(state, ramp.gx, ramp.gy, site); return; }
+  }
+
+  // 6. Train the crew toward a solid average skill — the cheapest throughput lever.
+  const siteCrew = state.employees.filter((e) => e.role === 'lager' && (e.siteId ?? 'hq') === site);
+  const avgSkill = siteCrew.reduce((a, e) => a + e.skill, 0) / (siteCrew.length || 1);
+  if (avgSkill < A.TRAIN_UNTIL_AVG_SKILL && afford(3_000)) {
+    const trainee = siteCrew.filter((e) => e.skill < 100).sort((a, b) => a.skill - b.skill)[0];
+    if (trainee) trainEmployee(state, trainee.id);
+  }
+}
+
+/** Alle Standorte mit zugewiesenem Standortleiter je Tick automatisch führen. */
+export function runSiteManagers(state: GameState): void {
+  autoManageSite(state, 'hq');
+  if (state.branchWarehouse) autoManageSite(state, 'sued');
 }

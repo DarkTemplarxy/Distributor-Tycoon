@@ -38,7 +38,7 @@ export interface Transfer {
 
 export type CustomerType = 'small' | 'medium' | 'large';
 
-export type Role = 'lager' | 'einkaeufer' | 'kam' | 'sales' | 'admin';
+export type Role = 'lager' | 'einkaeufer' | 'kam' | 'sales' | 'admin' | 'standortleiter';
 
 /** Buyable capital upgrades (Paket 2). */
 export type EquipmentId = 'forklift' | 'packstation' | 'cooling' | 'truck';
@@ -294,8 +294,9 @@ export interface Employee {
    * help with the other when there is no preferred work (soft, not exclusive).
    * Undefined = both. Optional for save compatibility. */
   preferredTask?: 'putaway' | 'prep';
-  /** Einsatz-Standort (L3, nur Lagerkräfte). Undefined = 'hq'. Büro-Rollen sind
-   * immer zentral (Konzern-Verwaltung im Hauptlager). */
+  /** Einsatz-Standort (L3): Lagerkräfte arbeiten dort, ein Standortleiter FÜHRT
+   * ihn (Auto-Betrieb). Undefined = 'hq'. Zentrale Büro-Rollen (KAM/Einkäufer/
+   * Vertrieb) bleiben standort-los (Konzern-Verwaltung im Hauptlager). */
   siteId?: SiteId;
   task?: WorkerTask;
 }

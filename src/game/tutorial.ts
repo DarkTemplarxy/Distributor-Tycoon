@@ -68,6 +68,7 @@ export type Feature =
   | 'log'
   | 'company'
   | 'market'
+  | 'konzern'
   | 'build';
 
 /**

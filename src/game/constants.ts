@@ -158,6 +158,7 @@ export const ROLE_SALARY: Record<Role, number> = {
   kam: 600,
   sales: 550,
   admin: 500,
+  standortleiter: 1000,
 };
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -166,6 +167,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   kam: 'Key Account Manager',
   sales: 'Vertriebsmitarbeiter',
   admin: 'Admin',
+  standortleiter: 'Standortleiter',
 };
 
 export const ROLE_EMOJI: Record<Role, string> = {
@@ -174,7 +176,31 @@ export const ROLE_EMOJI: Record<Role, string> = {
   kam: '🤝',
   sales: '📞',
   admin: '🗂️',
+  standortleiter: '🧑‍✈️',
 };
+
+/**
+ * Standortleiter (Konzern-Delegation): ein Standortleiter FÜHRT einen Standort
+ * automatisch (headless, im Sim-Tick) — er stellt Lagerkräfte nach Volumen ein,
+ * baut Packtische/Regale/Kühlzone/Rampe voraus und trainiert die Crew. So skaliert
+ * das Spiel vom Hands-on-Lager zum Konzern: du gibst einen Standort ab und führst
+ * ihn nur noch übers Cockpit. Beschaffung bleibt zentral (Einkäufer). Der
+ * Auto-Betrieb hält eine Kassen-Reserve, damit ein delegierter Standort die Firma
+ * nie leer räumt.
+ */
+export const STANDORTLEITER_AUTO = {
+  /** Untergrenze der Kassen-Reserve; darüber skaliert sie mit dem Monatsumsatz. */
+  RESERVE_FLOOR: 15_000,
+  RESERVE_PER_MONTHLY: 0.3,
+  /** Wocheneinheiten je Lagerkraft (Zielbesatzung = Volumen / diesen Wert). */
+  UNITS_PER_WORKER: 180,
+  MAX_LAGER: 16,
+  MAX_TABLES: 20,
+  /** Crew je Packtisch (Tische = floor(Crew / diesen Wert)). */
+  LAGER_PER_TABLE: 1.5,
+  /** Crew bis zu diesem Ø-Skill hochtrainieren (billigster Durchsatz-Hebel). */
+  TRAIN_UNTIL_AVG_SKILL: 90,
+} as const;
 
 /**
  * Vertrieb (Sales): each rep's skill-weighted power (0.5 + 0.5×Skill/100)

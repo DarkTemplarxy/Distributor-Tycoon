@@ -16,6 +16,7 @@ import {
 } from 'react';
 import type { GameState, Speed } from '../game/types';
 import { advance, computeYearStats } from '../game/simulation';
+import { runSiteManagers } from '../game/actions';
 import { createInitialState } from '../game/init';
 import { tutorialPausesGame } from '../game/tutorial';
 import { deleteSave, load, save } from '../game/save/saveManager';
@@ -62,6 +63,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const st = stateRef.current;
       if (!st.paused && !st.gameOver && !st.yearComplete) {
         advance(st, dt);
+        // Delegated sites run themselves headlessly each tick (Konzern-Delegation),
+        // regardless of which site is on screen — no-op unless a Standortleiter is set.
+        runSiteManagers(st);
       }
 
       if (now - lastRenderRef.current >= RENDER_INTERVAL_MS) {

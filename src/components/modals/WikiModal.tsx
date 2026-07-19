@@ -231,7 +231,7 @@ const ENTRIES: WikiEntry[] = [
   {
     icon: '🌍',
     title: 'Standorte & Konzern',
-    keywords: 'standort süd filiale expansion region transfer konzern zweigstelle wein oliven',
+    keywords: 'standort süd filiale expansion region transfer konzern zweigstelle wein oliven standortleiter cockpit delegation delegieren automatisch führen',
     body: (
       <>
         <p>
@@ -250,6 +250,18 @@ const ENTRIES: WikiEntry[] = [
           sein eigenes Samstags-Bestellfenster; der Umschalter über der Halle wechselt die Ansicht.
           Vorsicht: Eröffnung + Personal + Warenaufbau summieren sich — wer zu früh expandiert,
           kann sich übernehmen.
+        </p>
+        <p>
+          <b>🧑‍✈️ Standortleiter & Konzern-Cockpit:</b> Damit du bei mehreren Standorten nicht jedes
+          Regal von Hand baust, kannst du im 🗺️ <b>Konzern</b>-Cockpit einem Standort einen{' '}
+          <b>Standortleiter</b> zuweisen. Er <b>führt den Standort dann selbst</b>: stellt Lagerkräfte
+          nach Bedarf ein, baut Packtische/Regale/Kühlzone/Rampe aus und <b>trainiert die Crew</b> —
+          alles automatisch, im Hintergrund, auch wenn du gerade den anderen Standort ansiehst. Für
+          den <b>Nachschub sorgt weiterhin der Einkäufer</b> zentral, also gib einem delegierten
+          Standort auch genügend Einkäufer-Kapazität. Im Cockpit siehst du jeden Standort als
+          <b>KPI-Karte</b> (Kunden, Volumen, Personal, Service, Auslastung, Alarme); per <b>Betreten</b>{' '}
+          klickst du ins echte Lager. So wächst du vom Hands-on-Lager zum Konzern, ohne im
+          Mikromanagement zu ersticken.
         </p>
       </>
     ),
