@@ -4,6 +4,7 @@
 
 import {
   CHEF_MANAGER_ID,
+  COMPETITOR_DEFS,
   CREDIT_LIMIT_FLOOR,
   CUSTOMER_LEAD_WEEKS,
   CUSTOMER_VOLATILITY,
@@ -251,6 +252,14 @@ export function createInitialState(): GameState {
     // strategyChangedWeek intentionally unset: the FIRST stance choice is free;
     // the cooldown only starts once the player has actually switched.
     lastBigOrderWeek: null,
+    competitors: COMPETITOR_DEFS.map((d) => ({
+      id: d.id,
+      name: d.name,
+      emoji: d.emoji,
+      strength: d.baseStrength,
+      aggressiveness: d.aggressiveness,
+    })),
+    marketShare: 0,
     milestones: MILESTONE_DEFS.map((d) => ({ id: d.id, achievedWeek: null })),
     unlockIntroShown: false,
     // Auto-prep starts OFF so the tutorial's first beat teaches manual Herrichten;

@@ -214,6 +214,17 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
                         </span>
                       </>
                     )}
+                    {(c.courtedUntilWeek ?? 0) >= week && (
+                      <>
+                        {' '}
+                        <span
+                          className="pill bad"
+                          title="Ein Konkurrent umwirbt diesen Kunden. Service verbessern oder Rabatt geben, sonst droht die Abwanderung."
+                        >
+                          🎯 umworben
+                        </span>
+                      </>
+                    )}
                   </div>
                   <div className="sub">
                     Verspätungen {c.lateDeliveries}/{tolerance}

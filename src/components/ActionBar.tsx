@@ -7,6 +7,7 @@ import {
   TUTORIAL_MEAT_INQUIRY_ID,
   type Feature,
 } from '../game/tutorial';
+import { weekOf } from '../game/util';
 import type { GameState } from '../game/types';
 import type { ModalId } from '../App';
 
@@ -48,6 +49,7 @@ const LOCK_HINT: Record<string, string> = {
   inquiries: '🔒 Schaltet mit der Wachstums-Lektion frei – schließe zuerst deine erste Lieferung ab.',
   employees: '🔒 Schaltet mit der Kapazitäts-Lektion frei – erst kommt die erste eigene Lieferung.',
   company: '🔒 Öffnet am Ende des Tutorials – Investitionen & Strategie sind fürs spätere Wachstum.',
+  market: '🔒 Öffnet am Ende des Tutorials – Markt & Konkurrenz sind fürs spätere Wachstum.',
   finance: '🔒 Schaltet mit der Monats-Lektion des Tutorials frei.',
   reports: '🔒 Schaltet mit der Monats-Lektion des Tutorials frei.',
   log: '🔒 Öffnet am Ende des Tutorials – folge einfach Onkels Anleitung.',
@@ -64,6 +66,8 @@ export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; 
   const lowStock = state.products.some((p) => inventoryTotal(p) <= 0);
   const addableProducts = catalogStatus(state).filter((e) => e.status === 'addable').length;
   const marginPressure = hasMarginPressure(state);
+  const week = weekOf(state.totalDays);
+  const courted = state.customers.some((c) => c.active && (c.courtedUntilWeek ?? 0) >= week);
 
   const buttons: { id: ModalId; icon: string; label: string; badge?: number; badgeInfo?: boolean; warn?: boolean; warnTitle?: string }[] = [
     { id: 'inventory', icon: '📦', label: 'Inventar', warn: lowStock, warnTitle: 'Produkt ohne Bestand' },
@@ -74,6 +78,7 @@ export function ActionBar({ onOpen, onBuild }: { onOpen: (id: ModalId) => void; 
     { id: 'inquiries', icon: '📨', label: 'Anfragen', badge: openInquiries, badgeInfo: true },
     { id: 'employees', icon: '🧑‍💼', label: 'Personal' },
     { id: 'company', icon: '🏢', label: 'Ausbau' },
+    { id: 'market', icon: '📈', label: 'Markt', warn: courted, warnTitle: 'Ein Konkurrent umwirbt einen deiner Kunden' },
     { id: 'finance', icon: '🏦', label: 'Finanzen' },
     { id: 'reports', icon: '📊', label: 'Reports' },
     { id: 'notebook', icon: '📓', label: 'Notizbuch' },

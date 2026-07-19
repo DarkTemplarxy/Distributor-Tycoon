@@ -54,6 +54,14 @@ import {
   LARGE_UNLOCK_MONTHLY,
   LOYALTY_CHURN_CHANCE_MAX,
   LOYALTY_CHURN_THRESHOLD,
+  COMPETITOR_DEFS,
+  COMPETITOR_STRENGTH_DRIFT,
+  COMPETITOR_STRENGTH_BAND,
+  POACH_BASE_CHANCE,
+  POACH_LOYALTY_HIT,
+  POACH_COURT_WEEKS,
+  POACH_LOYALTY_CEILING,
+  POACH_EXPOSURE_FULL,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
   REPRICE_ACCEPT_FLOOR,
@@ -99,6 +107,7 @@ import {
   type ProductDef,
 } from './constants';
 import type {
+  Competitor,
   Customer,
   CustomerLine,
   CustomerType,
@@ -1951,6 +1960,137 @@ function pushDemandInquiry(
  * group they don't buy from us yet (Stufe 1). Conditions keep it fair and rare:
  * loyal + established customers only, the product must be listable, customers
  * already at DEMAND_MAX_LINES groups are content, one process at a time. */
+// --- Konkurrenz & Markt (L2) ------------------------------------------------
+
+/** Lazy-seed competitors for saves created before L2 (no SAVE bump). */
+export function ensureCompetitors(state: GameState): Competitor[] {
+  if (!state.competitors || state.competitors.length === 0) {
+    state.competitors = COMPETITOR_DEFS.map((d) => ({
+      id: d.id,
+      name: d.name,
+      emoji: d.emoji,
+      strength: d.baseStrength,
+      aggressiveness: d.aggressiveness,
+    }));
+  }
+  return state.competitors;
+}
+
+/** Player's market footprint: size-weighted active customers (small 1 / medium 2
+ * / large 6). Grows as the operation grows — that's what lifts the market share. */
+export function playerMarketStrength(state: GameState): number {
+  return state.customers.reduce((s, c) => (c.active ? s + SLOT_COST[c.type] : s), 0);
+}
+export function totalMarketStrength(state: GameState): number {
+  const comp = ensureCompetitors(state).reduce((s, c) => s + c.strength, 0);
+  return playerMarketStrength(state) + comp;
+}
+/** Player's current market share (0..1). */
+export function marketShare(state: GameState): number {
+  const total = totalMarketStrength(state);
+  return total > 0 ? playerMarketStrength(state) / total : 0;
+}
+
+export interface RankRow {
+  id: string;
+  name: string;
+  emoji: string;
+  strength: number;
+  share: number;
+  isPlayer: boolean;
+  aggressiveness?: number;
+}
+/** Market leaderboard (player + competitors), strongest first. */
+export function marketRanking(state: GameState): RankRow[] {
+  const total = totalMarketStrength(state) || 1;
+  const rows: RankRow[] = ensureCompetitors(state).map((c) => ({
+    id: c.id,
+    name: c.name,
+    emoji: c.emoji,
+    strength: c.strength,
+    share: c.strength / total,
+    isPlayer: false,
+    aggressiveness: c.aggressiveness,
+  }));
+  const ps = playerMarketStrength(state);
+  rows.push({ id: 'player', name: 'Deine Firma', emoji: '🏭', strength: ps, share: ps / total, isPlayer: true });
+  return rows.sort((a, b) => b.strength - a.strength);
+}
+/** 1-based rank of the player in the market. */
+export function playerRank(state: GameState): number {
+  return marketRanking(state).findIndex((r) => r.isPlayer) + 1;
+}
+
+/** How poachable a customer is right now (higher = more at risk). Zero for
+ * comfortable customers — good service and fair prices protect them. Overpricing
+ * (paying above the product's list price) and low loyalty raise the risk. */
+function poachRisk(cust: Customer): number {
+  if (cust.loyalty >= POACH_LOYALTY_CEILING) return 0;
+  const loyaltyGap = (POACH_LOYALTY_CEILING - cust.loyalty) / POACH_LOYALTY_CEILING; // 0..1
+  // Overpricing: agreed price vs the product's list price (verkaufspreis).
+  let overprice = 0;
+  for (const l of cust.lines) {
+    const list = getProductDef(l.productId).verkaufspreis;
+    if (list > 0) overprice = Math.max(overprice, (l.price - list) / list);
+  }
+  const priceFactor = 1 + Math.max(0, overprice) * 2; // teuer = attraktiveres Ziel
+  const serviceFactor = 1 + Math.max(0, (3 - cust.serviceRating)) * 0.3; // schlechter Service = leichter
+  return loyaltyGap * priceFactor * serviceFactor;
+}
+
+/**
+ * Weekly market step: competitor strengths drift (random walk within a band),
+ * the player's share is recomputed, and — scaled by competitor aggressiveness and
+ * how small the player's share is — a competitor may court the player's most
+ * vulnerable customer. Courting is a loyalty hit + a warning; it feeds the
+ * EXISTING loyalty-churn path (below threshold → warning → possible quit), so it
+ * adds no new death mechanic. Comfortable, fairly-priced customers are immune.
+ */
+function runMarketWeek(state: GameState, newWeek: number): void {
+  const comps = ensureCompetitors(state);
+  for (const c of comps) {
+    const def = COMPETITOR_DEFS.find((d) => d.id === c.id);
+    const base = def ? def.baseStrength : c.strength;
+    const drift = randRange(-COMPETITOR_STRENGTH_DRIFT, COMPETITOR_STRENGTH_DRIFT);
+    c.strength = clamp(c.strength + drift, base * (1 - COMPETITOR_STRENGTH_BAND), base * (1 + COMPETITOR_STRENGTH_BAND));
+  }
+  const share = marketShare(state);
+  state.marketShare = share;
+
+  // Poaching pressure. Skippable during the tutorial (no early-game harassment).
+  if (state.tutorial?.active) return;
+  const avgAggr = comps.reduce((s, c) => s + c.aggressiveness, 0) / Math.max(1, comps.length);
+  // Pressure ramps with your FOOTPRINT: a tiny newcomer is barely noticed, a big
+  // operation attracts real competitive attention (a late-game force). Only ever
+  // targets vulnerable customers below, so a well-run late business stays safe.
+  const active = state.customers.filter((c) => c.active).length;
+  const exposure = clamp(active / POACH_EXPOSURE_FULL, 0, 1);
+  const chance = POACH_BASE_CHANCE * avgAggr * exposure;
+  if (Math.random() >= chance) return;
+
+  // Target the most vulnerable active customer not already being courted / asked.
+  const busy = new Set<string>();
+  for (const i of state.inquiries) if (i.status === 'open' && i.existingCustomerId) busy.add(i.existingCustomerId);
+  for (const u of state.pendingUltimatums) busy.add(u.customerId);
+  let target: Customer | undefined;
+  let bestRisk = 0;
+  for (const cust of state.customers) {
+    if (!cust.active || busy.has(cust.id)) continue;
+    const r = poachRisk(cust);
+    if (r > bestRisk) { bestRisk = r; target = cust; }
+  }
+  if (!target || bestRisk <= 0) return;
+
+  const raider = comps.slice().sort((a, b) => b.aggressiveness - a.aggressiveness)[0];
+  target.loyalty = clamp(target.loyalty - POACH_LOYALTY_HIT, 0, 100);
+  target.courtedUntilWeek = newWeek + POACH_COURT_WEEKS;
+  notify(
+    state,
+    `🎯 ${raider.emoji} ${raider.name} umwirbt ${target.name}! Loyalität gesunken – mit besserem Service oder Preis gegenhalten, sonst wandert der Kunde ab.`,
+    'warn',
+  );
+}
+
 function maybeGenerateDemand(state: GameState): void {
   const week = weekOf(state.totalDays);
   if (demandProcessActive(state)) return;
@@ -2426,6 +2566,11 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
       );
     }
   }
+
+  // 5b2. Konkurrenz & Markt (L2): Wettbewerber-Stärken driften, Marktanteil neu
+  // berechnen, ggf. einen verwundbaren Kunden abwerben (Loyalitäts-Schlag →
+  // speist den bestehenden Abwanderungs-Pfad direkt darunter).
+  runMarketWeek(state, newWeek);
 
   // 5c. Loyalty with teeth: deeply unhappy customers (below the threshold) may
   // quit — but NEVER without warning. Crossing the threshold raises the warning

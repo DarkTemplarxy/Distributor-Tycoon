@@ -29,6 +29,7 @@ import { CustomersModal } from './components/modals/CustomersModal';
 import { InquiriesModal } from './components/modals/InquiriesModal';
 import { EmployeesModal } from './components/modals/EmployeesModal';
 import { CompanyModal } from './components/modals/CompanyModal';
+import { MarketModal } from './components/modals/MarketModal';
 import { FinanceModal } from './components/modals/FinanceModal';
 import { ReportsModal } from './components/modals/ReportsModal';
 import { LogModal } from './components/modals/LogModal';
@@ -45,6 +46,7 @@ export type ModalId =
   | 'inquiries'
   | 'employees'
   | 'company'
+  | 'market'
   | 'finance'
   | 'reports'
   | 'log'
@@ -300,6 +302,7 @@ export function App() {
       {modal === 'inquiries' && <InquiriesModal onClose={closeModal} />}
       {modal === 'employees' && <EmployeesModal onClose={closeModal} />}
       {modal === 'company' && <CompanyModal onClose={closeModal} />}
+      {modal === 'market' && <MarketModal onClose={closeModal} />}
       {modal === 'finance' && <FinanceModal onClose={closeModal} />}
       {modal === 'reports' && <ReportsModal onClose={closeModal} />}
       {modal === 'log' && <LogModal onClose={closeModal} />}

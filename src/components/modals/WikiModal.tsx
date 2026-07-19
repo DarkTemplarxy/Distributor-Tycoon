@@ -23,7 +23,9 @@ import {
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_PRICE_TIERS,
   LARGE_UNLOCK_MONTHLY,
+  COMPETITOR_DEFS,
   LOYALTY_CHURN_THRESHOLD,
+  POACH_LOYALTY_CEILING,
   MANAGER_SLOTS,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
@@ -218,6 +220,29 @@ const ENTRIES: WikiEntry[] = [
           Sie bestimmen die Verspätungs-Toleranz (bei zu vielen kündigt der Kunde), die{' '}
           <b>Verhandlungschancen</b> und die Preis-Obergrenze. Es gilt: erst zuverlässig liefern,
           dann Preise anheben.
+        </p>
+      </>
+    ),
+  },
+  {
+    icon: '📈',
+    title: 'Markt & Konkurrenz',
+    keywords: 'markt konkurrenz wettbewerber marktanteil ranking abwerben abwerbung umworben preiskampf',
+    body: (
+      <>
+        <p>
+          Du bist nicht allein: <b>{COMPETITOR_DEFS.length} KI-Wettbewerber</b> teilen sich mit dir
+          den Markt. Dein <b>Marktanteil</b> (im 📈 <b>Markt</b>-Fenster) wächst mit jedem aktiven
+          Kunden – große zählen mehr als kleine. Ein Blick ins Ranking zeigt, wo du stehst.
+        </p>
+        <p>
+          Wettbewerber <b>werben Kunden ab</b> – aber nur <b>verwundbare</b>: Kunden mit niedriger
+          Loyalität (unter {POACH_LOYALTY_CEILING}%) oder solche, denen du deutlich <b>über dem
+          Listenpreis</b> verkaufst. Eine Abwerbung senkt die Loyalität und markiert den Kunden{' '}
+          <b>🎯 umworben</b>; hält das an, rutscht er unter die Kündigungsschwelle und ist weg.
+          Zufriedene, fair bepreiste Kunden sind <b>immun</b>. Gegenmittel: <b>pünktlich liefern</b>{' '}
+          (Sterne + Loyalität), <b>faire Preise</b> und im Notfall ein <b>Rabatt</b>. Aggressive
+          Wettbewerber (siehe Ranking) schlagen häufiger zu, je kleiner dein Anteil ist.
         </p>
       </>
     ),

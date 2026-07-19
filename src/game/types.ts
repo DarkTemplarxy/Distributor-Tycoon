@@ -79,6 +79,16 @@ export interface CustomerLine {
   lastNegotiationWeek?: number;
 }
 
+/** Ein KI-Wettbewerber im Markt (L2). Stärke driftet wöchentlich, Aggressivität
+ * steuert die Abwerbe-Häufigkeit. */
+export interface Competitor {
+  id: string;
+  name: string;
+  emoji: string;
+  strength: number;
+  aggressiveness: number;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -99,6 +109,9 @@ export interface Customer {
   /** 0-100 loyalty. */
   loyalty: number;
   lateDeliveries: number;
+  /** Konkurrenz (L2): bis zu dieser Woche wirbt ein Wettbewerber aktiv um diesen
+   * Kunden (UI-Pill „🎯 umworben"). Optional für alte Spielstände. */
+  courtedUntilWeek?: number;
   /** Delivery lead time in weeks (1 small / 2 medium / 3 large). */
   deliveryLeadWeeks: number;
   /** Annual volatility as a fraction (0.4 / 0.2 / 0.1). */
@@ -439,6 +452,11 @@ export interface GameState {
   strategyChangedWeek?: number;
   /** Week the last Großauftrag offer was made (Paket 5) — frequency cap. */
   lastBigOrderWeek?: number | null;
+
+  /** KI-Wettbewerber (L2). Optional/lazy für alte Spielstände (ensureCompetitors). */
+  competitors?: Competitor[];
+  /** Zuletzt berechneter Marktanteil des Spielers (0..1). */
+  marketShare?: number;
 
   stats: GameStats;
   /** Progress on "Onkels Notizbuch" milestones (see MILESTONE_DEFS). Checks run

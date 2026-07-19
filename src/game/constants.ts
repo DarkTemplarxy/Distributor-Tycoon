@@ -700,6 +700,49 @@ export const LOYALTY_CHURN_THRESHOLD = 30;
 export const LOYALTY_CHURN_CHANCE_MAX = 0.15;
 
 // ============================================================================
+// Konkurrenz & Markt (Later Stage L2). KI-Wettbewerber teilen sich mit dir den
+// Markt. Sie werben deine schwächsten/überteuersten Kunden ab — das beschleunigt
+// die BESTEHENDE Loyalitäts-Abwanderung (kein neuer Todes-Pfad), antwortbar über
+// Service, faire Preise und Rabatte.
+// ============================================================================
+
+export interface CompetitorDef {
+  id: string;
+  name: string;
+  emoji: string;
+  /** Relative Marktstärke (treibt den Marktanteil). */
+  baseStrength: number;
+  /** 0..1 – wie häufig dieser Wettbewerber Kunden abwirbt. */
+  aggressiveness: number;
+  /** Kurzbeschreibung fürs Markt-Ranking. */
+  blurb: string;
+}
+
+export const COMPETITOR_DEFS: CompetitorDef[] = [
+  { id: 'kontor', name: 'Hansa Kontor', emoji: '🏛️', baseStrength: 58, aggressiveness: 0.45, blurb: 'Alteingesessener Platzhirsch – träge, aber mit dickem Kundenstamm.' },
+  { id: 'frischweg', name: 'FrischWeg Logistik', emoji: '🚚', baseStrength: 46, aggressiveness: 0.75, blurb: 'Aggressiver Aufsteiger – wirbt gezielt unzufriedene Kunden ab.' },
+  { id: 'depot', name: 'Discount-Depot', emoji: '🏷️', baseStrength: 40, aggressiveness: 0.4, blurb: 'Preisbrecher – gefährlich für Kunden, denen du zu teuer bist.' },
+];
+
+/** Wöchentliche Zufalls-Drift der Wettbewerber-Stärke (Random Walk). */
+export const COMPETITOR_STRENGTH_DRIFT = 2.5;
+/** Stärke bleibt in ±diesem Band um die Basis. */
+export const COMPETITOR_STRENGTH_BAND = 0.4;
+/** Basis-Abwerbe-Chance pro Woche (× Aggressivität × (1 − Marktanteil)). */
+export const POACH_BASE_CHANCE = 0.5;
+/** Loyalitäts-Schlag einer Abwerbung auf den betroffenen Kunden. */
+export const POACH_LOYALTY_HIT = 9;
+/** So lange gilt ein Kunde nach einer Abwerbung als „umworben" (UI-Pill). */
+export const POACH_COURT_WEEKS = 3;
+/** Nur Kunden UNTER dieser Loyalität sind überhaupt abwerbbar. Bewusst niedrig:
+ * ein pünktlich & fair bedienter Kunde hält sich locker darüber und ist immun –
+ * Abwerbung ist die Folge von SCHLECHTEM Service, kein Zufalls-Ärgernis. */
+export const POACH_LOYALTY_CEILING = 55;
+/** Ab so vielen aktiven Kunden wirkt der volle Abwerbe-Druck (darunter linear
+ * schwächer) – Konkurrenz ist eine LATE-GAME-Kraft, kein Newcomer-Ärgernis. */
+export const POACH_EXPOSURE_FULL = 25;
+
+// ============================================================================
 // Milestones — "Onkels Notizbuch". Definitions (title, description, condition,
 // uncle comment) live here as constants, matched to the per-save progress by id
 // (GameState.milestones), so the texts can be tweaked without breaking saves.
