@@ -263,9 +263,10 @@ const ENTRIES: WikiEntry[] = [
           weiterhin der Einkäufer</b> zentral, also gib einem delegierten Standort genügend
           Einkäufer-Kapazität. Auf der Stadt-Karte kannst du außerdem <b>Waren per Klick zwischen Nord
           & Süd transferieren</b> (laufende Transfers fahren als 🚚 auf der Route), und ab zwei
-          Standorten <b>deinen Konzern gründen</b> – das eröffnet eine <b>Konzernzentrale mit Büro</b>,
-          in der künftige Führungsrollen sitzen. So wächst du vom Hands-on-Lager zum Konzern, ohne im
-          Mikromanagement zu ersticken.
+          Standorten <b>deinen Konzern gründen</b>. Das etabliert eine zweistufige Führung: eine
+          <b>Konzernzentrale</b> (global, mit C-Level-Vorständen – auf der Europa-Ebene) und <b>je Land
+          ein Regionalbüro</b> mit eigenen Führungskräften (auf der Deutschland-Ebene). So wächst du vom
+          Hands-on-Lager zum Konzern, ohne im Mikromanagement zu ersticken.
         </p>
       </>
     ),

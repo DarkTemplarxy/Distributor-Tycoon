@@ -23,8 +23,9 @@ import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundKonzer
 import {
   SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT, BRANCH_UNLOCK_MONTHLY,
   TRANSFER_DAYS, TRANSFER_COST_PER_PALLET, PALETTE_SIZE,
-  KONZERN_FOUND_COST, KONZERN_PLANNED_ROLES,
+  KONZERN_FOUND_COST, KONZERN_C_LEVEL, REGIONAL_OFFICE_ROLES,
 } from '../game/constants';
+import type { OfficeRole } from '../game/constants';
 import {
   GERMANY_VIEWBOX, GERMANY_PATH, GERMANY_SEAT, GERMANY_CITIES,
   EUROPE_VIEWBOX, EUROPE_PATH, EUROPE_DE, EUROPE_COUNTRIES,
@@ -175,6 +176,37 @@ function FutureNode({ x, y, label }: { x: number; y: number; label: string }) {
   );
 }
 
+/** Ein Büro mit seinen Führungsrollen — genutzt für die Konzernzentrale (C-Level)
+ * und für das Regionalbüro je Land. Rollen sind Platzhalter (Mechanik folgt). */
+function OfficePanel({ icon, title, subtitle, intro, roles, onBack }: {
+  icon: string; title: string; subtitle: string; intro: string; roles: OfficeRole[]; onBack: () => void;
+}) {
+  return (
+    <div className="konzern-zentrale">
+      <div className="km-zentrale-head">
+        <div>
+          <div className="km-side-title">{icon} {title}</div>
+          <div className="sub">{subtitle}</div>
+        </div>
+        <button className="btn ghost" onClick={onBack}>← Zur Karte</button>
+      </div>
+      <p className="hint">{intro}</p>
+      <div className="km-roles">
+        {roles.map((r) => (
+          <div key={r.title} className="km-role">
+            <div className="km-role-emoji">{r.emoji}</div>
+            <div className="grow">
+              <div className="km-role-title">{r.title}</div>
+              <div className="sub">{r.blurb}</div>
+            </div>
+            <span className="pill">🔒 folgt</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEnterSite: (site: SiteId) => void }) {
   const { state, mutate } = useGame();
   const branchOpen = !!state.branchWarehouse;
@@ -184,7 +216,8 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   const [txFrom, setTxFrom] = useState<SiteId>('hq');
   const [txProduct, setTxProduct] = useState<ProductId | ''>('');
   const [txQty, setTxQty] = useState(50);
-  const [showZentrale, setShowZentrale] = useState(false);
+  // Welches Büro ist geöffnet? Konzernzentrale (global, C-Level) oder ein Regionalbüro.
+  const [office, setOffice] = useState<null | 'konzern' | 'regional-de'>(null);
 
   const konzern = state.konzern;
   const foundKonzernNow = () => mutate((s) => foundKonzern(s));
@@ -218,8 +251,8 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
         </div>
         <div className="konzern-cash">
           {konzern && (
-            <button className={`konzern-crumb${showZentrale ? ' active' : ''}`} onClick={() => setShowZentrale((v) => !v)}>
-              🏛️ Zentrale
+            <button className={`konzern-crumb${office === 'konzern' ? ' active' : ''}`} onClick={() => setOffice((o) => (o === 'konzern' ? null : 'konzern'))}>
+              🏛️ Konzernzentrale
             </button>
           )}
           <span className="pill">Marktanteil {(share * 100).toFixed(1)}% · Platz {rank}/{totalRanks}</span>
@@ -238,33 +271,24 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
       )}
 
       <div className="konzern-body">
-        {showZentrale && konzern ? (
-          <div className="konzern-zentrale">
-            <div className="km-zentrale-head">
-              <div>
-                <div className="km-side-title">🏛️ {konzern.name}</div>
-                <div className="sub">Konzern gegründet in Woche {konzern.foundedWeek} · {branchOpen ? '2' : '1'} Standorte</div>
-              </div>
-              <button className="btn ghost" onClick={() => setShowZentrale(false)}>← Zur Karte</button>
-            </div>
-            <h3 style={{ marginTop: 18 }}>Konzern-Büro</h3>
-            <p className="hint">
-              Die Zentrale steuert künftig den ganzen Konzern. Diese Führungsrollen werden in einem
-              kommenden Update mit Leben gefüllt – hier kannst du sie dann besetzen.
-            </p>
-            <div className="km-roles">
-              {KONZERN_PLANNED_ROLES.map((r) => (
-                <div key={r.title} className="km-role">
-                  <div className="km-role-emoji">{r.emoji}</div>
-                  <div className="grow">
-                    <div className="km-role-title">{r.title}</div>
-                    <div className="sub">{r.blurb}</div>
-                  </div>
-                  <span className="pill">🔒 folgt</span>
-                </div>
-              ))}
-            </div>
-          </div>
+        {office === 'konzern' && konzern ? (
+          <OfficePanel
+            icon="🏛️"
+            title={`Konzernzentrale · ${konzern.name}`}
+            subtitle={`Gegründet in Woche ${konzern.foundedWeek} · steuert den ganzen Konzern`}
+            intro="Die C-Level-Führung des Konzerns. Diese Vorstands­rollen werden in einem kommenden Update mit Leben gefüllt – hier besetzt du sie dann."
+            roles={KONZERN_C_LEVEL}
+            onBack={() => setOffice(null)}
+          />
+        ) : office === 'regional-de' && konzern ? (
+          <OfficePanel
+            icon="🏢"
+            title="Regionalbüro Deutschland"
+            subtitle="Führt alle Standorte in Deutschland"
+            intro="Jedes Land bekommt ein eigenes Regionalbüro mit diesen Führungskräften. Sie steuern die Standorte des Landes – ihre Mechanik folgt in einem kommenden Update."
+            roles={REGIONAL_OFFICE_ROLES}
+            onBack={() => setOffice(null)}
+          />
         ) : (
         <>
         <div className="konzern-map">
@@ -421,7 +445,16 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                   ? 'Später expandierst du in weitere Städte in ganz Deutschland – jede mit eigenem Kundenstamm und eigener Konkurrenz. Die gesperrten Marker zeigen künftige Standorte.'
                   : 'Und schließlich lieferst du in ganz Europa – Land für Land, jedes mit eigenem Markt. Der Konzern wächst über die Landesgrenzen hinaus.'}
               </p>
-              <p className="sub"><i>Diese Ausbaustufe folgt – dein Sitz ist bereits markiert.</i></p>
+              {konzern && level === 'land' && (
+                <button className="btn primary" onClick={() => setOffice('regional-de')}>🏢 Regionalbüro Deutschland</button>
+              )}
+              {konzern && level === 'kontinent' && (
+                <button className="btn primary" onClick={() => setOffice('konzern')}>🏛️ Konzernzentrale</button>
+              )}
+              {!konzern && (
+                <p className="sub"><i>Ab zwei Standorten gründest du deinen Konzern – dann bekommt jedes Land ein Regionalbüro und der Konzern eine Zentrale.</i></p>
+              )}
+              <p className="sub" style={{ marginTop: 10 }}><i>Diese Ausbaustufe folgt – dein Sitz ist bereits markiert.</i></p>
             </div>
           )}
         </aside>

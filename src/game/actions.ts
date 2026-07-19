@@ -1028,7 +1028,7 @@ export function foundKonzern(state: GameState): ActionResult {
   state.konzern = { foundedWeek: weekOf(state.totalDays), name: 'Deine Unternehmensgruppe' };
   notify(
     state,
-    `🏛️ Konzern gegründet! Deine Standorte bilden jetzt eine Unternehmensgruppe mit eigener Konzernzentrale. Neue Führungsrollen im Büro folgen bald.`,
+    `🏛️ Konzern gegründet! Es entsteht eine Konzernzentrale (C-Level) und pro Land ein Regionalbüro. Öffne beides über die Konzern-Karte – die Führungsrollen folgen bald.`,
     'success',
   );
   return { ok: true };

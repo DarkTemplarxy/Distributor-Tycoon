@@ -190,19 +190,33 @@ export const ROLE_EMOJI: Record<Role, string> = {
  */
 /**
  * Konzern gründen (ab 2 Standorten): der Übergang vom einzelnen Betrieb zur
- * Unternehmensgruppe mit eigener Zentrale. Die Gründung kostet einmalig — danach
- * eröffnet die Konzernzentrale neue, konzernweite Führungsrollen (siehe unten;
- * ihre konkrete Wirkung wird später definiert).
+ * Unternehmensgruppe. Die Gründung kostet einmalig und etabliert die zweistufige
+ * Konzern-Struktur — die KONZERNZENTRALE (global, C-Level) an der Spitze und
+ * darunter je Land ein REGIONALBÜRO mit eigenen Führungskräften. Ihre konkrete
+ * Wirkung wird in einem späteren Paket definiert.
  */
 export const KONZERN_FOUND_COST = 50_000;
 
-/** Künftige Konzern-Führungsrollen — heute Teaser/Platzhalter in der Zentrale,
- * ihre Mechanik folgt in einem späteren Paket. */
-export const KONZERN_PLANNED_ROLES: { emoji: string; title: string; blurb: string }[] = [
-  { emoji: '💰', title: 'Finanzvorstand (CFO)', blurb: 'Steuert Kredite, Budget & Investitionen konzernweit.' },
-  { emoji: '🚚', title: 'Logistik-Vorstand', blurb: 'Optimiert Transfers & Beschaffung über alle Standorte.' },
-  { emoji: '📣', title: 'Marketing-Vorstand', blurb: 'Konzernweite Kampagnen vergrößern jeden Markt.' },
-  { emoji: '🌍', title: 'Expansions-Manager', blurb: 'Erschließt neue Städte und – später – Länder.' },
+export interface OfficeRole { emoji: string; title: string; blurb: string }
+
+/** Konzernzentrale: die C-Level-Führung des ganzen Konzerns (Platzhalter — Mechanik
+ * folgt). */
+export const KONZERN_C_LEVEL: OfficeRole[] = [
+  { emoji: '👑', title: 'Vorstandsvorsitz (CEO)', blurb: 'Das bist du – setzt die Strategie des Konzerns.' },
+  { emoji: '💰', title: 'Finanzvorstand (CFO)', blurb: 'Kredite, Budget & Investitionen konzernweit.' },
+  { emoji: '⚙️', title: 'Operativ-Vorstand (COO)', blurb: 'Effizienz & Kennzahlen aller Standorte.' },
+  { emoji: '📣', title: 'Marketing-Vorstand (CMO)', blurb: 'Konzernweite Kampagnen vergrößern jeden Markt.' },
+  { emoji: '🌍', title: 'Expansions-Vorstand', blurb: 'Erschließt neue Länder für den Konzern.' },
+];
+
+/** Regionalbüro (je Land): die Führungskräfte, die alle Standorte eines Landes
+ * steuern (Platzhalter — Mechanik folgt). */
+export const REGIONAL_OFFICE_ROLES: OfficeRole[] = [
+  { emoji: '🧑‍💼', title: 'Regionaldirektor', blurb: 'Führt alle Standorte des Landes.' },
+  { emoji: '📈', title: 'Vertriebsleiter', blurb: 'Steuert Akquise & Key-Accounts der Region.' },
+  { emoji: '🛒', title: 'Einkaufsleiter', blurb: 'Bündelt die Beschaffung über die Standorte.' },
+  { emoji: '🚚', title: 'Logistikleiter', blurb: 'Optimiert Transfers zwischen den Städten.' },
+  { emoji: '👥', title: 'Personalleiter', blurb: 'Rekrutierung & Training landesweit.' },
 ];
 
 export const STANDORTLEITER_AUTO = {
