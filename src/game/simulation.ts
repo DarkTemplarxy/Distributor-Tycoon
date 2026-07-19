@@ -90,6 +90,7 @@ import {
   SUPPLIER_INCREASE_RANGE,
   FORKLIFT_PUTAWAY_SPEED,
   PACKSTATION_PREP_SPEED,
+  BUYER_PRODUCT_CAPACITY,
   COOLING_SHELFLIFE_BONUS,
   NO_COOLING_SPOILAGE_MULT,
   TRUCK_LOGISTICS_SAVE,
@@ -685,6 +686,25 @@ export function freeCapacity(state: GameState, type: CustomerType): number {
 /** True once the company employs at least one Einkäufer (unlocks auto-restock). */
 export function hasEinkaeufer(state: GameState): boolean {
   return state.employees.some((e) => e.role === 'einkaeufer');
+}
+
+/** Wie viele Produktgruppen die Einkäufer zusammen betreuen können. */
+export function buyerCapacity(state: GameState): number {
+  return (
+    state.employees.filter((e) => e.role === 'einkaeufer').length * BUYER_PRODUCT_CAPACITY
+  );
+}
+/** Die betreuten Produktgruppen — in Listungs-Reihenfolge (die ältesten zuerst).
+ * Nur diese werden automatisch bestellt und bei Preiserhöhungen verhandelt. */
+export function buyerCoveredProducts(state: GameState): ProductId[] {
+  return state.products.slice(0, buyerCapacity(state)).map((p) => p.id);
+}
+export function isBuyerCovered(state: GameState, productId: ProductId): boolean {
+  return buyerCoveredProducts(state).includes(productId);
+}
+/** Unbetreute Gruppen (Sortiment breiter als die Einkäufer-Kapazität). */
+export function buyerUncoveredProducts(state: GameState): ProductId[] {
+  return state.products.slice(buyerCapacity(state)).map((p) => p.id);
 }
 
 /** Contracted weekly demand for a product = sum of active customers' line volumes,
@@ -1842,9 +1862,11 @@ function processWeeklyOrder(state: GameState, week: number): void {
   // leftover stock.
   const buffer = Math.max(0, state.settings.buyerOrderBuffer ?? 0);
   let budget = state.cash + availableCredit(state);
+  const covered = new Set(buyerCoveredProducts(state));
   for (const site of activeSites(state)) {
     const items: { productId: ProductId; quantity: number }[] = [];
     for (const product of state.products) {
+      if (!covered.has(product.id)) continue; // über der Einkäufer-Kapazität → manuell
       if (!supplierDeliversTo(product.id, site)) continue; // Regionalware: nur per Transfer
       const outlook = orderOutlook(state, product.id, site);
       if (outlook.deficit <= 0) continue;
@@ -1867,6 +1889,26 @@ function processWeeklyOrder(state: GameState, week: number): void {
       `✓ Einkäufer deckt ${SITE_META[site].short}${bufNote}: ${summary} (${Math.round(po.totalCost)}€) – Lieferung nächsten Montag.`,
       'success',
     );
+  }
+  // Kapazitäts-Grenze: unbetreute Gruppen bestellt niemand automatisch. Braucht
+  // eine davon Nachschub, öffnet das manuelle Bestellfenster — oder ein weiterer
+  // Einkäufer übernimmt (BUYER_PRODUCT_CAPACITY Gruppen pro Kopf).
+  const uncovered = buyerUncoveredProducts(state);
+  if (uncovered.length > 0) {
+    const needy = uncovered.filter((id) =>
+      activeSites(state).some(
+        (site) => supplierDeliversTo(id, site) && orderOutlook(state, id, site).deficit > 0,
+      ),
+    );
+    if (needy.length > 0) {
+      state.pendingOrderWeek = week;
+      const names = needy.map((id) => getProduct(state, id).name).join(', ');
+      notify(
+        state,
+        `📋 Einkäufer-Kapazität voll (${buyerCapacity(state)} Gruppen): ${names} unbetreut – manuell bestellen oder weiteren Einkäufer einstellen.`,
+        'warn',
+      );
+    }
   }
 }
 
@@ -2595,7 +2637,9 @@ function applyQuarterlyEvents(state: GameState): void {
     const sp = pick(open);
     const product = getProduct(state, sp.productId);
     const pct = randRange(SUPPLIER_INCREASE_RANGE[0], SUPPLIER_INCREASE_RANGE[1]);
-    const skill = bestNegotiationSkill(state);
+    // Verhandelt wird nur, was ein Einkäufer BETREUT (Kapazität: 3 Gruppen pro
+    // Kopf) — unbetreute Gruppen trifft die volle Erhöhung.
+    const skill = isBuyerCovered(state, sp.productId) ? bestNegotiationSkill(state) : 0;
     const reduction = skill / 100;
     const effective = pct * (1 - reduction);
     const oldPrice = sp.price;

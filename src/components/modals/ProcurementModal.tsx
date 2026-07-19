@@ -6,6 +6,7 @@ import {
   branchOpen,
   hasActiveContract,
   hasEinkaeufer,
+  isBuyerCovered,
   orderOutlook,
   supplierUnitPrice,
 } from '../../game/simulation';
@@ -239,6 +240,18 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
                         )}
                       </div>
                     </div>
+                    {einkaeufer && (
+                      <span
+                        className={`pill ${isBuyerCovered(state, product.id) ? 'good' : 'warn'}`}
+                        title={
+                          isBuyerCovered(state, product.id)
+                            ? 'Ein Einkäufer betreut diese Gruppe: automatische Bestellung + Preisverhandlung.'
+                            : 'Über der Einkäufer-Kapazität (3 Gruppen pro Kopf): manuell bestellen, Preiserhöhungen treffen voll – oder weiteren Einkäufer einstellen.'
+                        }
+                      >
+                        {isBuyerCovered(state, product.id) ? '🛒 betreut' : '⚠️ unbetreut'}
+                      </span>
+                    )}
                     <span
                       className="pill"
                       style={{ fontWeight: 700 }}

@@ -26,6 +26,7 @@ import {
   BRANCH_PRICE,
   BRANCH_RENT,
   BRANCH_UNLOCK_MONTHLY,
+  BUYER_PRODUCT_CAPACITY,
   COMPETITOR_DEFS,
   LOYALTY_CHURN_THRESHOLD,
   POACH_LOYALTY_CEILING,
@@ -438,13 +439,16 @@ const ENTRIES: WikiEntry[] = [
       <>
         <p>
           Samstags bestellst du für die nächste Woche (Lieferung Montag). Die Empfehlung basiert
-          auf der beobachteten Nachfrage. Ein <b>Einkäufer</b> übernimmt das automatisch. Für akute
-          Fehlmengen gibt es die <b>Express-Nachbestellung</b>: kommt in {EXPRESS_PO_LEAD_DAYS}{' '}
+          auf der beobachteten Nachfrage. Ein <b>Einkäufer</b> übernimmt das automatisch — aber
+          jeder betreut <b>maximal {BUYER_PRODUCT_CAPACITY} Produktgruppen</b> (in
+          Listungs-Reihenfolge): Ein breites Sortiment braucht mehrere Einkäufer, sonst bleiben
+          Gruppen unbetreut (manuell bestellen, volle Preiserhöhungen). Für akute Fehlmengen gibt
+          es die <b>Express-Nachbestellung</b>: kommt in {EXPRESS_PO_LEAD_DAYS}{' '}
           Tagen, kostet aber +{pct(EXPRESS_RESTOCK_SURCHARGE)} Aufschlag.
         </p>
         <p>
           Zum Quartalswechsel kann der Lieferant die <b>Einkaufspreise erhöhen</b> – ein Einkäufer
-          mit gutem Skill verhandelt einen Teil weg. Deine Marge schmilzt sonst schleichend:
+          mit gutem Skill verhandelt einen Teil weg (nur bei betreuten Gruppen). Deine Marge schmilzt sonst schleichend:
           Vertragspreise regelmäßig prüfen! Die Nachfrage schwankt außerdem <b>saisonal</b> je
           Produkt (Quartal oben in der Leiste).
         </p>

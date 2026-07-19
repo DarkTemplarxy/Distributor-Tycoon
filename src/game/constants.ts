@@ -295,6 +295,11 @@ export interface ProductDef {
  * Regalen zu bauen. */
 export const NO_COOLING_SPOILAGE_MULT = 0.3;
 
+/** Ein Einkäufer betreut maximal so viele Produktgruppen (Auto-Bestellung +
+ * Preisverhandlung). Breiteres Sortiment braucht mehr Einkäufer — Wachstum
+ * kostet Struktur, nicht nur Geld. */
+export const BUYER_PRODUCT_CAPACITY = 3;
+
 /** Kosten, eine Lager-Kachel als ❄️ Kühlbereich zu markieren. */
 export const COOL_TILE_PRICE = 500;
 

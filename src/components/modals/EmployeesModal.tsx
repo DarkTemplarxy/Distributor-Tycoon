@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import {
+  BUYER_PRODUCT_CAPACITY,
   HIRE_WEEKS_UPFRONT,
   MANAGER_SLOTS,
   ROLE_EMOJI,
@@ -14,6 +15,7 @@ import {
 } from '../../game/constants';
 import {
   branchOpen,
+  buyerCapacity,
   currentMonthlyRent,
   deskCount,
   expectedNewInquiriesPerWeek,
@@ -28,7 +30,7 @@ const HIREABLE: { role: Role; benefit: string }[] = [
   { role: 'lager', benefit: 'Richtet Ware her – mehr Personal = schnellere Palettenvorbereitung.' },
   { role: 'kam', benefit: `+${MANAGER_SLOTS} Kunden-Slots (klein=${SLOT_COST.small}, mittel=${SLOT_COST.medium}, groß=${SLOT_COST.large} Slots) – Kapazität gilt PRO Manager.` },
   { role: 'sales', benefit: 'Wirbt aktiv neue Kunden an: erhöht die wöchentliche Neukunden-Chance (mit abnehmendem Grenzertrag, steigt mit Skill). Zum Abschließen braucht es freie KAM-Slots.' },
-  { role: 'einkaeufer', benefit: 'Übernimmt die automatische Nachbestellung (bedarfsbasiert) und verhandelt Lieferanten-Preiserhöhungen herunter.' },
+  { role: 'einkaeufer', benefit: `Übernimmt Auto-Nachbestellung & verhandelt Preiserhöhungen – betreut max. ${BUYER_PRODUCT_CAPACITY} Produktgruppen pro Kopf. Breites Sortiment braucht mehrere.` },
 ];
 
 /** Compact one-line description of a Lager worker's priority settings for the
@@ -95,11 +97,16 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
             <div className="title" style={{ fontSize: 13 }}>Einkäufer</div>
             <div className="sub">
               {state.employees.some((e) => e.role === 'einkaeufer')
-                ? 'Bestellt automatisch nach & verhandelt Preiserhöhungen'
+                ? `Betreut ${Math.min(state.products.length, buyerCapacity(state))}/${state.products.length} Produktgruppen (max. ${BUYER_PRODUCT_CAPACITY} pro Einkäufer) – Auto-Bestellung & Preisverhandlung nur für betreute.`
                 : 'Keiner – volle Preiserhöhungen, manuelle Bestellung'}
             </div>
           </div>
-          <span className="pill">{state.employees.filter((e) => e.role === 'einkaeufer').length}</span>
+          <span
+            className={`pill ${state.employees.some((e) => e.role === 'einkaeufer') && buyerCapacity(state) < state.products.length ? 'warn' : ''}`}
+            title={buyerCapacity(state) < state.products.length && state.employees.some((e) => e.role === 'einkaeufer') ? 'Sortiment breiter als die Einkäufer-Kapazität – unbetreute Gruppen musst du manuell bestellen, Preiserhöhungen treffen sie voll.' : undefined}
+          >
+            {state.employees.filter((e) => e.role === 'einkaeufer').length}
+          </span>
           {state.employees.some((e) => e.role === 'einkaeufer') && (
             <div
               style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}
