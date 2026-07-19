@@ -39,6 +39,10 @@ const PROD_HEX: Record<ProductId, string> = {
   fisch: '#4da3ff',
   fleisch: '#f26d6d',
   gemuese: '#5fce8a',
+  kaese: '#f2c14e',
+  obst: '#ff9f45',
+  tiefkuehl: '#7ad0e6',
+  delikatess: '#c98bd6',
 };
 const C = {
   skyTop: '#12303a',

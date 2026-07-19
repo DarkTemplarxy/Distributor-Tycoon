@@ -33,6 +33,7 @@
 import { createInitialState } from '../src/game/init.ts';
 import {
   advance,
+  coldChainGap,
   freeCapacity,
   freeDesks,
   hallExpansionFrontier,
@@ -49,6 +50,7 @@ import {
   buildInboundSlot,
   buildShelf,
   buildTable,
+  buyEquipment,
   counterOffer,
   expandHall,
   expandOffice,
@@ -307,6 +309,11 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
           // rejected → irregular, earned growth). Def-based lookup: the inquiry
           // may target a product that isn't listed yet (accepting auto-lists it).
           const p = getProductDef(inq.preferredProduct);
+          // A new product (not yet listed) means paying its listing fee AND tying
+          // up cash in expensive stock. A sensible operator paces that expansion:
+          // only list when there's a healthy cash buffer beyond the fee.
+          const alreadyListed = s.products.some((pp) => pp.id === p.id);
+          if (!alreadyListed && s.cash < p.listingFee + 20000) continue;
           const wishMargin = inq.targetPrice > 0 ? ((inq.targetPrice - p.einkaufspreis) / inq.targetPrice) * 100 : 0;
           if (wishMargin < p.zielmarge * 0.7) continue; // lowball — not worth it
           const target = targetMarginPrice(inq.preferredProduct);
@@ -315,6 +322,10 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
         }
       }
     }
+
+    // --- bot: a sensible operator builds cooling once it carries a cold-chain
+    // product (Käse/Tiefkühl/Feinkost) — otherwise that ware spoils fast. ---
+    if (strategy === 'sinnvoll' && coldChainGap(s)) buyEquipment(s, 'cooling');
 
     // --- bot: order the deficit whenever the weekly window opens ---
     if (s.pendingOrderWeek != null) orderDeficit(s);

@@ -78,6 +78,7 @@ import {
   FORKLIFT_PUTAWAY_SPEED,
   PACKSTATION_PREP_SPEED,
   COOLING_SHELFLIFE_BONUS,
+  NO_COOLING_SPOILAGE_MULT,
   TRUCK_LOGISTICS_SAVE,
   volumeDiscount,
   getStrategyDef,
@@ -628,11 +629,21 @@ export function truckCostPerPallet(state: GameState): number {
   return Math.round(state.truck.costPerPallet * Math.max(0.25, 1 - TRUCK_LOGISTICS_SAVE * equipmentLevel(state, 'truck')));
 }
 /** Effective shelf life for a product's fresh batches: cooling extends it, the
- * Frische-Spezialist strategy shortens it. */
+ * Frische-Spezialist strategy shortens it. Kühlpflichtige Gruppen (Käse, Tiefkühl,
+ * Feinkost) verderben ohne gebaute Kühlung stark beschleunigt. */
 export function spoilageDaysFor(state: GameState, product: Product): number {
-  const cooling = 1 + COOLING_SHELFLIFE_BONUS * equipmentLevel(state, 'cooling');
+  const coolingLevel = equipmentLevel(state, 'cooling');
+  const cooling = 1 + COOLING_SHELFLIFE_BONUS * coolingLevel;
   const strat = getStrategyDef(state.strategy).spoilageFactor;
-  return Math.max(1, Math.round(product.spoilageDays * cooling * strat));
+  const needsCold = !!getProductDef(product.id).requiresCooling;
+  const coldPenalty = needsCold && coolingLevel === 0 ? NO_COOLING_SPOILAGE_MULT : 1;
+  return Math.max(1, Math.round(product.spoilageDays * cooling * strat * coldPenalty));
+}
+
+/** Kühlpflichtiges Produkt im Sortiment, aber keine Kühlung gebaut → Warnung. */
+export function coldChainGap(state: GameState): boolean {
+  if (equipmentLevel(state, 'cooling') > 0) return false;
+  return state.products.some((p) => getProductDef(p.id).requiresCooling);
 }
 
 /** Strategy multiplier on the price customers will pay in NEW deals. */

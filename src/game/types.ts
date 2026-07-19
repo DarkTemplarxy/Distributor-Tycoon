@@ -7,7 +7,14 @@
 
 export type Speed = 0.5 | 1 | 2 | 4;
 
-export type ProductId = 'fisch' | 'fleisch' | 'gemuese';
+export type ProductId =
+  | 'fisch'
+  | 'fleisch'
+  | 'gemuese'
+  | 'kaese'
+  | 'obst'
+  | 'tiefkuehl'
+  | 'delikatess';
 
 export type CustomerType = 'small' | 'medium' | 'large';
 

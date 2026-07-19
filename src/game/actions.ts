@@ -175,6 +175,13 @@ export function addProduct(state: GameState, productId: ProductId): ActionResult
     `🧺 ${def.emoji} ${def.name} ins Sortiment aufgenommen! Jetzt einkaufen & bevorraten, bevor du Kunden gewinnst.`,
     'success',
   );
+  if (def.requiresCooling && equipmentLevel(state, 'cooling') === 0) {
+    notify(
+      state,
+      `❄️ ${def.name} ist kühlpflichtig – ohne Kühlung (Ausbau) verdirbt die Ware schnell. Kühlung nachrüsten!`,
+      'warn',
+    );
+  }
   return { ok: true };
 }
 

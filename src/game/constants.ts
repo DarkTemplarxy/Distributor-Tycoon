@@ -252,6 +252,10 @@ export const PRODUCT_VOLUME_FACTOR: Record<ProductId, number> = {
   fisch: 1,
   fleisch: 1.3,
   gemuese: 1.8,
+  kaese: 0.9,
+  obst: 1.3,
+  tiefkuehl: 1.0,
+  delikatess: 0.5,
 };
 
 /** Discount → demand uplift curve (progressive). Fractions. */
@@ -274,7 +278,14 @@ export interface ProductDef {
   unlockWeek: number;
   /** One-time cost to list this product with the supplier and add it to the assortment. */
   listingFee: number;
+  /** Kühlpflichtig: ohne aufgebaute Kühlung (Ausrüstung) verdirbt die Ware viel
+   * schneller (NO_COOLING_SPOILAGE_MULT). Mit Kühlung greift der normale Bonus. */
+  requiresCooling?: boolean;
 }
+
+/** Ohne Kühlung schrumpft die Haltbarkeit kühlpflichtiger Produkte auf diesen
+ * Anteil – der Anreiz, für Käse/Tiefkühl/Feinkost eine Kühlung zu bauen. */
+export const NO_COOLING_SPOILAGE_MULT = 0.3;
 
 // The full product catalog. Only products with unlockWeek 0 are in the assortment
 // at the start; the rest unlock over time (aligned to month starts: fleisch at
@@ -286,6 +297,12 @@ export const PRODUCT_DEFS: ProductDef[] = [
   // meat beat guides listing it, winning the first meat customer and restocking.
   { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 25, zielmarge: 40, spoilageDays: 42, unlockWeek: 2, listingFee: 500 },
   { id: 'gemuese', name: 'Gemüse', emoji: '🥦', einkaufspreis: 10, verkaufspreis: 16.5, zielmarge: 40, spoilageDays: 56, unlockWeek: 8, listingFee: 500 },
+  // --- Späte Produktgruppen (Late Game): eigene Profile + steigende Listungs-
+  // gebühren als Geldsenke. Kühlpflichtige Gruppen brauchen eine gebaute Kühlung.
+  { id: 'kaese', name: 'Käse & Molkerei', emoji: '🧀', einkaufspreis: 22, verkaufspreis: 40, zielmarge: 45, spoilageDays: 30, unlockWeek: 20, listingFee: 3000, requiresCooling: true },
+  { id: 'obst', name: 'Obst & Frische', emoji: '🍎', einkaufspreis: 12, verkaufspreis: 20, zielmarge: 40, spoilageDays: 10, unlockWeek: 26, listingFee: 6000 },
+  { id: 'tiefkuehl', name: 'Tiefkühlkost', emoji: '🧊', einkaufspreis: 28, verkaufspreis: 52, zielmarge: 46, spoilageDays: 90, unlockWeek: 36, listingFee: 18000, requiresCooling: true },
+  { id: 'delikatess', name: 'Feinkost', emoji: '🦞', einkaufspreis: 60, verkaufspreis: 120, zielmarge: 50, spoilageDays: 25, unlockWeek: 48, listingFee: 45000, requiresCooling: true },
 ];
 
 export function getProductDef(id: ProductId): ProductDef {
@@ -298,6 +315,10 @@ export const SEASONAL_TREND: Record<ProductId, [number, number, number, number]>
   fisch: [0.85, 1.05, 1.3, 1.1],
   fleisch: [1.2, 1.1, 0.95, 1.15],
   gemuese: [0.9, 1.05, 1.15, 1.05],
+  kaese: [1.1, 1.0, 0.95, 1.05],
+  obst: [0.8, 1.0, 1.4, 1.0], // Frisches Obst boomt im Sommer
+  tiefkuehl: [1.0, 0.95, 1.35, 0.95], // Tiefkühl (Eis!) im Sommer
+  delikatess: [1.15, 0.9, 0.85, 1.3], // Feinkost zu den Feiertagen (Q4/Winter)
 };
 
 export const QUARTER_LABEL = ['Q1 · Winter', 'Q2 · Frühjahr', 'Q3 · Sommer', 'Q4 · Herbst'];

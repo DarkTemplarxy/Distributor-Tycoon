@@ -7,6 +7,10 @@ export const PRODUCT_COLOR: Record<ProductId, string> = {
   fisch: 'var(--fisch)',
   fleisch: 'var(--fleisch)',
   gemuese: 'var(--gemuese)',
+  kaese: 'var(--kaese)',
+  obst: 'var(--obst)',
+  tiefkuehl: 'var(--tiefkuehl)',
+  delikatess: 'var(--delikatess)',
 };
 
 export function Stars({ value }: { value: number }) {

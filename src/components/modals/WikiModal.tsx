@@ -35,6 +35,7 @@ import {
   PALETTE_SIZE,
   PAYMENT_DELAY_DAYS_BY_TYPE,
   PO_LEAD_DAYS,
+  NO_COOLING_SPOILAGE_MULT,
   PRODUCT_DEFS,
   PRODUCT_VOLUME_FACTOR,
   RENT_PER_EXPANSION,
@@ -411,10 +412,18 @@ const ENTRIES: WikiEntry[] = [
             <span key={d.id}>
               {i > 0 && ' · '}
               {d.emoji} <b>{d.name}</b>: EK {d.einkaufspreis}€, Listen-VK {d.verkaufspreis}€,
-              hält {d.spoilageDays} Tage
+              hält {d.spoilageDays} Tage{d.requiresCooling ? ' ❄️' : ''}
               {d.unlockWeek > 0 ? `, listbar ab Woche ${d.unlockWeek + 1} (${d.listingFee}€)` : ''}
             </span>
           ))}
+        </p>
+        <p>
+          <b>Späte Produktgruppen</b> (🧀 Käse, 🍎 Obst, 🧊 Tiefkühl, 🦞 Feinkost) schalten über Jahr
+          1–2 frei: höhere Margen, aber steigende <b>Listungsgebühren</b> (bis 45.000€) als
+          Investitionsentscheidung. Mit <b>❄️</b> markierte Gruppen sind <b>kühlpflichtig</b> – ohne
+          gebaute <b>Kühlung</b> (Ausbau) verdirbt ihre Ware stark beschleunigt (auf{' '}
+          {Math.round(NO_COOLING_SPOILAGE_MULT * 100)}% der Haltbarkeit). Erst Kühlung bauen, dann
+          listen und bevorraten.
         </p>
         <p>
           Abgelaufene Ware wird zum Einkaufswert abgeschrieben. Bei stornierten Aufträgen kommt
