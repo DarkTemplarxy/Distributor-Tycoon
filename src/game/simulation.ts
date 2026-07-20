@@ -2700,8 +2700,12 @@ function maybeGenerateDemand(state: GameState): void {
     if (busy.has(cust.id)) continue;
     if (cust.loyalty < DEMAND_MIN_LOYALTY) continue;
     if (week - cust.sinceWeek < DEMAND_MIN_CUSTOMER_WEEKS) continue;
-    if (cust.lines.length >= DEMAND_MAX_LINES) continue;
-    const missing = listable.filter((pid) => !cust.lines.some((l) => l.productId === pid));
+    // Der Wunsch-Druck zielt auf BREITE (eine noch nicht bezogene GRUPPE), unabhängig
+    // von der Artikel-Tiefe — sonst würde das automatische Artikel-Sammeln den Druck
+    // stumm schalten. Gedeckelt auf DEMAND_MAX_LINES verschiedene Gruppen.
+    const custGroups = new Set(cust.lines.map((l) => groupOfArticle(l.productId)));
+    if (custGroups.size >= DEMAND_MAX_LINES) continue;
+    const missing = listable.filter((pid) => !custGroups.has(groupOfArticle(pid)));
     if (missing.length > 0) candidates.push({ cust, missing });
   }
   if (candidates.length === 0) return;
@@ -2780,11 +2784,14 @@ function fireDueUltimatums(state: GameState): void {
   state.pendingUltimatums = state.pendingUltimatums.filter((u) => u.fireWeek > week);
   for (const u of due) {
     const cust = state.customers.find((c) => c.id === u.customerId);
+    // Gegenstandslos, sobald der Kunde die gewünschte GRUPPE bezieht (egal welcher
+    // Artikel daraus) oder seine Breiten-Reichweite erreicht hat.
+    const wantGroup = groupOfArticle(u.productId);
     const moot =
       !cust ||
       !cust.active ||
-      cust.lines.some((l) => l.productId === u.productId) ||
-      cust.lines.length >= DEMAND_MAX_LINES;
+      cust.lines.some((l) => groupOfArticle(l.productId) === wantGroup) ||
+      new Set(cust.lines.map((l) => groupOfArticle(l.productId))).size >= DEMAND_MAX_LINES;
     if (moot) {
       state.lastDemandWeek = week; // process over — cooldown starts
       continue;

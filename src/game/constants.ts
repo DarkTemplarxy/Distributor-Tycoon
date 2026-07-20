@@ -472,7 +472,7 @@ export const COOL_TILE_PRICE = 500;
 // week 4 = month 2, gemuese at week 8 = month 3) and are added by the player.
 // Verkaufspreise auf ~40% Zielmarge: verkaufspreis = EK / (1 - 0.40), auf 0,5€ gerundet.
 export const PRODUCT_DEFS: ProductDef[] = [
-  { id: 'fisch', name: 'Fischfilet', emoji: '🐟', einkaufspreis: 20, verkaufspreis: 33.5, zielmarge: 40, spoilageDays: 21, unlockWeek: 0, listingFee: 0 },
+  { id: 'fisch', name: 'Fisch & Meeresfrüchte', emoji: '🐟', einkaufspreis: 20, verkaufspreis: 33.5, zielmarge: 40, spoilageDays: 21, unlockWeek: 0, listingFee: 0 },
   // Fleisch unlocks in the 3rd game week (index 2) — inside the tutorial, whose
   // meat beat guides listing it, winning the first meat customer and restocking.
   { id: 'fleisch', name: 'Fleisch', emoji: '🥩', einkaufspreis: 15, verkaufspreis: 25, zielmarge: 40, spoilageDays: 42, unlockWeek: 2, listingFee: 500 },

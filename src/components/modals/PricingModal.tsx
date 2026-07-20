@@ -1,7 +1,7 @@
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { applyAutoPrice, setSalesPrice, setTargetMargin } from '../../game/actions';
-import { prodColor } from '../shared';
+import { prodColor, groupedProducts, CategorySection } from '../shared';
 
 export function PricingModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
@@ -9,13 +9,15 @@ export function PricingModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Preise & Margen" icon="🏷️" onClose={onClose} wide>
       <p className="hint">
-        Setze deinen Verkaufspreis pro Produktgruppe. Die effektive Marge = (VK − EK) / VK.{' '}
-        <b>Grün</b> = Zielmarge erreicht, <b>gelb</b> = knapp darunter, <b>rot</b> = deutlich
-        darunter. Steigt der EK durch den Lieferanten, hilft <b>Auto-Preis</b>, die Zielmarge
-        wieder herzustellen.
+        Setze deinen Verkaufspreis pro <b>Artikel</b> (jeder Artikel ist eine eigene SKU mit
+        eigenem Preis). Die effektive Marge = (VK − EK) / VK. <b>Grün</b> = Zielmarge erreicht,
+        <b>gelb</b> = knapp darunter, <b>rot</b> = deutlich darunter. Steigt der EK durch den
+        Lieferanten, hilft <b>Auto-Preis</b>, die Zielmarge wieder herzustellen.
       </p>
       <div className="rows">
-        {state.products.map((product) => {
+        {groupedProducts(state.products).map(({ def, items }) => (
+          <CategorySection key={def.id} def={def} right={`${items.length} Artikel`}>
+        {items.map((product) => {
           const margin = product.verkaufspreis > 0
             ? ((product.verkaufspreis - product.einkaufspreis) / product.verkaufspreis) * 100
             : 0;
@@ -72,6 +74,8 @@ export function PricingModal({ onClose }: { onClose: () => void }) {
             </div>
           );
         })}
+          </CategorySection>
+        ))}
       </div>
       <p className="hint" style={{ marginTop: 14 }}>
         Hinweis: Bestehende Kunden haben feste Vertragspreise. Neue Preise gelten für neue Verträge –

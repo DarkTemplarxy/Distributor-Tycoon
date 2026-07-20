@@ -19,7 +19,7 @@ import {
 } from '../../game/actions';
 import { CONTRACT_PREMIUM, CONTRACT_WEEKS, SITE_META, supplierDeliversTo, VOLUME_DISCOUNT_TIERS } from '../../game/constants';
 import { euro, weekOf } from '../../game/util';
-import { prodColor } from '../shared';
+import { prodColor, groupedProducts, CategorySection } from '../shared';
 
 export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
@@ -198,7 +198,20 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
         // ---- Order editor: one preset slider per product ----
         <>
           <div className="rows">
-            {recs.map(({ product, rec }) => {
+            {groupedProducts(recs.map((r) => r.product)).map(({ def, items }) => {
+              const groupFix = items.reduce(
+                (s, p) => s + (recs.find((r) => r.product.id === p.id)?.rec.fixDemand ?? 0),
+                0,
+              );
+              const groupOrder = items.reduce((s, p) => s + (qty[p.id] || 0), 0);
+              return (
+                <CategorySection
+                  key={def.id}
+                  def={def}
+                  right={`🛒 fix ${Math.round(groupFix)}/Wo${groupOrder > 0 ? ` · bestellt ${groupOrder}` : ''}`}
+                >
+            {items.map((product) => {
+              const rec = recs.find((r) => r.product.id === product.id)!.rec;
               const q = qty[product.id] || 0;
               const price = priceOf(product.id);
               const sliderMax = Math.max(100, Math.round(rec.fixDemand * 3), rec.stock + Math.round(rec.fixDemand));
@@ -287,6 +300,9 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
                     </span>
                   </div>
                 </div>
+              );
+            })}
+                </CategorySection>
               );
             })}
           </div>

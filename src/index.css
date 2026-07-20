@@ -736,6 +736,29 @@ button {
 /* --- Tables & rows ------------------------------------------------------- */
 
 .rows { display: flex; flex-direction: column; gap: 8px; }
+
+/* Kategorie-Abschnitte (Phase B3): Artikel nach Produktgruppe gebündelt & aufklappbar. */
+.cat-section { display: flex; flex-direction: column; }
+.cat-section + .cat-section { margin-top: 10px; }
+.cat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+}
+.cat-head:hover { background: var(--bg-panel-2); }
+.cat-caret { width: 14px; color: var(--text-dim); font-size: 12px; }
+.cat-title { font-weight: 700; font-size: 13px; letter-spacing: 0.2px; }
+.cat-right { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+.cat-body { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 2px 8px; }
+
 .row {
   display: flex;
   align-items: center;

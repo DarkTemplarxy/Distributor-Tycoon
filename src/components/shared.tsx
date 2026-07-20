@@ -1,8 +1,8 @@
 // Small shared presentational helpers used across the UI.
 
-import { useState } from 'react';
-import { groupOfArticle } from '../game/constants';
-import type { CustomerType, ProductId } from '../game/types';
+import { useState, type ReactNode } from 'react';
+import { groupOfArticle, PRODUCT_DEFS, type ProductDef } from '../game/constants';
+import type { CustomerType, Product, ProductId } from '../game/types';
 
 export const PRODUCT_COLOR: Record<ProductId, string> = {
   fisch: 'var(--fisch)',
@@ -20,6 +20,43 @@ export const PRODUCT_COLOR: Record<ProductId, string> = {
  * Gruppe). Phase B2: Auftrags-/Lager-Keys sind Artikel — hier auf die Gruppe abbilden. */
 export function prodColor(id: string): string {
   return PRODUCT_COLOR[(groupOfArticle(id) ?? id) as ProductId] ?? 'var(--text-dim)';
+}
+
+/** Gelistete Artikel nach Kategorie (Gruppe) gebündelt, in Katalog-Reihenfolge —
+ * die Grundlage für die gruppierte Artikel-Darstellung (Phase B3). */
+export function groupedProducts(products: Product[]): { def: ProductDef; items: Product[] }[] {
+  return PRODUCT_DEFS.map((def) => ({ def, items: products.filter((p) => p.groupId === def.id) })).filter(
+    (g) => g.items.length > 0,
+  );
+}
+
+/** Aufklappbarer Kategorie-Abschnitt: Kopfzeile (Emoji + Name + optionale rechte Info)
+ * über den Artikeln der Gruppe. So bleibt eine lange Artikel-Liste navigierbar. */
+export function CategorySection({
+  def,
+  right,
+  defaultOpen = true,
+  children,
+}: {
+  def: ProductDef;
+  right?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="cat-section">
+      <button className="cat-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span className="cat-caret">{open ? '▾' : '▸'}</span>
+        <span style={{ fontSize: 17 }}>{def.emoji}</span>
+        <span className="cat-title" style={{ color: PRODUCT_COLOR[def.id] }}>
+          {def.name}
+        </span>
+        {right != null && <span className="cat-right">{right}</span>}
+      </button>
+      {open && <div className="cat-body">{children}</div>}
+    </div>
+  );
 }
 
 export function Stars({ value }: { value: number }) {

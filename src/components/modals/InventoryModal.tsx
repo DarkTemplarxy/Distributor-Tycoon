@@ -3,7 +3,7 @@ import { useGame } from '../../state/GameProvider';
 import { branchOpen, incomingPO, inboundStock, shelfStock } from '../../game/simulation';
 import { transferStock } from '../../game/actions';
 import { PALETTE_SIZE, SITE_META } from '../../game/constants';
-import { prodColor } from '../shared';
+import { prodColor, groupedProducts, CategorySection } from '../shared';
 
 export function InventoryModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
@@ -15,7 +15,11 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
         Jede Charge verfällt am angegebenen Tag. Rot = kritisch. Verdorbene Ware ist Totalverlust.
       </p>
       <div className="rows">
-        {state.products.map((product) => {
+        {groupedProducts(state.products).map(({ def, items }) => {
+          const groupShelf = items.reduce((sum, p) => sum + shelfStock(p), 0);
+          return (
+          <CategorySection key={def.id} def={def} right={`${items.length} Artikel · ${groupShelf} Stk im Regal`}>
+        {items.map((product) => {
           const shelf = shelfStock(product);
           const inbound = inboundStock(product);
           const incoming = incomingPO(state, product.id);
@@ -113,6 +117,9 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
                 );
               })}
             </div>
+          );
+        })}
+          </CategorySection>
           );
         })}
       </div>

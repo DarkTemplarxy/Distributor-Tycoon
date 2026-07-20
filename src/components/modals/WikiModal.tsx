@@ -49,6 +49,7 @@ import {
   COOL_TILE_PRICE,
   NO_COOLING_SPOILAGE_MULT,
   PRODUCT_DEFS,
+  articlesOfGroup,
   PRODUCT_VOLUME_FACTOR,
   RENT_PER_EXPANSION,
   REPRICE_COOLDOWN_WEEKS,
@@ -530,19 +531,28 @@ const ENTRIES: WikiEntry[] = [
   },
   {
     icon: '🧺',
-    title: 'Produkte, Listung & Verderb',
-    keywords: 'sortiment fisch fleisch gemüse haltbarkeit verderb listung gebühr freischalten',
+    title: 'Produkte, Artikel, Listung & Verderb',
+    keywords: 'sortiment artikel sku fisch fleisch gemüse haltbarkeit verderb listung gebühr freischalten',
     body: (
       <>
         <p>
           {PRODUCT_DEFS.map((d, i) => (
             <span key={d.id}>
               {i > 0 && ' · '}
-              {d.emoji} <b>{d.name}</b>: EK {d.einkaufspreis}€, Listen-VK {d.verkaufspreis}€,
+              {d.emoji} <b>{d.name}</b> ({articlesOfGroup(d.id).length} Artikel): Listen-VK {d.verkaufspreis}€,
               hält {d.spoilageDays} Tage{d.requiresCooling ? ' ❄️' : ''}
               {d.unlockWeek > 0 ? `, listbar ab Woche ${d.unlockWeek + 1} (${d.listingFee}€)` : ''}
             </span>
           ))}
+        </p>
+        <p>
+          <b>Artikel (SKUs):</b> Jede Produktgruppe umfasst mehrere konkrete <b>Artikel</b> mit
+          eigenem Preis und eigenem Lagerbestand – z. B. {PRODUCT_DEFS[0].emoji}{' '}
+          {PRODUCT_DEFS[0].name} → {articlesOfGroup('fisch').map((a) => a.name).join(', ')}. Beim
+          <b> Listen</b> einer Gruppe kommen alle ihre Artikel ins Sortiment; Bestand, Bestellung und
+          Verkauf laufen <b>je Artikel</b>, während Kühlpflicht, Freischaltung und Listungsgebühr{' '}
+          <b>je Gruppe</b> gelten. Etablierte, treue Kunden nehmen mit der Zeit <b>weitere Artikel</b>{' '}
+          ins Programm auf (Groß-Kunden am meisten) – so wächst der Umsatz je Kunde.
         </p>
         <p>
           <b>Späte Produktgruppen</b> (🧀 Käse, 🍎 Obst, 🧊 Tiefkühl, 🦞 Feinkost) schalten über Jahr
