@@ -46,6 +46,13 @@ import {
   INQUIRY_BASE_CHANCE,
   RENOWN,
   MARKET,
+  ARTICLE_DEFS,
+  ARTICLE_REACH,
+  ARTICLE_DEV_START_WEEK,
+  ARTICLE_DEV_CUSTOMER_AGE,
+  ARTICLE_DEV_CHANCE,
+  ARTICLE_VOLUME_FACTOR,
+  type ArticleDef,
   INQUIRY_DAY_OF_WEEK,
   ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
@@ -2087,6 +2094,70 @@ export function marketingPower(state: GameState): number {
     .reduce((sum, e) => sum + 0.5 + 0.5 * (e.skill / 100), 0);
 }
 
+// --- Artikel-Ebene: Spezialitäten, die Kunden über die Zeit entwickeln --------
+// Der Übergang von Gruppen zu Artikeln läuft über die Kunden: sobald ihre GRUPPE
+// gelistet ist, entwickeln vor allem Großkunden mit der Zeit den Wunsch nach
+// benannten Stadt-/Landes-Spezialitäten. Wirtschaft & Lager bleiben je Gruppe.
+
+/** Wie viele Spezialitäten-Artikel ein Kunde bereits listet. */
+function articleCountOf(cust: Customer): number {
+  return cust.lines.reduce((n, l) => (l.articleId ? n + 1 : n), 0);
+}
+/** Artikel, die dieser Kunde als Nächstes entwickeln KÖNNTE: Gruppe gelistet, noch
+ * nicht in seiner Linie, innerhalb seiner Reichweite. Kleinkunden entwickeln genau
+ * EINEN Artikel aus einer ANDEREN Stadt; Mittel bis zu 3 beliebige; Groß alle. */
+export function developableArticles(state: GameState, cust: Customer): ArticleDef[] {
+  if (articleCountOf(cust) >= ARTICLE_REACH[cust.type]) return [];
+  const region: SiteId = cust.region ?? 'hq';
+  const have = new Set(cust.lines.map((l) => l.articleId).filter(Boolean));
+  return ARTICLE_DEFS.filter((a) => {
+    if (have.has(a.id)) return false;
+    if (!isInAssortment(state, a.groupId)) return false;
+    const foreign = a.home !== 'national' && a.home !== region;
+    if (cust.type === 'small' && !foreign) return false; // klein: nur Fremdstadt
+    // Kühlpflichtige Spezialität nur als VEREDELUNG einer schon bezogenen Gruppe —
+    // ein Kunde beginnt über einen Artikel nie NEU mit einer Kühl-Gruppe (das würde
+    // den Kühl-Bedarf sprunghaft heben). Nicht-kühlpflichtige dürfen neue Linien sein.
+    if (getProductDef(a.groupId).requiresCooling && !cust.lines.some((l) => l.productId === a.groupId)) return false;
+    return true;
+  });
+}
+/** Wöchentlich (Mid/Late-Game): jeder Kunde entwickelt mit kleiner Chance eine neue
+ * Spezialitäten-Linie — Großkunden am häufigsten, bis sie alle Artikel des Landes
+ * listen. Neue Linie erbt Preis/Wirtschaft der Gruppe. */
+function developProductLines(state: GameState, newWeek: number): void {
+  if (state.tutorial?.active) return;
+  if (newWeek < ARTICLE_DEV_START_WEEK) return;
+  for (const cust of state.customers) {
+    if (!cust.active) continue;
+    // Nur etablierte Kunden entwickeln Spezialitäten (Geschmack braucht Zeit) — hält
+    // das noch wacklige Aufbau-Geschäft bewusst rein bei den Gruppen.
+    if (newWeek - (cust.sinceWeek ?? 0) < ARTICLE_DEV_CUSTOMER_AGE) continue;
+    if (Math.random() >= ARTICLE_DEV_CHANCE[cust.type]) continue;
+    const options = developableArticles(state, cust);
+    if (options.length === 0) continue;
+    const art = options[Math.floor(Math.random() * options.length)];
+    const def = getProductDef(art.groupId);
+    // Hat der Kunde die Gruppe schon (generisch), wird sie zur SPEZIALITÄT
+    // veredelt (kein Doppel-Line); sonst kommt eine neue Artikel-Linie dazu.
+    const existing = cust.lines.find((l) => l.productId === art.groupId);
+    let vol: number;
+    if (existing) {
+      existing.articleId = art.id;
+      vol = existing.volume;
+    } else {
+      // Neue Spezialität: nur ein Bruchteil der üblichen Menge (Premium/Nische).
+      vol = Math.max(1, Math.round(rollLineVolume(cust.type, art.groupId) * ARTICLE_VOLUME_FACTOR));
+      cust.lines.push({ productId: art.groupId, articleId: art.id, price: def.verkaufspreis, agreedPrice: def.verkaufspreis, volume: vol });
+    }
+    cust.loyalty = clamp(cust.loyalty + 2, 0, 100);
+    // Nur Großkunden melden (der sichtbare Late-Game-Sog); klein/mittel still.
+    if (cust.type === 'large') {
+      notify(state, `⭐ ${cust.name} listet jetzt auch ${art.emoji} ${art.name} (${def.emoji} ${def.name}) – ${vol}×/Woche.`, 'success');
+    }
+  }
+}
+
 // --- Marktanteil-Modell (entkoppelt) ----------------------------------------
 
 /** Basis-Markt einer Größe (klein/mittel je Stadt, large FIX pro Land). */
@@ -3084,6 +3155,7 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   // speist den bestehenden Abwanderungs-Pfad direkt darunter).
   runMarketWeek(state, newWeek);
   runRenownWeek(state);
+  developProductLines(state, newWeek);
 
   // 5c. Loyalty with teeth: deeply unhappy customers (below the threshold) may
   // quit — but NEVER without warning. Crossing the threshold raises the warning

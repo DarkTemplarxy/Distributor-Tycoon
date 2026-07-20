@@ -105,6 +105,11 @@ export interface Product {
 /** One product a customer buys: its own price and weekly volume. */
 export interface CustomerLine {
   productId: ProductId;
+  /** Konkreter Spezialitäten-Artikel (Stufe 3), falls diese Linie eine Stadt-/Landes-
+   * Spezialität IST (statt der generischen Gruppe). Wirtschaft & Lager laufen weiter
+   * über die Gruppe (productId); articleId ist die feinere Katalog-Ebene, die vor
+   * allem Großkunden über die Zeit sammeln. Optional → alte Spielstände bleiben gültig. */
+  articleId?: string;
   /** Current price per unit. */
   price: number;
   /** Baseline units ordered per week. */

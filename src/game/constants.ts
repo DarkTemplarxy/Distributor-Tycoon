@@ -492,6 +492,72 @@ export const PRODUCT_DEFS: ProductDef[] = [
   { id: 'oliven', name: 'Antipasti & Oliven', emoji: '🫒', einkaufspreis: 18, verkaufspreis: 33, zielmarge: 45, spoilageDays: 35, unlockWeek: 26, listingFee: 9000, requiresCooling: true, exclusiveSite: 'sued' },
 ];
 
+// ============================================================================
+// Artikel-Ebene (Stufe 3, Late-Game-Verfeinerung ÜBER den Gruppen). Ein Artikel
+// ist eine benannte Stadt- oder Landes-SPEZIALITÄT innerhalb einer Produktgruppe.
+// Wirtschaft & Lager laufen weiter über die GRUPPE (der Artikel erbt sie) — der
+// Übergang von Gruppen zu Artikeln passiert allein über die KUNDEN: vor allem
+// Großkunden entwickeln über die Zeit den Wunsch nach immer mehr Spezialitäten.
+// „home" = Heimatstadt (nur dort heimisch); 'national' = landesweit verfügbar.
+// Ein Artikel ist erst listbar, wenn seine GRUPPE im Sortiment ist.
+// ============================================================================
+export interface ArticleDef {
+  id: string;
+  name: string;
+  emoji: string;
+  /** Produktgruppe, deren Wirtschaft/Lager der Artikel erbt. */
+  groupId: ProductId;
+  /** Heimat: nur in dieser Stadt heimisch, oder 'national' (überall). */
+  home: SiteId | 'national';
+}
+
+export const ARTICLE_DEFS: ArticleDef[] = [
+  // 2 einzigartige Artikel je Stadt …
+  { id: 'krabben', name: 'Nordsee-Krabben', emoji: '🦐', groupId: 'fisch', home: 'hq' },
+  { id: 'weiderind', name: 'Holsteiner Weiderind', emoji: '🐄', groupId: 'fleisch', home: 'hq' },
+  { id: 'bergkaese', name: 'Allgäuer Bergkäse', emoji: '🧀', groupId: 'kaese', home: 'sued' },
+  { id: 'bodensee', name: 'Bodensee-Äpfel', emoji: '🍎', groupId: 'obst', home: 'sued' },
+  // … und 2 landesweite Signatur-Artikel (die „Krone", spät, je eigene Gruppe).
+  { id: 'trueffel', name: 'Périgord-Trüffel', emoji: '🍄', groupId: 'delikatess', home: 'national' },
+  { id: 'wagyu', name: 'Wagyu-Rücken', emoji: '🥩', groupId: 'tiefkuehl', home: 'national' },
+];
+// Hinweis: jeder Artikel liegt in einer EIGENEN Gruppe → ein Kunde hat je Gruppe
+// höchstens eine Linie (generisch ODER als Spezialität). Das erhält die bestehende
+// „eine Linie je Produktgruppe"-Invariante (Auftragslogik, Preis-Editor, Keys).
+
+export function getArticleDef(id: string): ArticleDef | undefined {
+  return ARTICLE_DEFS.find((a) => a.id === id);
+}
+
+/** Wie viele FREMD-Artikel (über die eigene Stadt + landesweite hinaus) ein Kunde je
+ * Größe listen kann — die „Reichweite": Großkunden alles, Mittelkunden bis zu 3
+ * weitere, Kleinkunden genau einen aus einer anderen Stadt. */
+export const ARTICLE_REACH: Record<CustomerType, number> = {
+  small: 1,
+  medium: 3,
+  large: Infinity,
+};
+
+/** Ab dieser Woche beginnen Kunden, Spezialitäten-Artikel zu entwickeln — davor ist
+ * das Spiel bewusst rein Gruppen-basiert (der Übergang setzt erst im Late-Game ein,
+ * wenn der Betrieb steht — Jahr 1 bleibt so ganz beim Gruppen-Spiel). */
+export const ARTICLE_DEV_START_WEEK = 24;
+/** Ein Kunde entwickelt Spezialitäten erst, wenn er DICH schon so viele Wochen kennt
+ * (Geschmack entwickelt sich über die Zeit) — junge, noch wacklige Kunden im Aufbau
+ * bleiben beim Gruppen-Geschäft. */
+export const ARTICLE_DEV_CUSTOMER_AGE = 24;
+/** Wöchentliche Chance je aktivem Kunden, eine neue Artikel-Linie zu entwickeln
+ * (nur solange die Reichweite es erlaubt). Großkunden treiben den Übergang. */
+export const ARTICLE_DEV_CHANCE: Record<CustomerType, number> = {
+  small: 0.02,
+  medium: 0.05,
+  large: 0.14,
+};
+/** Spezialitäten sind PREMIUM & NISCHIG: eine NEUE Artikel-Linie hat nur diesen
+ * Bruchteil der üblichen Menge (kein Durchsatz-Schock, aber echte Sammel-Tiefe).
+ * Wird eine bestehende Gruppen-Linie zur Spezialität veredelt, bleibt ihre Menge. */
+export const ARTICLE_VOLUME_FACTOR = 0.4;
+
 /** Umgekehrt ist 🐟 Fisch Küstenware: der Lieferant bringt ihn nur ans
  * HAUPTLAGER (Nord) — der Süden bekommt Fisch ausschließlich per Transfer.
  * (Als Konstante statt im def, damit alte Spielstände/Tests unberührt bleiben,

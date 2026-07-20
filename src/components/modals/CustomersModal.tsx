@@ -3,7 +3,7 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { assignCustomerManager, repriceCooldownLeft, setCustomerLinePrice, setDiscount } from '../../game/actions';
 import { freeCapacity, managers, regionalKams, notify, repriceAcceptChance } from '../../game/simulation';
-import { demandUpliftFromDiscount, getProductDef, MANAGER_SLOTS, REGIONAL_KAM_LARGE_SLOTS, SLOT_COST } from '../../game/constants';
+import { demandUpliftFromDiscount, getProductDef, getArticleDef, SITE_META, MANAGER_SLOTS, REGIONAL_KAM_LARGE_SLOTS, SLOT_COST } from '../../game/constants';
 import type { Customer, CustomerLine, CustomerType, Product } from '../../game/types';
 import { weekOf } from '../../game/util';
 import { CustomerTypeFilter, Stars, PRODUCT_COLOR, useCustomerTypeFilter } from '../shared';
@@ -50,7 +50,16 @@ function LineEditor({ customer, line, product }: { customer: Customer; line: Cus
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
       <span style={{ color: PRODUCT_COLOR[line.productId], minWidth: 96 }}>
-        {product?.emoji} {product?.name}
+        {(() => {
+          const art = line.articleId ? getArticleDef(line.articleId) : undefined;
+          if (!art) return <>{product?.emoji} {product?.name}</>;
+          const city = art.home === 'national' ? 'landesweit' : SITE_META[art.home].short;
+          return (
+            <span title={`Spezialität der Gruppe ${product?.name} · ${city}`}>
+              {art.emoji} {art.name} <span className="sub" style={{ fontSize: 11 }}>· {city}</span>
+            </span>
+          );
+        })()}
       </span>
       <span className="sub">{line.volume}× @</span>
       <input
@@ -275,7 +284,7 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 26 }}>
                     {c.lines.map((l) => (
-                      <LineEditor key={l.productId} customer={c} line={l} product={productOf(l.productId)} />
+                      <LineEditor key={l.articleId ?? l.productId} customer={c} line={l} product={productOf(l.productId)} />
                     ))}
                   </div>
 
