@@ -2350,11 +2350,22 @@ function maybeGenerateExpansionInquiries(state: GameState): void {
     if (!cust.active) continue;
     if (cust.loyalty < EXPANSION_MIN_LOYALTY) continue;
     if (busy.has(cust.id)) continue;
-    const missing = listable.filter((pid) => !cust.lines.some((l) => l.productId === pid));
+    // C2: nur Artikel anbieten, die der Lieferant an den STANDORT des Kunden bringt
+    // (ein Süd-Kunde kann keine Nord-exklusive Fisch-SKU beziehen) — sonst entsteht
+    // eine unerfüllbare Anfrage.
+    const custSite = siteOfCustomer(cust);
+    const missing = listable.filter(
+      (pid) => !cust.lines.some((l) => l.productId === pid) && supplierDeliversTo(pid, custSite),
+    );
     if (missing.length === 0) continue;
     if (Math.random() > EXPANSION_CHANCE_PER_CUSTOMER) continue;
 
-    const productId = pick(missing);
+    // Breite bevorzugen: ein Artikel aus einer noch NICHT bezogenen Gruppe zuerst.
+    // Weitere SKUs einer bereits bezogenen Gruppe deckt der passive Sammel-Motor
+    // (growCustomerArticles) schon ab — das hier soll echtes Sortiments-Wachstum sein.
+    const ownedGroups = new Set(cust.lines.map((l) => groupOfArticle(l.productId)));
+    const newGroup = missing.filter((pid) => !ownedGroups.has(groupOfArticle(pid)!));
+    const productId = pick(newGroup.length > 0 ? newGroup : missing);
     const product = inquiryProductInfo(state, productId);
     state.inquiries.push({
       id: uid('inq'),
@@ -2497,7 +2508,7 @@ function runRenownWeek(state: GameState): void {
 }
 /** Region einer neuen Anfrage — nach Ruf gewichtet: ein bekannter (auch neu
  * eröffneter, geerbter) Standort zieht mehr Neukunden. */
-function pickInquiryRegion(state: GameState): SiteId {
+export function pickInquiryRegion(state: GameState): SiteId {
   const sites = activeSites(state);
   if (sites.length <= 1) return sites[0] ?? 'hq';
   const weights = sites.map((s) => RENOWN.REGION_BASE + siteRenown(state, s));

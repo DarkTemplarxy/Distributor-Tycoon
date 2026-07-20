@@ -10,6 +10,7 @@ import {
   LARGE_UNLOCK_MONTHLY,
   MEDIUM_UNLOCK_MONTHLY,
   monthlyRevenue,
+  SITE_META,
 } from '../../game/constants';
 import { STEP, TUTORIAL_INQUIRY_IDS, TUTORIAL_MEAT_INQUIRY_ID, tutorialOnStep } from '../../game/tutorial';
 import type { CustomerType } from '../../game/types';
@@ -223,8 +224,10 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                 <div className="grow">
                   <div className="title">
                     {inq.name} <span className="pill">{TYPE_LABEL[inq.type]}</span>{' '}
-                    {inq.region === 'sued' && (
-                      <span className="pill" title="Region Süd – nur der Standort Süd kann diesen Kunden beliefern.">🏗️ Süd</span>
+                    {inq.region && inq.region !== 'hq' && (
+                      <span className="pill" title={`Region ${SITE_META[inq.region].short} – wird über den ${SITE_META[inq.region].name} beliefert.`}>
+                        {SITE_META[inq.region].emoji} {SITE_META[inq.region].short}
+                      </span>
                     )}{' '}
                     {isExpansion ? (
                       <span className="pill good">🔁 Bestandskunde: {inq.name}</span>

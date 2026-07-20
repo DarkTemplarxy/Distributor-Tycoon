@@ -108,6 +108,7 @@ import {
   releaseCustomerOrders,
   addCompetitorSlot,
   uniqueCustomerName,
+  pickInquiryRegion,
 } from './simulation';
 import { buildProduct, makeBranchWarehouse } from './init';
 import { clamp, uid, weekOf } from './util';
@@ -561,7 +562,10 @@ export function poachCompetitorCustomer(state: GameState, type: CustomerType): A
     createdWeek: week,
     expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
     status: 'open',
-    region: 'hq',
+    // Ruf-gewichtete Region statt hart 'hq' — ein offensiver Vorstoß trifft dort,
+    // wo die Marke stark ist (auch ein neu eröffneter Standort). Das angebotene
+    // Produkt ist bereits nicht-standort-exklusiv, also überall lieferbar.
+    region: pickInquiryRegion(state),
     poached: { fromName: raider.name },
   };
   state.inquiries.push(inq);
@@ -902,6 +906,40 @@ export function cancelSupplyContract(state: GameState, productId: ArticleId): Ac
   delete sp.contract;
   const def = articleEconomics(productId)!;
   notify(state, `📝 Liefervertrag für ${def.name} beendet – wieder Spotpreis.`, 'info');
+  return { ok: true };
+}
+
+/** C4: Liefervertrag für eine ganze GRUPPE — fixiert JEDEN gelisteten Artikel der
+ * Gruppe auf seinen aktuellen Spotpreis (+Prämie). Ein Distributor verhandelt die
+ * Kategorie beim Lieferanten, nicht jede einzelne SKU. */
+export function signSupplyContractGroup(state: GameState, groupId: ProductId): ActionResult {
+  const week = weekOf(state.totalDays);
+  const sps = state.supplier.products.filter((s) => groupOfArticle(s.productId) === groupId);
+  if (sps.length === 0) return { ok: false, message: 'Keine Artikel dieser Gruppe beim Lieferanten.' };
+  let signed = 0;
+  for (const sp of sps) {
+    if (sp.contract && sp.contract.untilWeek > week) continue;
+    const price = Math.round(supplierUnitPrice(state, sp.productId) * (1 + CONTRACT_PREMIUM) * 100) / 100;
+    sp.contract = { price, untilWeek: week + CONTRACT_WEEKS };
+    signed += 1;
+  }
+  if (signed === 0) return { ok: false, message: 'Es läuft bereits ein Vertrag für diese Gruppe.' };
+  const def = getProductDef(groupId);
+  notify(
+    state,
+    `📝 Liefervertrag ${def.emoji} ${def.name}: EK aller ${sps.length} Artikel für ${CONTRACT_WEEKS} Wochen fixiert (+${Math.round(CONTRACT_PREMIUM * 100)}% Prämie) – geschützt vor Erhöhungen.`,
+    'success',
+  );
+  return { ok: true };
+}
+
+/** Cancel every running supply contract of a GROUP (back to spot). */
+export function cancelSupplyContractGroup(state: GameState, groupId: ProductId): ActionResult {
+  const sps = state.supplier.products.filter((s) => s.contract && groupOfArticle(s.productId) === groupId);
+  if (sps.length === 0) return { ok: false, message: 'Kein Vertrag aktiv.' };
+  for (const sp of sps) delete sp.contract;
+  const def = getProductDef(groupId);
+  notify(state, `📝 Liefervertrag ${def.emoji} ${def.name} beendet – wieder Spotpreis.`, 'info');
   return { ok: true };
 }
 

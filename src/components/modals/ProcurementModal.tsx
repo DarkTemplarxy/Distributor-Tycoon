@@ -13,9 +13,9 @@ import {
 } from '../../game/simulation';
 import type { SiteId } from '../../game/types';
 import {
-  cancelSupplyContract,
+  cancelSupplyContractGroup,
   placeWeeklyOrder,
-  signSupplyContract,
+  signSupplyContractGroup,
   type ActionResult,
 } from '../../game/actions';
 import { CONTRACT_PREMIUM, CONTRACT_WEEKS, SITE_META, supplierDeliversTo, VOLUME_DISCOUNT_TIERS } from '../../game/constants';
@@ -135,34 +135,44 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
           </span>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {state.supplier.products.map((sp) => {
-            const p = state.products.find((pr) => pr.id === sp.productId);
-            const active = hasActiveContract(state, sp.productId);
-            const left = active ? sp.contract!.untilWeek - week : 0;
+          {/* C4: Verträge je GRUPPE (Kategorie) statt je Einzel-Artikel — ein
+              Distributor verhandelt die Kategorie, nicht jede SKU. */}
+          {groupedProducts(state.products).map(({ def, items }) => {
+            const sps = state.supplier.products.filter((sp) => items.some((p) => p.id === sp.productId));
+            if (sps.length === 0) return null;
+            const contracted = sps.filter((sp) => hasActiveContract(state, sp.productId));
+            const anyActive = contracted.length > 0;
+            const allActive = contracted.length === sps.length;
+            const left = anyActive ? Math.max(...contracted.map((sp) => sp.contract!.untilWeek - week)) : 0;
+            const avgSpot = sps.reduce((a, sp) => a + sp.price, 0) / sps.length;
+            const avgContract = contracted.length ? contracted.reduce((a, sp) => a + sp.contract!.price, 0) / contracted.length : 0;
             return (
               <div
-                key={sp.productId}
+                key={def.id}
                 className="row"
                 style={{ padding: '6px 9px', gap: 8, flex: '1 1 200px', minWidth: 190 }}
               >
-                <span style={{ fontSize: 16 }}>{p?.emoji}</span>
+                <span style={{ fontSize: 16 }}>{def.emoji}</span>
                 <div className="grow">
-                  <div className="sub" style={{ color: prodColor(sp.productId), fontWeight: 600 }}>
-                    {p?.name}
+                  <div className="sub" style={{ color: prodColor(sps[0].productId), fontWeight: 600 }}>
+                    {def.name} <span style={{ fontWeight: 400 }}>· {sps.length} Artikel</span>
                   </div>
                   <div className="sub">
-                    {active
-                      ? `Vertrag €${sp.contract!.price.toFixed(2)} · noch ${left} Wo`
-                      : `Spot €${sp.price.toFixed(2)}`}
+                    {allActive
+                      ? `Vertrag Ø€${avgContract.toFixed(2)} · noch ${left} Wo`
+                      : anyActive
+                        ? `${contracted.length}/${sps.length} fixiert · Spot Ø€${avgSpot.toFixed(2)}`
+                        : `Spot Ø€${avgSpot.toFixed(2)}`}
                   </div>
                 </div>
-                {active ? (
-                  <button className="btn small ghost" onClick={() => mutate((s) => cancelSupplyContract(s, sp.productId))}>
-                    Beenden
-                  </button>
-                ) : (
-                  <button className="btn small" onClick={() => mutate((s) => signSupplyContract(s, sp.productId))}>
+                {!allActive && (
+                  <button className="btn small" title="Alle Artikel dieser Gruppe auf den aktuellen Spotpreis fixieren." onClick={() => mutate((s) => signSupplyContractGroup(s, def.id))}>
                     Fixieren
+                  </button>
+                )}
+                {anyActive && (
+                  <button className="btn small ghost" onClick={() => mutate((s) => cancelSupplyContractGroup(s, def.id))}>
+                    Beenden
                   </button>
                 )}
               </div>

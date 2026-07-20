@@ -241,12 +241,15 @@ const ENTRIES: WikiEntry[] = [
     body: (
       <>
         <p>
-          Ab {Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz kannst du im 🏢{' '}
-          <b>Ausbau</b> den <b>Standort Süd</b> eröffnen ({BRANCH_PRICE.toLocaleString('de-DE')}€ +{' '}
-          {BRANCH_RENT.toLocaleString('de-DE')}€ Monatsmiete): eine eigene, ausbaubare Halle mit
-          eigenem Lagerpersonal. Er erschließt die <b>Region Süd</b> — neue Kunden, die NUR von dort
-          beliefert werden können. Die <b>Verwaltung</b> (Büro, KAMs, Einkäufer, Vertrieb) bleibt
-          zentral im Hauptlager: ein Konzern, zwei Betriebe.
+          Ab rund {Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz kannst du auf der{' '}
+          <b>Konzern-Karte</b> weitere <b>Städte in ganz Deutschland</b> eröffnen (Stuttgart, Köln,
+          Frankfurt, der Süden, die Hauptstadt Berlin …). Größere Städte haben einen größeren
+          Kundenpool — und darum eine höhere Umsatz-Hürde und einen höheren Eröffnungspreis (ab{' '}
+          {BRANCH_PRICE.toLocaleString('de-DE')}€ + {BRANCH_RENT.toLocaleString('de-DE')}€
+          Monatsmiete für die kleinste). Jeder Standort ist eine eigene, ausbaubare Halle mit eigenem
+          Lagerpersonal und erschließt seine <b>Region</b> — Kunden, die von dort beliefert werden.
+          Die <b>Verwaltung</b> (Büro, KAMs, Einkäufer, Vertrieb) bleibt zentral im Hauptlager: ein
+          Konzern, viele Betriebe.
         </p>
         <p>
           <b>Regionalprodukte:</b> 🍷 Wein & 🫒 Oliven liefert der Lieferant NUR nach Süd, 🐟 Fisch
