@@ -1,11 +1,11 @@
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { availableCredit, branchOpen, equipmentLevel, notify } from '../../game/simulation';
+import { availableCredit, equipmentLevel, notify } from '../../game/simulation';
 import { buyEquipment, openBranch, setStrategy } from '../../game/actions';
 import {
-  BRANCH_PRICE,
+  branchPrice,
+  branchUnlockMonthly,
   BRANCH_RENT,
-  BRANCH_UNLOCK_MONTHLY,
   EQUIPMENT_DEFS,
   monthlyRevenue,
   SITE_META,
@@ -33,8 +33,10 @@ export function CompanyModal({ onClose }: { onClose: () => void }) {
       <h3>🌍 Standorte (Konzern)</h3>
       {(() => {
         const rev = monthlyRevenue(state);
-        const unlocked = rev >= BRANCH_UNLOCK_MONTHLY;
-        const open = branchOpen(state);
+        const price = branchPrice('sued');
+        const unlock = branchUnlockMonthly('sued');
+        const unlocked = rev >= unlock;
+        const open = !!state.branches?.sued;
         return (
           <div className="row" style={{ marginBottom: 14 }}>
             <span style={{ fontSize: 24 }}>{SITE_META.sued.emoji}</span>
@@ -43,7 +45,7 @@ export function CompanyModal({ onClose }: { onClose: () => void }) {
               <div className="sub">
                 {open
                   ? `Eröffnet – neue Region Süd mit eigenen Kunden. Exklusiv dort lieferbar: 🍷 Wein & 🫒 Oliven (Fisch nur per Transfer aus Nord). Miete +${euro(BRANCH_RENT)}/Monat.`
-                  : `Erschließt die Region Süd: neuer Kundenstamm + exklusive Regionalprodukte (🍷 Wein, 🫒 Oliven). Eigene Halle, eigenes Lagerpersonal – die Verwaltung bleibt zentral. Ab ${euro(BRANCH_UNLOCK_MONTHLY)} Monatsumsatz (aktuell ${euro(rev)}).`}
+                  : `Erschließt die Region Süd: neuer Kundenstamm + exklusive Regionalprodukte (🍷 Wein, 🫒 Oliven). Eigene Halle, eigenes Lagerpersonal – die Verwaltung bleibt zentral. Ab ${euro(unlock)} Monatsumsatz (aktuell ${euro(rev)}). Weitere Städte – bis zur 👑 Hauptstadt – wählst du auf der 🗺️ Konzern-Karte.`}
               </div>
             </div>
             {open ? (
@@ -51,22 +53,22 @@ export function CompanyModal({ onClose }: { onClose: () => void }) {
             ) : (
               <button
                 className="btn primary small"
-                disabled={!unlocked || budget < BRANCH_PRICE}
+                disabled={!unlocked || budget < price}
                 title={
                   !unlocked
-                    ? `Ab ${euro(BRANCH_UNLOCK_MONTHLY)} Monatsumsatz.`
-                    : budget < BRANCH_PRICE
-                      ? `Eröffnung kostet ${euro(BRANCH_PRICE)}.`
+                    ? `Ab ${euro(unlock)} Monatsumsatz.`
+                    : budget < price
+                      ? `Eröffnung kostet ${euro(price)}.`
                       : 'Vorsicht: Eröffnung + Personal + Warenaufbau kosten zusammen deutlich mehr – wer sich übernimmt, riskiert die Kasse.'
                 }
                 onClick={() =>
                   mutate((s) => {
-                    const r = openBranch(s);
+                    const r = openBranch(s, 'sued');
                     if (!r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
                   })
                 }
               >
-                Eröffnen ({euro(BRANCH_PRICE)})
+                Eröffnen ({euro(price)})
               </button>
             )}
           </div>

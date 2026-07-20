@@ -578,27 +578,36 @@ export function supplierDeliversTo(productId: ProductId, siteId: SiteId): boolea
 // Verwaltung (Büro, KAMs, Einkäufer, Vertrieb) bleibt zentral im Hauptlager.
 // ============================================================================
 
-export const SITE_META: Record<SiteId, { name: string; short: string; emoji: string }> = {
-  hq: { name: 'Hauptlager Nord', short: 'Nord', emoji: '🏭' },
-  sued: { name: 'Standort Süd', short: 'Süd', emoji: '🏗️' },
-  west: { name: 'Standort West', short: 'West', emoji: '🏢' },
-  ost: { name: 'Standort Ost', short: 'Ost', emoji: '🏙️' },
-  suedwest: { name: 'Standort Südwest', short: 'Südwest', emoji: '🏬' },
-  mitte: { name: 'Standort Mitte', short: 'Mitte', emoji: '🏦' },
+/** Städte je Land. `poolFactor` skaliert den Kundenpool (kleine Stadt = wenig, teuer
+ * & prestigeträchtig die Hauptstadt). hq (Nord) ist der kalibrierte Heimat-Hub (1.0);
+ * KEINE feste Eröffnungs-Reihenfolge — jede Stadt ist über ihre Umsatz-Hürde & ihren
+ * Preis frei wählbar. Auf die HAUPTSTADT (capital) arbeitet man als Endgame hin. */
+export const SITE_META: Record<SiteId, { name: string; short: string; emoji: string; poolFactor: number; capital?: boolean }> = {
+  hq: { name: 'Hauptlager Nord', short: 'Nord', emoji: '🏭', poolFactor: 1.0 },
+  suedwest: { name: 'Standort Stuttgart', short: 'Stuttgart', emoji: '🏬', poolFactor: 0.6 },
+  west: { name: 'Standort Köln', short: 'Köln', emoji: '🏢', poolFactor: 0.9 },
+  mitte: { name: 'Standort Frankfurt', short: 'Frankfurt', emoji: '🏦', poolFactor: 1.1 },
+  sued: { name: 'Standort Süd', short: 'Süd', emoji: '🏗️', poolFactor: 1.3 },
+  ost: { name: 'Hauptstadt Berlin', short: 'Berlin', emoji: '🏙️', poolFactor: 1.8, capital: true },
 };
-/** Reihenfolge, in der Zweigstellen eröffnet werden (hq ist der Start, steht nicht hier). */
-export const BRANCH_ORDER: SiteId[] = ['sued', 'west', 'ost', 'suedwest', 'mitte'];
-/** Eröffnung des 1. Standorts — bewusst VOR der bequemen Leistbarkeit freigeschaltet.
- * Jede WEITERE Stadt hebt Umsatz-Hürde & Preis (eskalierender Spannungs-Loop). */
-export const BRANCH_UNLOCK_MONTHLY = 250_000;
-export const BRANCH_PRICE = 120_000;
-/** Umsatz-Hürde für die (0-basiert) n-te Zweigstelle: steigt je weitere Stadt. */
-export function branchUnlockMonthly(index: number): number {
-  return Math.round(BRANCH_UNLOCK_MONTHLY * (1 + 0.5 * index));
+/** Stabile Iterations-/Anzeige-Reihenfolge der Zweigstellen (NICHT die Eröffnungs-
+ * Reihenfolge — die ist frei). hq steht nicht hier. */
+export const BRANCH_ORDER: SiteId[] = ['suedwest', 'west', 'mitte', 'sued', 'ost'];
+/** Kundenpool-Faktor einer Stadt (1.0 = Heimat-Hub). */
+export function cityPoolFactor(site: SiteId): number {
+  return SITE_META[site].poolFactor;
 }
-/** Eröffnungspreis der (0-basiert) n-ten Zweigstelle: steigt je weitere Stadt. */
-export function branchPrice(index: number): number {
-  return Math.round(BRANCH_PRICE * (1 + 0.6 * index));
+/** Basis-Werte für die kleinste Zweigstelle; größere Städte skalieren mit poolFactor
+ * (mehr Pool → höhere Hürde & höherer Preis, die Hauptstadt ist das Endgame). */
+export const BRANCH_UNLOCK_MONTHLY = 180_000;
+export const BRANCH_PRICE = 90_000;
+/** Umsatz-Hürde einer Stadt: skaliert mit ihrem Pool-Faktor. */
+export function branchUnlockMonthly(site: SiteId): number {
+  return Math.round(BRANCH_UNLOCK_MONTHLY * cityPoolFactor(site));
+}
+/** Eröffnungspreis einer Stadt: skaliert mit ihrem Pool-Faktor. */
+export function branchPrice(site: SiteId): number {
+  return Math.round(BRANCH_PRICE * cityPoolFactor(site));
 }
 /** Zusätzliche Monatsmiete des Standorts (wächst mit dessen Erweiterungen wie im
  * Hauptlager über RENT_PER_EXPANSION). */

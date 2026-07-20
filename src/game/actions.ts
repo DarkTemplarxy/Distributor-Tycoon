@@ -992,20 +992,21 @@ export function buildTable(state: GameState, gx: number, gy: number, site: SiteI
 /** Eröffnet den Standort Süd: neue Halle, neuer Regionalmarkt, Regionalprodukte.
  * Freigeschaltet ab BRANCH_UNLOCK_MONTHLY Monatsumsatz — bewusst bevor man es
  * sich bequem leisten kann (Übernahme-Risiko ist Teil des Spiels). */
-/** Die nächste noch nicht eröffnete Zweigstelle (in BRANCH_ORDER) und ihr 0-basierter Index. */
-export function nextBranch(state: GameState): { site: SiteId; index: number } | null {
-  for (let i = 0; i < BRANCH_ORDER.length; i++) {
-    if (!state.branches?.[BRANCH_ORDER[i]]) return { site: BRANCH_ORDER[i], index: i };
-  }
-  return null;
+/** Standorte, die JETZT eröffnet werden könnten (noch nicht offen); frei wählbar,
+ * jeder mit eigener größen-skalierter Hürde. */
+export function openableBranches(state: GameState): SiteId[] {
+  return BRANCH_ORDER.filter((s) => !state.branches?.[s]);
 }
 
-export function openBranch(state: GameState): ActionResult {
-  const next = nextBranch(state);
-  if (!next) return { ok: false, message: 'Alle Standorte sind bereits eröffnet.' };
-  const { site, index } = next;
-  const unlock = branchUnlockMonthly(index);
-  const price = branchPrice(index);
+/**
+ * Eine frei gewählte Stadt eröffnen (keine feste Reihenfolge). Kosten & Umsatz-Hürde
+ * skalieren mit der Stadtgröße (poolFactor) — die Hauptstadt ist das teure Endgame-Ziel.
+ */
+export function openBranch(state: GameState, site: SiteId): ActionResult {
+  if (site === 'hq') return { ok: false, message: 'Das Hauptlager ist immer offen.' };
+  if (state.branches?.[site]) return { ok: false, message: `${SITE_META[site].name} ist bereits eröffnet.` };
+  const unlock = branchUnlockMonthly(site);
+  const price = branchPrice(site);
   if (monthlyRevenue(state) < unlock) {
     return { ok: false, message: `${SITE_META[site].name} ab ${Math.round(unlock / 1000)}k € Monatsumsatz möglich.` };
   }
@@ -1020,10 +1021,15 @@ export function openBranch(state: GameState): ActionResult {
   // dadurch von Anfang an schneller Neukunden an als der erste Standort damals.
   if (!state.renownBySite) state.renownBySite = {};
   state.renownBySite[site] = RENOWN.NEW_SITE_INHERIT * nationalRenown(state);
+  const meta = SITE_META[site];
   const suedHint = site === 'sued' ? ' 🍷 Wein & 🫒 Oliven sind dort listbar.' : '';
+  const sizeHint = meta.capital
+    ? ' 👑 Die Hauptstadt hat den größten Kundenpool des Landes!'
+    : meta.poolFactor >= 1.2 ? ' Eine große Stadt mit vielen Kunden.'
+    : meta.poolFactor <= 0.7 ? ' Eine kleinere Stadt – überschaubarer Pool, günstiger Einstieg.' : '';
   notify(
     state,
-    `🎉 ${SITE_META[site].name} eröffnet (${price.toLocaleString('de-DE')}€)! Neue Region: ${SITE_META[site].short}-Kunden fragen bald an.${suedHint} Auf der 🗺️ Konzern-Karte kannst du den Standort führen lassen und weiter ausbauen.`,
+    `🎉 ${meta.name} eröffnet (${price.toLocaleString('de-DE')}€)! Neue Region: ${meta.short}-Kunden fragen bald an.${sizeHint}${suedHint} Auf der 🗺️ Konzern-Karte kannst du den Standort führen lassen und ausbauen.`,
     'success',
   );
   return { ok: true };

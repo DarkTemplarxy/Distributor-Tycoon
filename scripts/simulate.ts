@@ -479,7 +479,7 @@ function maxEff(s: GameState, profile: 'max' | 'ambi' = 'max') {
   }
 
   // Branch: open once affordable with a fat buffer (opening + ramp-up cost real cash).
-  if (!branchOpen(s) && afford(BRANCH_PRICE + (ambi ? 40_000 : 30_000))) openBranch(s);
+  if (!branchOpen(s) && afford(BRANCH_PRICE + (ambi ? 40_000 : 30_000))) openBranch(s, 'sued');
 }
 
 /** Does the supplier deliver this product to this site (mirror of the game rule,
@@ -569,7 +569,7 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     // Süd erst mit dickem Kassenpuffer (Eröffnung + Anlauf kosten real mehr)
     // und stellt dann dort Lagerkräfte ein.
     if (strategy === 'sinnvoll' && !branchOpen(s) && s.cash > BRANCH_PRICE + 60000) {
-      openBranch(s);
+      openBranch(s, 'sued');
     }
     if (strategy === 'sinnvoll' && branchOpen(s)) {
       const suedCrew = s.employees.filter((e) => e.role === 'lager' && e.siteId === 'sued').length;

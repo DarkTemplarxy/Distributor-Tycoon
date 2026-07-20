@@ -82,6 +82,7 @@ import {
   supplierDeliversTo,
   SITE_META,
   BRANCH_ORDER,
+  cityPoolFactor,
   BRANCH_RENT,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
@@ -2168,9 +2169,12 @@ function developProductLines(state: GameState, newWeek: number): void {
 
 // --- Marktanteil-Modell (entkoppelt) ----------------------------------------
 
-/** Basis-Markt einer Größe (klein/mittel je Stadt, large FIX pro Land). */
-function marketBase(type: CustomerType): number {
-  return MARKET.BASE[type];
+/** Basis-Markt einer Größe an einem Standort: klein/mittel skalieren mit der STADTGRÖSSE
+ * (poolFactor — kleine Stadt weniger, Hauptstadt viel); large ist ein FIXER Pool pro LAND
+ * (nicht stadt-skaliert). */
+function marketBase(type: CustomerType, site: SiteId = 'hq'): number {
+  if (type === 'large') return MARKET.BASE.large;
+  return MARKET.BASE[type] * cityPoolFactor(site);
 }
 /** Wie viele Kunden dieser Größe du betreust (large = national; sonst je Standort,
  * oder gesamt wenn site weggelassen). */
@@ -2179,9 +2183,9 @@ export function yourHeld(state: GameState, type: CustomerType, site?: SiteId): n
     (c) => c.active && c.type === type && (type === 'large' || site == null || (c.region ?? 'hq') === site),
   ).length;
 }
-/** Basis-Konkurrenz-Anteil einer Größe (Anker: guter Service). */
-function competitorBase(type: CustomerType): number {
-  return marketBase(type) * MARKET.COMPETITOR_SHARE;
+/** Basis-Konkurrenz-Anteil einer Größe an einem Standort (Anker: guter Service). */
+function competitorBase(type: CustomerType, site: SiteId = 'hq'): number {
+  return marketBase(type, site) * MARKET.COMPETITOR_SHARE;
 }
 /** Von Konkurrenten gehaltene Kunden (Stufe 2: dynamisch). Große Kunden bleiben ein
  * FIXER Pool (Basis-Anteil, kein Slot-Wachstum). Für klein/mittel liest die Funktion
@@ -2190,18 +2194,18 @@ function competitorBase(type: CustomerType): number {
 export function competitorHeld(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
   if (type === 'large') return Math.round(competitorBase('large'));
   const held = state.competitorHeldBySite?.[site]?.[type];
-  return Math.round(held ?? competitorBase(type));
+  return Math.round(held ?? competitorBase(type, site));
 }
 /** Ziel-Gleichgewicht der Konkurrenz-Slots: am Service-Anker (COMP_SERVICE_NEUTRAL)
  * exakt der Basis-Anteil; schlechterer Service ODER aggressivere Wettbewerber heben
  * es (sie erobern Markt), besserer Service drückt es (du gewinnst Anteil). */
-function competitorEquilibrium(state: GameState, type: CustomerType): number {
+function competitorEquilibrium(state: GameState, type: CustomerType, site: SiteId): number {
   const comps = ensureCompetitors(state);
   const avgAggr = comps.reduce((s, c) => s + c.aggressiveness, 0) / Math.max(1, comps.length);
   const serviceAdj = 1 + COMP_SERVICE_SLOPE * (COMP_SERVICE_NEUTRAL - state.serviceStars);
   const aggrAdj = 1 + (avgAggr - 0.5) * COMP_AGGR_SLOPE;
   const mult = clamp(serviceAdj * aggrAdj, COMP_SHARE_MIN_MULT, COMP_SHARE_MAX_MULT);
-  return competitorBase(type) * mult;
+  return competitorBase(type, site) * mult;
 }
 /** Wöchentlich: die Konkurrenz-Slots (klein/mittel, je aktivem Standort) nähern sich
  * träge ihrem Gleichgewicht. So wächst der Konkurrenz-Druck bei schlechtem Service /
@@ -2211,10 +2215,10 @@ function runCompetitorSlotsWeek(state: GameState): void {
   for (const site of activeSites(state)) {
     const bySite = (state.competitorHeldBySite[site] ??= {});
     for (const type of ['small', 'medium'] as CustomerType[]) {
-      const cur = bySite[type] ?? competitorBase(type);
-      const target = competitorEquilibrium(state, type);
+      const cur = bySite[type] ?? competitorBase(type, site);
+      const target = competitorEquilibrium(state, type, site);
       const next = cur + (target - cur) * COMP_SLOT_EASE;
-      bySite[type] = clamp(next, competitorBase(type) * COMP_SHARE_MIN_MULT, competitorBase(type) * COMP_SHARE_MAX_MULT);
+      bySite[type] = clamp(next, competitorBase(type, site) * COMP_SHARE_MIN_MULT, competitorBase(type, site) * COMP_SHARE_MAX_MULT);
     }
   }
 }
@@ -2224,8 +2228,8 @@ export function addCompetitorSlot(state: GameState, type: CustomerType, site: Si
   if (type === 'large') return;
   if (!state.competitorHeldBySite) state.competitorHeldBySite = {};
   const bySite = (state.competitorHeldBySite[site] ??= {});
-  const cur = bySite[type] ?? competitorBase(type);
-  bySite[type] = clamp(cur + n, competitorBase(type) * COMP_SHARE_MIN_MULT, competitorBase(type) * COMP_SHARE_MAX_MULT);
+  const cur = bySite[type] ?? competitorBase(type, site);
+  bySite[type] = clamp(cur + n, competitorBase(type, site) * COMP_SHARE_MIN_MULT, competitorBase(type, site) * COMP_SHARE_MAX_MULT);
 }
 /**
  * Gesamt-Markt (Anzeige/Marktanteil): WÄCHST mit dem bedienten Markt (deine Kunden + die der
@@ -2233,7 +2237,7 @@ export function addCompetitorSlot(state: GameState, type: CustomerType, site: Si
  * Kundenmechanik läuft separat; hier kommen Kunden & Markt nur für die Kennzahl zusammen. */
 export function marketPool(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
   if (type === 'large') return marketBase('large');
-  return marketBase(type) + yourHeld(state, type, site) + competitorHeld(state, type, site);
+  return marketBase(type, site) + yourHeld(state, type, site) + competitorHeld(state, type, site);
 }
 /** Marktanteil je Standort/Land: deine Kunden ÷ (deine + Konkurrenz). */
 export function marketPenetration(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
@@ -2252,7 +2256,7 @@ export function typeInquiryChance(state: GameState, type: CustomerType): number 
   let base = 0;
   let comp = 0;
   for (const site of sites) {
-    base += marketBase(type);
+    base += marketBase(type, site);
     comp += competitorHeld(state, type, site);
   }
   const you = yourHeld(state, type);
