@@ -26,10 +26,14 @@ import {
   fleetTransferCapacityPallets,
   fleetMonthlyCost,
   transferCost,
+  activeSites,
+  availableCredit,
+  notify,
 } from '../game/simulation';
-import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundRegionalOffice, buyVehicle, buildVerteilzentrum } from '../game/actions';
+import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundRegionalOffice, buyVehicle, buildVerteilzentrum, openBranch } from '../game/actions';
 import {
-  SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT, BRANCH_UNLOCK_MONTHLY,
+  SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT,
+  BRANCH_ORDER, branchPrice, branchUnlockMonthly, cityPoolFactor, monthlyRevenue,
   TRANSFER_DAYS, TRANSFER_COST_PER_PALLET, TRANSFER_COST_OWN_PER_PALLET, PALETTE_SIZE,
   KONZERN_C_LEVEL, REGIONAL_OFFICE_ROLES, REGIONAL_KAM_LARGE_SLOTS,
   REGIONAL_OFFICE_FOUND_COST, VERTEILZENTRUM_COST, FLEET_VEHICLES,
@@ -108,9 +112,9 @@ function Kpi({ label, value, tone }: { label: string; value: string; tone?: 'goo
 
 /** Ein Stadt-Cluster (Häuserblöcke + Straßen) rund um einen Standort-Pin. Zwei davon
  * bilden die zwei Städte des Landes; das Land dazwischen bleibt frei. */
-function CityCluster({ x, y, name, dim }: { x: number; y: number; name: string; dim?: boolean }) {
+function CityCluster({ x, y, name, dim, sc = 1 }: { x: number; y: number; name: string; dim?: boolean; sc?: number }) {
   const W = 300, H = 210;
-  const ox = x - W / 2, oy = y - H / 2;
+  const ox = -W / 2, oy = -H / 2; // origin-zentriert, per transform skaliert
   const streetsX = [ox + 70, ox + 150, ox + 230];
   const streetsY = [oy + 60, oy + 130];
   const blocks: [number, number][] = [
@@ -118,7 +122,7 @@ function CityCluster({ x, y, name, dim }: { x: number; y: number; name: string; 
     [ox + 30, oy + 150], [ox + 118, oy + 152], [ox + 206, oy + 148],
   ];
   return (
-    <g opacity={dim ? 0.4 : 1}>
+    <g transform={`translate(${x},${y}) scale(${sc})`} opacity={dim ? 0.4 : 1}>
       <rect x={ox} y={oy} width={W} height={H} rx={20} fill="var(--bg-panel-2)" stroke="var(--border)" strokeWidth={2} opacity={0.75} />
       {streetsX.map((sx) => <line key={`sx${sx}`} x1={sx} y1={oy + 12} x2={sx} y2={oy + H - 12} stroke="var(--border)" strokeWidth={3} opacity={0.5} />)}
       {streetsY.map((sy) => <line key={`sy${sy}`} x1={ox + 12} y1={sy} x2={ox + W - 12} y2={sy} stroke="var(--border)" strokeWidth={3} opacity={0.5} />)}
@@ -130,35 +134,49 @@ function CityCluster({ x, y, name, dim }: { x: number; y: number; name: string; 
   );
 }
 
-/** A live location pin on the city map: ring colour = service, badges for open
- * orders and alarms, so the map communicates operational status at a glance. */
+/** A live location pin on the city map. `status`: 'open' (operating), 'openable'
+ * (frei eröffenbar – gestrichelter Ring + ➕), 'locked' (Hürde noch nicht erreicht).
+ * `scale` bildet die Stadtgröße (poolFactor) ab, `capital` krönt die Hauptstadt. */
 function CityPin({
-  x, y, emoji, name, delegated, service, selected, locked, pending = 0, alarms = 0, onClick,
+  x, y, emoji, name, delegated, service, selected, status, scale = 1, capital, pending = 0, alarms = 0, onClick,
 }: {
-  x: number; y: number; emoji: string; name: string; delegated: boolean;
-  service: number; selected: boolean; locked?: boolean; pending?: number; alarms?: number; onClick: () => void;
+  x: number; y: number; emoji: string; name: string; delegated: boolean; service: number;
+  selected: boolean; status: 'open' | 'openable' | 'locked'; scale?: number; capital?: boolean;
+  pending?: number; alarms?: number; onClick: () => void;
 }) {
-  const ring = locked ? 'var(--text-faint)' : service >= 4 ? 'var(--good)' : service > 0 && service < 3 ? 'var(--bad)' : 'var(--accent)';
+  const r = Math.round(26 + 8 * scale); // Größe nach poolFactor
+  const ring = status === 'locked' ? 'var(--text-faint)'
+    : status === 'openable' ? 'var(--accent)'
+    : service >= 4 ? 'var(--good)' : service > 0 && service < 3 ? 'var(--bad)' : 'var(--accent)';
   return (
-    <g transform={`translate(${x},${y})`} className={`km-pin${locked ? ' locked' : ''}`} onClick={onClick} style={{ cursor: 'pointer' }}>
-      {selected && <circle r={38} fill="none" stroke="var(--accent)" strokeWidth={3} opacity={0.9} />}
-      <circle r={30} fill="var(--bg-elev)" stroke={ring} strokeWidth={4} />
-      <text y={10} textAnchor="middle" fontSize={30} opacity={locked ? 0.5 : 1}>{locked ? '🔒' : emoji}</text>
-      {delegated && !locked && <text x={22} y={-18} textAnchor="middle" fontSize={20}>🧑‍✈️</text>}
-      {!locked && pending > 0 && (
-        <g transform="translate(-26,-20)">
+    <g transform={`translate(${x},${y})`} className={`km-pin${status !== 'open' ? ' locked' : ''}`} onClick={onClick} style={{ cursor: 'pointer' }}>
+      {selected && <circle r={r + 8} fill="none" stroke="var(--accent)" strokeWidth={3} opacity={0.9} />}
+      <circle r={r} fill="var(--bg-elev)" stroke={ring} strokeWidth={4} strokeDasharray={status === 'open' ? undefined : '7 6'} />
+      <text y={r / 3} textAnchor="middle" fontSize={r} opacity={status === 'locked' ? 0.55 : status === 'openable' ? 0.85 : 1}>
+        {status === 'locked' ? '🔒' : emoji}
+      </text>
+      {capital && <text y={-r - 6} textAnchor="middle" fontSize={22}>👑</text>}
+      {status === 'openable' && (
+        <g transform={`translate(${r - 4},${-r + 4})`}>
+          <circle r={12} fill="var(--good)" />
+          <text y={5} textAnchor="middle" fontSize={17} fill="#fff" fontWeight={800}>+</text>
+        </g>
+      )}
+      {delegated && status === 'open' && <text x={r - 8} y={-r + 2} textAnchor="middle" fontSize={20}>🧑‍✈️</text>}
+      {status === 'open' && pending > 0 && (
+        <g transform={`translate(${-r + 4},${-r + 10})`}>
           <circle r={12} fill="var(--accent)" />
           <text y={4} textAnchor="middle" fontSize={13} fill="#fff" fontWeight={700}>{pending}</text>
         </g>
       )}
-      {!locked && alarms > 0 && (
-        <g transform="translate(26,20)">
+      {status === 'open' && alarms > 0 && (
+        <g transform={`translate(${r - 4},${r - 10})`}>
           <circle r={11} fill="var(--bad)" />
           <text y={4} textAnchor="middle" fontSize={13} fill="#fff" fontWeight={700}>!</text>
         </g>
       )}
-      <g transform="translate(0,52)">
-        <rect x={-58} y={-16} width={116} height={26} rx={8} fill="var(--bg-panel)" stroke="var(--border)" />
+      <g transform={`translate(0,${r + 22})`}>
+        <rect x={-64} y={-16} width={128} height={26} rx={8} fill="var(--bg-panel)" stroke="var(--border)" />
         <text y={2} textAnchor="middle" fontSize={15} fill="var(--text)" fontWeight={600}>{name}</text>
       </g>
     </g>
@@ -400,6 +418,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   const [selected, setSelected] = useState<SiteId | null>('hq');
   // Transfer-Formular (Waren zwischen den Standorten verschieben)
   const [txFrom, setTxFrom] = useState<SiteId>('hq');
+  const [txTo, setTxTo] = useState<SiteId>('sued');
   const [txProduct, setTxProduct] = useState<ProductId | ''>('');
   const [txQty, setTxQty] = useState(50);
   // Welches Büro ist geöffnet? Konzernzentrale (global, C-Level) oder ein Regionalbüro.
@@ -428,15 +447,27 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   const hireRegional = (role: Role) => mutate((s) => hireEmployee(s, role));
   const enter = (site: SiteId) => { onEnterSite(site); onClose(); };
 
-  const sel = selected && (selected === 'hq' || branchOpen) ? selected : null;
+  // Jede Stadt ist anklickbar: offene führst du, geschlossene eröffnest du.
+  const sel = selected;
+  const isOpenSite = (site: SiteId) => site === 'hq' || !!state.branches?.[site];
 
-  // Transfer-Ableitungen
-  const txTo: SiteId = txFrom === 'hq' ? 'sued' : 'hq';
-  const txProducts = branchOpen ? state.products.filter((p) => shelfStock(p, txFrom) > 0) : [];
-  const txStock = txProduct ? shelfStock(state.products.find((p) => p.id === txProduct)!, txFrom) : 0;
+  // Offene Standorte (hq + eröffnete Zweigstellen) für den Waren-Transfer.
+  const openSites = activeSites(state);
+  const openBranches = BRANCH_ORDER.filter((s) => state.branches?.[s]);
+  const ALL_SITES: SiteId[] = ['hq', ...BRANCH_ORDER];
+  const budget = state.cash + availableCredit(state);
+  const rev = monthlyRevenue(state);
+
+  // Transfer-Ableitungen: Quelle/Ziel auf gültige offene Standorte klemmen.
+  const effFrom: SiteId = openSites.includes(txFrom) ? txFrom : 'hq';
+  const effTo: SiteId = openSites.includes(txTo) && txTo !== effFrom
+    ? txTo
+    : (openSites.find((s) => s !== effFrom) ?? effFrom);
+  const txProducts = branchOpen ? state.products.filter((p) => shelfStock(p, effFrom) > 0) : [];
+  const txStock = txProduct ? shelfStock(state.products.find((p) => p.id === txProduct)!, effFrom) : 0;
   const txPallets = Math.ceil(Math.max(0, txQty) / PALETTE_SIZE);
   const txCost = transferCost(state, txPallets);
-  const doTransfer = () => { if (txProduct) mutate((s) => transferStock(s, txProduct, txQty, txFrom, txTo)); };
+  const doTransfer = () => { if (txProduct) mutate((s) => transferStock(s, txProduct, txQty, effFrom, effTo)); };
 
   // Fuhrpark (4 Fahrzeugklassen): sichtbare, günstige Transfer-Kapazität + Monatskosten.
   const fleet = fleetSize(state);
@@ -522,53 +553,52 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
               {/* Fluss, der durchs Land mäandert */}
               <path d="M90,70 C300,190 250,360 500,410 C720,455 780,560 910,600" fill="none" stroke="var(--accent)" strokeWidth={14} opacity={0.18} strokeLinecap="round" />
 
-              {/* Verbindungs-Autobahn zwischen den zwei Städten (erst mit offenem Süd) */}
-              {branchOpen && (
-                <>
-                  <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={PIN_XY.sued.x} y2={PIN_XY.sued.y}
+              {/* Sternförmige Autobahnen: Hauptlager → jede offene Zweigstelle */}
+              {openBranches.map((s) => (
+                <g key={`ab-${s}`}>
+                  <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={PIN_XY[s].x} y2={PIN_XY[s].y}
                     stroke="var(--border)" strokeWidth={9} opacity={0.7} strokeLinecap="round" />
-                  <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={PIN_XY.sued.x} y2={PIN_XY.sued.y}
+                  <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={PIN_XY[s].x} y2={PIN_XY[s].y}
                     stroke="var(--accent)" strokeWidth={3} strokeDasharray="12 10" opacity={0.7} />
-                </>
-              )}
+                </g>
+              ))}
 
-              {/* Verteilzentrum (Hub): Konsolidierungs-Knoten zwischen den Städten */}
+              {/* Verteilzentrum (Hub): Konsolidierungs-Knoten, Linien zu allen offenen Städten */}
               {hub && (() => {
-                const hx = (PIN_XY.hq.x + PIN_XY.sued.x) / 2;
-                const hy = (PIN_XY.hq.y + PIN_XY.sued.y) / 2 - 110;
+                const hx = openSites.reduce((a, s) => a + PIN_XY[s].x, 0) / openSites.length;
+                const hy = openSites.reduce((a, s) => a + PIN_XY[s].y, 0) / openSites.length - 120;
                 return (
                   <>
-                    <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={hx} y2={hy} stroke="var(--good)" strokeWidth={2.5} strokeDasharray="8 6" opacity={0.5} />
-                    <line x1={PIN_XY.sued.x} y1={PIN_XY.sued.y} x2={hx} y2={hy} stroke="var(--good)" strokeWidth={2.5} strokeDasharray="8 6" opacity={0.5} />
+                    {openSites.map((s) => (
+                      <line key={`hub-${s}`} x1={PIN_XY[s].x} y1={PIN_XY[s].y} x2={hx} y2={hy}
+                        stroke="var(--good)" strokeWidth={2.5} strokeDasharray="8 6" opacity={0.5} />
+                    ))}
                     <HubNode x={hx} y={hy} active={hasLogistiker} />
                   </>
                 );
               })()}
 
-              {/* Zwei Städte */}
-              <CityCluster x={PIN_XY.hq.x} y={PIN_XY.hq.y} name={SITE_META.hq.short} />
-              <CityCluster x={PIN_XY.sued.x} y={PIN_XY.sued.y} name={SITE_META.sued.short} dim={!branchOpen} />
+              {/* Städte-Cluster nur für offene Standorte (deine aufgebauten Städte) */}
+              {openSites.map((s) => (
+                <CityCluster key={`cl-${s}`} x={PIN_XY[s].x} y={PIN_XY[s].y} name={SITE_META[s].short} sc={0.68} />
+              ))}
 
-              {/* Standort Nord (immer) */}
-              {(() => {
-                const k = siteKpis(state, 'hq');
+              {/* Alle sechs Städte als Pins: offen = führbar, offen-bar = eröffenbar, sonst gesperrt */}
+              {ALL_SITES.map((s) => {
+                const open = isOpenSite(s);
+                const status: 'open' | 'openable' | 'locked' = open
+                  ? 'open'
+                  : rev >= branchUnlockMonthly(s) ? 'openable' : 'locked';
+                const k = open ? siteKpis(state, s) : null;
                 return (
-                  <CityPin x={PIN_XY.hq.x} y={PIN_XY.hq.y} emoji={SITE_META.hq.emoji} name={SITE_META.hq.name}
-                    delegated={!!siteManager(state, 'hq')} service={k.service} pending={k.pending} alarms={k.alarms.length}
-                    selected={sel === 'hq'} onClick={() => setSelected('hq')} />
+                  <CityPin key={`pin-${s}`} x={PIN_XY[s].x} y={PIN_XY[s].y}
+                    emoji={SITE_META[s].emoji} name={SITE_META[s].name}
+                    delegated={open && !!siteManager(state, s)}
+                    service={k?.service ?? 0} pending={k?.pending ?? 0} alarms={k?.alarms.length ?? 0}
+                    status={status} scale={cityPoolFactor(s)} capital={SITE_META[s].capital}
+                    selected={sel === s} onClick={() => setSelected(s)} />
                 );
-              })()}
-              {/* Standort Süd (offen → echt, sonst gesperrt) */}
-              {branchOpen ? (() => {
-                const k = siteKpis(state, 'sued');
-                return (
-                  <CityPin x={PIN_XY.sued.x} y={PIN_XY.sued.y} emoji={SITE_META.sued.emoji} name={SITE_META.sued.name}
-                    delegated={!!siteManager(state, 'sued')} service={k.service} pending={k.pending} alarms={k.alarms.length}
-                    selected={sel === 'sued'} onClick={() => setSelected('sued')} />
-                );
-              })() : (
-                <CityPin x={PIN_XY.sued.x} y={PIN_XY.sued.y} emoji={SITE_META.sued.emoji} name="Standort Süd" delegated={false} service={0} selected={false} locked onClick={() => setSelected(null)} />
-              )}
+              })}
 
               {/* Laufende Transfers als fahrende LKW */}
               {branchOpen && <TransferTrucks state={state} />}
@@ -601,7 +631,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
         <aside className="konzern-side">
           {level === 'stadt' ? (
             <>
-            {sel ? (() => {
+            {sel && isOpenSite(sel) ? (() => {
               const meta = SITE_META[sel];
               const k = siteKpis(state, sel);
               const leiter = siteManager(state, sel);
@@ -610,7 +640,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                   <div className="km-side-head">
                     <span style={{ fontSize: 30 }}>{meta.emoji}</span>
                     <div>
-                      <div className="km-side-title">{meta.name}</div>
+                      <div className="km-side-title">{meta.name}{meta.capital && ' 👑'}</div>
                       {leiter
                         ? <span className="pill good">🧑‍✈️ automatisch geführt</span>
                         : <span className="pill">Hands-on</span>}
@@ -643,28 +673,91 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                   </div>
                 </>
               );
+            })() : sel ? (() => {
+              // Geschlossene Stadt → Eröffnen-Panel (größen-skalierte Hürde & Kosten).
+              const meta = SITE_META[sel];
+              const price = branchPrice(sel);
+              const unlock = branchUnlockMonthly(sel);
+              const unlocked = rev >= unlock;
+              const affordable = budget >= price;
+              const sizeLabel = meta.capital ? '👑 Hauptstadt'
+                : meta.poolFactor >= 1.3 ? 'große Stadt'
+                : meta.poolFactor >= 1.0 ? 'mittelgroße Stadt'
+                : meta.poolFactor >= 0.8 ? 'mittlere Stadt'
+                : 'kleine Stadt';
+              const target = sel;
+              const doOpen = () => mutate((s) => {
+                const r = openBranch(s, target);
+                if (!r.ok && r.message) notify(s, `⚠️ ${r.message}`, 'warn');
+              });
+              return (
+                <>
+                  <div className="km-side-head">
+                    <span style={{ fontSize: 30 }}>{unlocked ? meta.emoji : '🔒'}</span>
+                    <div>
+                      <div className="km-side-title">{meta.name}{meta.capital && ' 👑'}</div>
+                      <span className={`pill ${unlocked ? 'good' : ''}`}>{unlocked ? 'eröffenbar' : '🔒 gesperrt'}</span>
+                    </div>
+                  </div>
+                  <p className="sub" style={{ margin: '0 0 10px' }}>
+                    {meta.capital
+                      ? 'Die Hauptstadt – der größte Kundenpool des Landes und dein Endgame-Ziel. Teuer im Aufbau, aber die Krone deiner Expansion.'
+                      : `Eine ${sizeLabel} mit ${meta.poolFactor >= 1 ? 'großem' : 'überschaubarem'} Kundenpool. Eröffnest du sie, wächst hier ein eigener Kundenstamm mit eigener Konkurrenz.`}
+                  </p>
+                  <div className="km-kpis">
+                    <Kpi label="Größe" value={sizeLabel.replace('👑 ', '')} />
+                    <Kpi label="Kundenpool" value={`×${meta.poolFactor.toFixed(1)}`} tone={meta.poolFactor >= 1.2 ? 'good' : undefined} />
+                    <Kpi label="Umsatz-Hürde" value={`${Math.round(unlock / 1000)}k`} tone={unlocked ? 'good' : 'bad'} />
+                    <Kpi label="Eröffnung" value={`${eur(price)}€`} />
+                  </div>
+                  <p className="sub" style={{ margin: '8px 0' }}>
+                    {unlocked
+                      ? `✅ Hürde erreicht (aktuell ${eur(rev)}€ Monatsumsatz).`
+                      : `Noch ${eur(unlock - rev)}€ Monatsumsatz bis zur Freischaltung (aktuell ${eur(rev)} / ${eur(unlock)}€).`}
+                  </p>
+                  <div className="km-actions">
+                    <button className="btn primary" disabled={!unlocked || !affordable} onClick={doOpen}
+                      title={!unlocked ? `Ab ${Math.round(unlock / 1000)}k € Monatsumsatz.`
+                        : !affordable ? `Eröffnung kostet ${eur(price)}€.`
+                        : 'Vorsicht: Halle + Personal + Warenaufbau kosten zusätzlich – wer sich übernimmt, riskiert die Kasse.'}>
+                      {meta.capital ? '👑 ' : ''}Eröffnen ({eur(price)}€)
+                    </button>
+                  </div>
+                </>
+              );
             })() : (
               <div className="km-hint">
-                <p><b>Zweite Stadt (Süd) noch nicht eröffnet.</b></p>
-                <p className="sub">Ab {Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz eröffnest du sie über <b>🏢 Ausbau</b> – dann erscheint sie hier auf der Karte, und du kannst dafür ein <b>Regionalbüro gründen</b>.</p>
-                <button className="btn" onClick={() => setSelected('hq')}>Stadt Nord ansehen</button>
+                <p><b>Wähle eine Stadt auf der Karte.</b></p>
+                <p className="sub">Offene Städte (Ring durchgezogen) führst du, freie Städte (gestrichelter Ring, ➕) eröffnest du hier – bis hin zur 👑 Hauptstadt.</p>
+                <button className="btn" onClick={() => setSelected('hq')}>Hauptlager Nord ansehen</button>
               </div>
             )}
-            {branchOpen && (
+            {branchOpen && openSites.length >= 2 && (
               <div className="km-transfer">
                 <h4>🚚 Waren transferieren</h4>
                 <div className="km-tx-dir">
-                  <span className="pill">{SITE_META[txFrom].emoji} {SITE_META[txFrom].short}</span>
-                  <button className="btn small ghost" title="Richtung umkehren" onClick={() => { setTxFrom(txTo); setTxProduct(''); }}>⇄</button>
-                  <span className="pill">{SITE_META[txTo].emoji} {SITE_META[txTo].short}</span>
+                  <select className="km-input" value={effFrom}
+                    onChange={(e) => { setTxFrom(e.target.value as SiteId); setTxProduct(''); }}>
+                    {openSites.map((s) => (
+                      <option key={s} value={s}>{SITE_META[s].emoji} {SITE_META[s].short}</option>
+                    ))}
+                  </select>
+                  <button className="btn small ghost" title="Richtung umkehren"
+                    onClick={() => { setTxFrom(effTo); setTxTo(effFrom); setTxProduct(''); }}>⇄</button>
+                  <select className="km-input" value={effTo}
+                    onChange={(e) => setTxTo(e.target.value as SiteId)}>
+                    {openSites.filter((s) => s !== effFrom).map((s) => (
+                      <option key={s} value={s}>{SITE_META[s].emoji} {SITE_META[s].short}</option>
+                    ))}
+                  </select>
                 </div>
                 <select className="km-input" value={txProduct} onChange={(e) => setTxProduct(e.target.value as ProductId)}>
                   <option value="">Produkt wählen…</option>
                   {txProducts.map((p) => (
-                    <option key={p.id} value={p.id}>{p.emoji} {p.name} – {shelfStock(p, txFrom)}× im Regal</option>
+                    <option key={p.id} value={p.id}>{p.emoji} {p.name} – {shelfStock(p, effFrom)}× im Regal</option>
                   ))}
                 </select>
-                {txProducts.length === 0 && <p className="sub">Kein Regalbestand in {SITE_META[txFrom].short} zum Verschieben.</p>}
+                {txProducts.length === 0 && <p className="sub">Kein Regalbestand in {SITE_META[effFrom].short} zum Verschieben.</p>}
                 <div className="km-tx-row">
                   <input className="km-input" type="number" min={1} value={txQty}
                     onChange={(e) => setTxQty(Math.max(1, Math.floor(+e.target.value) || 0))} />
@@ -682,7 +775,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                 <button className="btn primary" disabled={!txProduct || txQty < 1 || txQty > txStock || state.cash < txCost}
                   onClick={doTransfer}
                   title={txProduct && txQty > txStock ? `Nur ${txStock}× verfügbar` : undefined}>
-                  Senden ({SITE_META[txFrom].short} → {SITE_META[txTo].short})
+                  Senden ({SITE_META[effFrom].short} → {SITE_META[effTo].short})
                 </button>
 
               </div>
