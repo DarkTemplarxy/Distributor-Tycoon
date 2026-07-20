@@ -681,6 +681,31 @@ export const INQUIRY_BASE_CHANCE: Record<CustomerType, number> = {
 };
 
 /**
+ * Expliziter Markt-Pool (Marktanteil-Modell). Je Stadt gibt es einen ENDLICHEN
+ * Kunden-Pool je Größe, aufgeteilt in DEINE Kunden, von KONKURRENTEN gehaltene und
+ * FREIE. Du wächst in die freien Slots; die Konkurrenz drückt (COMPETITOR_SHARE). Der
+ * kleine Pool wächst mit der Sortimentsbreite — manche Kunden kommen erst, wenn du ihre
+ * Produktgruppe listest (+SMALL_PER_GROUP je Gruppe) → bei vollem Sortiment ~38, davon
+ * ~40 % (≈15) für dich. Vertrieb & Ruf vergrößern den Pool zusätzlich, guter Service
+ * beschleunigt die Akquise. (Die Rate-Kurve bleibt wie gehabt, Service & Ruf kommen als
+ * Faktoren dazu; INQUIRY_MARKET/INQUIRY_BASE_CHANCE bleiben die Kalibrier-Basis.)
+ */
+export const MARKET = {
+  /** Basis-Pool je Stadt (large = pro LAND, nicht pro Stadt). */
+  BASE: { small: 20, medium: 10, large: 5 } as Record<CustomerType, number>,
+  /** Zusätzliche kleine Kunden je gelisteter Produktgruppe. */
+  SMALL_PER_GROUP: 2,
+  /** Pool-Zuwachs je Vertriebs-Kraft (skill-gewichtet), je Größe. */
+  SALES_POOL_PER_REP: { small: 5, medium: 2, large: 0.5 } as Record<CustomerType, number>,
+  /** Anteil des Pools, den die Konkurrenz hält → dein Deckel ≈ (1 − dieser Anteil). */
+  COMPETITOR_SHARE: 0.6,
+  /** Ruf (0..100) hebt den Pool um bis zu diesem Anteil (bei Ruf 100). */
+  RENOWN_POOL_BONUS: 0.25,
+  /** Service-Faktor auf die Akquise-Rate: Boden + Rest × (Sterne/5). */
+  SERVICE_FLOOR: 0.6,
+} as const;
+
+/**
  * Light expansion inquiries (🔁 Bestandskunde möchte eine weitere Produktlinie)
  * SCALE with the customer base: each eligible customer rolls this chance every
  * Thursday, capped per week. No deadlines, no escalation — declining is free.

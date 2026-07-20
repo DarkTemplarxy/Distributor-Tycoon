@@ -45,9 +45,8 @@ import {
   EXPANSION_MIN_LOYALTY,
   INQUIRY_BASE_CHANCE,
   RENOWN,
-  INQUIRY_MARKET,
+  MARKET,
   INQUIRY_DAY_OF_WEEK,
-  SALES_MARKET_PER_REP,
   ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
   INQUIRY_FAMILIAR_PRODUCT_CHANCE,
@@ -67,7 +66,6 @@ import {
   supplierDeliversTo,
   SITE_META,
   BRANCH_RENT,
-  BRANCH_MARKET_BONUS,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
   REPRICE_ACCEPT_FLOOR,
@@ -2080,20 +2078,56 @@ export function marketingPower(state: GameState): number {
     .reduce((sum, e) => sum + 0.5 + 0.5 * (e.skill / 100), 0);
 }
 
-/** Weekly chance of a NEW-customer inquiry of a given size: a per-tier
- * saturation curve, BASE × market/(market + Kunden dieser Größe), whose market
- * is enlarged by the Vertrieb team. Each tier saturates against its OWN count,
- * so a pile of small customers never suppresses the rare medium/large tiers. */
+// --- Markt-Pool (Marktanteil-Modell) ----------------------------------------
+
+/** Endlicher Kunden-Pool je Größe. small/medium PRO STADT, large PRO LAND (national).
+ * Wächst mit Sortimentsbreite (small: +MARKET.SMALL_PER_GROUP je gelisteter Gruppe),
+ * mit dem Vertrieb (skill-gewichtet) und mit dem Ruf. */
+export function marketPool(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
+  let base = MARKET.BASE[type];
+  if (type === 'small') base += MARKET.SMALL_PER_GROUP * state.products.length;
+  base += salesAcquisitionPower(state) * MARKET.SALES_POOL_PER_REP[type];
+  const renown = type === 'large' ? nationalRenown(state) : siteRenown(state, site);
+  base *= 1 + (renown / RENOWN.MAX) * MARKET.RENOWN_POOL_BONUS;
+  return base;
+}
+/** Wie viele Kunden dieser Größe du betreust (large = national; sonst je Standort,
+ * oder gesamt wenn site weggelassen). */
+export function yourHeld(state: GameState, type: CustomerType, site?: SiteId): number {
+  return state.customers.filter(
+    (c) => c.active && c.type === type && (type === 'large' || site == null || (c.region ?? 'hq') === site),
+  ).length;
+}
+/** Von Konkurrenten gehaltener Anteil des Pools. Stage 1: fixer Anteil (COMPETITOR_SHARE);
+ * Stage 2 wird er dynamisch je Aggressivität & deinem Service. */
+export function competitorHeld(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
+  return marketPool(state, type, site) * MARKET.COMPETITOR_SHARE;
+}
+/** Marktdurchdringung je Standort/Land: dein Anteil am bedienten Markt (du ÷ du+Konkurrenz). */
+export function marketPenetration(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
+  const you = yourHeld(state, type, type === 'large' ? undefined : site);
+  const comp = competitorHeld(state, type, site);
+  return you + comp > 0 ? you / (you + comp) : 0;
+}
+
+/** Weekly chance of a NEW-customer inquiry of a given size. Die Sättigungs-Kurve
+ * bleibt wie gehabt (BASE × Pool/(Pool + du + Konkurrenz)), nur zählt jetzt die
+ * KONKURRENZ mit (sie drückt), und Service (guter = schneller) + Ruf fließen als
+ * Faktoren ein. Der Pool ist endlich und je Stadt — Expansion bringt einen frischen. */
 export function typeInquiryChance(state: GameState, type: CustomerType): number {
-  const count = state.customers.filter((c) => c.active && c.type === type).length;
-  // Ein eröffneter Standort erschließt eine NEUE Region → der erreichbare Markt
-  // wächst (BRANCH_MARKET_BONUS) — der Sinn der Expansion gegen die Sättigung.
-  const regionFactor = branchOpen(state) ? BRANCH_MARKET_BONUS : 1;
-  const market =
-    (INQUIRY_MARKET[type] + salesAcquisitionPower(state) * SALES_MARKET_PER_REP) * regionFactor;
-  // Landes-Ruf hebt die gesamte Neukunden-Rate (bekannte Marke = mehr Anfragen).
+  const sites: SiteId[] = type === 'large' ? ['hq'] : activeSites(state);
+  let pool = 0;
+  let comp = 0;
+  for (const site of sites) {
+    pool += marketPool(state, type, site);
+    comp += competitorHeld(state, type, site);
+  }
+  const you = yourHeld(state, type);
+  const saturation = pool > 0 ? pool / (pool + you + comp) : 0;
+  // Service neutral bei 3★, +/− je Stern (guter Service = schneller wahrgenommen).
+  const serviceFactor = clamp(1 + 0.1 * (state.serviceStars - 3), MARKET.SERVICE_FLOOR, 1.2);
   const renownBoost = 1 + (nationalRenown(state) / RENOWN.MAX) * RENOWN.ACQUISITION_BOOST;
-  return INQUIRY_BASE_CHANCE[type] * (market / (market + count)) * renownBoost;
+  return INQUIRY_BASE_CHANCE[type] * saturation * serviceFactor * renownBoost;
 }
 
 /** Expected new-customer inquiries per week across all unlocked tiers that have
