@@ -83,7 +83,7 @@ import {
 import { weekOf } from '../src/game/util.ts';
 import type { CustomerType, GameState } from '../src/game/types.ts';
 
-type Strategy = 'greedy' | 'passiv' | 'sinnvoll' | 'kam_spam' | 'kam_spam_plus' | 'maxeff';
+type Strategy = 'greedy' | 'passiv' | 'sinnvoll' | 'kam_spam' | 'kam_spam_plus' | 'maxeff' | 'ambitioniert';
 
 interface WeekRow {
   week: number;
@@ -326,8 +326,9 @@ function ensureDesk(s: GameState) {
  *
  * Every discretionary spend respects a cash `reserve`, so it can never over-extend.
  */
-function maxEff(s: GameState) {
+function maxEff(s: GameState, profile: 'max' | 'ambi' = 'max') {
   const monthly = monthlyRevenue(s);
+  const ambi = profile === 'ambi';
   s.settings.buyerOrderBuffer = 0.15;
 
   // Survival baseline (runs always): the proven sinnvoll reactive growth (HQ
@@ -349,12 +350,18 @@ function maxEff(s: GameState) {
   // the bottleneck (more prep tables, faster gear, staff/space to match volume) → less
   // lateness → better service → survival. Reserve kept low so it can build during the
   // mid-game crunch, which is exactly when throughput needs raising.
-  const scaling = monthly > 25_000 && s.serviceStars >= 3.8;
+  // Der ambitionierte Bot bleibt in Jahr 1 schlank (nur sinnvollGrowth) und beginnt
+  // die aggressive Skalierung erst NACH der Jahr-1-Durchsatz-/Kassenklippe (ab 55k),
+  // sonst überbaut er die Nachfrage und stirbt (wie maxeff).
+  const scaling = monthly > (ambi ? 55_000 : 25_000) && s.serviceStars >= 3.8;
   if (scaling) {
     // Reserve MUST exceed a week's inventory buy, or scaling spend starves the stock
     // order → stockout → idle prep → late → churn (the year-2 death cliff). Tie it to
     // turnover: a bigger operation buys more stock each week and needs a fatter cushion.
-    const reserve = Math.max(18_000, monthly * 0.35);
+    // Der ambitionierte Bot skaliert genauso aggressiv, hält aber eine deutlich
+    // dickere Reserve — er soll die Decke ERREICHEN und dabei ÜBERLEBEN (nicht wie
+    // maxeff die Über-Extension messen).
+    const reserve = ambi ? Math.max(30_000, monthly * 0.5) : Math.max(18_000, monthly * 0.35);
     const afford = (cost: number) => s.cash - cost >= reserve;
 
     for (const site of sites()) {
@@ -436,7 +443,7 @@ function maxEff(s: GameState) {
   if (!fortress) return;
   // Even fatter cushion before ADDING demand — a new customer/product raises the
   // weekly stock buy immediately, so keep well clear of the inventory-starve cliff.
-  const reserve = Math.max(35_000, monthly * 0.5);
+  const reserve = ambi ? Math.max(50_000, monthly * 0.7) : Math.max(35_000, monthly * 0.5);
   const afford = (cost: number) => s.cash - cost >= reserve;
 
   // Product breadth — ONE group at a time, only with healthy service and cold-shelf
@@ -451,26 +458,28 @@ function maxEff(s: GameState) {
     }
   }
 
-  // Sales reps enlarge the reachable market (diminishing returns → cap at 2).
-  if (s.employees.filter((e) => e.role === 'sales').length < 2 && afford(15_000)) {
+  // Sales reps enlarge the reachable market (diminishing returns). Der ambitionierte
+  // Bot geht auf mehr Reps, weil die Akquise-Rate (nicht der Durchsatz) der Engpass
+  // Richtung 600k ist — so messen wir, ob der Markt überhaupt genug hergibt.
+  if (s.employees.filter((e) => e.role === 'sales').length < (ambi ? 5 : 2) && afford(15_000)) {
     ensureDesk(s);
     if (freeDesks(s) > 0) hireEmployee(s, 'sales');
   }
 
   // Proactive customer-slot buffer so no inquiry is refused for lack of capacity.
+  // NUR klein/mittel — Großkunden laufen über den Regional-KAM im Regionalbüro, ein
+  // zentraler KAM gibt dafür KEINE Kapazität (sonst endloses nutzloses KAM-Hiring).
   const wantMed = monthly >= MEDIUM_UNLOCK_MONTHLY;
-  const wantLarge = monthly >= LARGE_UNLOCK_MONTHLY;
   const slotShort =
     freeCapacity(s, 'small') < 3 ||
-    (wantMed && freeCapacity(s, 'medium') < 2) ||
-    (wantLarge && freeCapacity(s, 'large') < 1);
+    (wantMed && freeCapacity(s, 'medium') < 2);
   if (slotShort && afford(10_000)) {
     ensureDesk(s);
     if (freeDesks(s) > 0) hireEmployee(s, 'kam');
   }
 
   // Branch: open once affordable with a fat buffer (opening + ramp-up cost real cash).
-  if (!branchOpen(s) && afford(BRANCH_PRICE + 30_000)) openBranch(s);
+  if (!branchOpen(s) && afford(BRANCH_PRICE + (ambi ? 40_000 : 30_000))) openBranch(s);
 }
 
 /** Does the supplier deliver this product to this site (mirror of the game rule,
@@ -524,7 +533,7 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
           // commitment on a fragile base is the over-extension trap, not optimal
           // play. Mirrors the `fortress` gate in maxEff(). Others always decline.
           const est = (monthlyRevenue(s) > 90_000 && s.serviceStars >= 4.2) || s.cash > 150_000;
-          if (strategy === 'maxeff' && est) acceptBigOrder(s, inq.id);
+          if ((strategy === 'maxeff' || strategy === 'ambitioniert') && est) acceptBigOrder(s, inq.id);
           continue;
         }
         // New customers need free capacity; expansions of existing ones don't.
@@ -574,7 +583,7 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     // cold-chain product (Käse/Tiefkühl/Feinkost) — the ware can ONLY be stored
     // in shelves on cool tiles; without one it spoils fast in inbound. Also
     // extend the zone when cold shelf space runs low. ---
-    if (strategy === 'sinnvoll' || strategy === 'maxeff') {
+    if (strategy === 'sinnvoll' || strategy === 'maxeff' || strategy === 'ambitioniert') {
       const needsColdSpace =
         coldChainGap(s) ||
         (s.products.some((p) => getProductDef(p.id).requiresCooling) && coldShelfFree(s) < 40);
@@ -592,11 +601,11 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
 
     // --- bot: sinnvoll (and the supported spam) hire a warehouse worker when
     // deliveries slip ---
-    if ((strategy === 'sinnvoll' || strategy === 'kam_spam_plus' || strategy === 'maxeff') && s.stats.lateOrders > lastLate) {
+    if ((strategy === 'sinnvoll' || strategy === 'kam_spam_plus' || strategy === 'maxeff' || strategy === 'ambitioniert') && s.stats.lateOrders > lastLate) {
       const lager = s.employees.filter((e) => e.role === 'lager').length;
-      // maxeff builds prep tables past 8, so more lager can actually prep; the
-      // reactive baselines keep their proven 12-cap.
-      const cap = strategy === 'maxeff' ? 16 : 12;
+      // maxeff/ambitioniert build prep tables past 8, so more lager can actually
+      // prep; the reactive baselines keep their proven 12-cap.
+      const cap = strategy === 'maxeff' || strategy === 'ambitioniert' ? 20 : 12;
       if (lager < cap) hireEmployee(s, 'lager');
     }
     lastLate = s.stats.lateOrders;
@@ -612,6 +621,13 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     // and pushes prices to target margin — the optimal-play ceiling measurement ---
     if (strategy === 'maxeff') {
       maxEff(s);
+      sinnvollReprice(s);
+    }
+    // --- bot: ambitioniert — dieselben aggressiven Durchsatz-Hebel wie maxeff
+    // (endlos Tische/Crew/Training/Ausrüstung + Standort Süd), aber mit dicker
+    // Kassenreserve, damit er die 600k ERREICHT und überlebt. ---
+    if (strategy === 'ambitioniert') {
+      maxEff(s, 'ambi');
       sinnvollReprice(s);
     }
 
