@@ -1470,6 +1470,22 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
     uncleComment: 'Ein Supermarkt. Junge, das hätte ich nie für möglich gehalten. Ich bin so stolz auf dich.',
     check: (s) => s.customers.some((c) => c.active && c.type === 'large'),
   },
+  {
+    id: 'first_branch',
+    emoji: '🏬',
+    title: 'Zweiter Standort eröffnet',
+    description: 'Eröffne deine erste Zweigstelle in einer anderen Stadt.',
+    uncleComment: 'Ein zweiter Standort! Aus dem einen Lager wird ein Konzern. Das ist eine andere Liga.',
+    check: (s) => Object.keys(s.branches ?? {}).length >= 1,
+  },
+  {
+    id: 'capital_opened',
+    emoji: '🏙️',
+    title: 'Ankunft in der Hauptstadt',
+    description: 'Eröffne den Standort in der Hauptstadt Berlin – dem größten Markt des Landes.',
+    uncleComment: 'Berlin! Der größte Markt im ganzen Land trägt jetzt deinen Namen. Weiter als bis hierher habe ich es nie geträumt – und du BIST hier.',
+    check: (s) => !!s.branches?.ost,
+  },
 ];
 
 export function getMilestoneDef(id: string): MilestoneDef | undefined {

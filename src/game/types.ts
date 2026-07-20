@@ -110,8 +110,6 @@ export interface Product {
   /** Shelf life in days. */
   spoilageDays: number;
   batches: Batch[];
-  /** Optional auto-restock rule. */
-  autoRestock: { enabled: boolean; min: number; target: number };
 }
 
 /** One article a customer buys: its own price and weekly volume. Phase B2:
@@ -504,12 +502,6 @@ export interface GameState {
    * Einkäufer oder manuell) — zeigt „bereits bestellt" + Überschreiben. Jeder
    * Standort hat sein eigenes Bestellfenster; am Montag-Rollover geleert. */
   currentWeekPoBySite: Partial<Record<SiteId, string>>;
-  /** Units demanded per product during the currently-running week (accumulates
-   * as customer orders come in). Rolled into demandLog at the weekly rollover. */
-  demandThisWeek: Partial<Record<ArticleId, number>>;
-  /** Per-product history of weekly demanded units (most recent last), used by the
-   * order recommendation ("average of the last 2 weeks"). */
-  demandLog: Partial<Record<ArticleId, number[]>>;
 
   /** Owned equipment levels (Paket 2). Missing/undefined = level 0. Optional for
    * save compatibility; read via equipmentLevel(). */

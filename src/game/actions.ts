@@ -44,7 +44,6 @@ import {
   STRATEGY_COOLDOWN_WEEKS,
   supplierDeliversTo,
   SITE_META,
-  BRANCH_ORDER,
   branchUnlockMonthly,
   branchPrice,
   monthlyRevenue,
@@ -180,19 +179,6 @@ export function applyAutoPrice(state: GameState, productId: ArticleId): void {
   const m = clamp(product.zielmarge, 0, 89) / 100;
   const price = product.einkaufspreis / (1 - m);
   product.verkaufspreis = Math.round(price * 2) / 2;
-}
-
-export function setAutoRestock(
-  state: GameState,
-  productId: ArticleId,
-  rule: { enabled: boolean; min: number; target: number },
-): void {
-  const product = getProduct(state, productId);
-  product.autoRestock = {
-    enabled: rule.enabled,
-    min: Math.max(0, Math.round(rule.min)),
-    target: Math.max(0, Math.round(rule.target)),
-  };
 }
 
 // --- Assortment -------------------------------------------------------------
@@ -1040,10 +1026,6 @@ export function buildTable(state: GameState, gx: number, gy: number, site: SiteI
  * sich bequem leisten kann (Übernahme-Risiko ist Teil des Spiels). */
 /** Standorte, die JETZT eröffnet werden könnten (noch nicht offen); frei wählbar,
  * jeder mit eigener größen-skalierter Hürde. */
-export function openableBranches(state: GameState): SiteId[] {
-  return BRANCH_ORDER.filter((s) => !state.branches?.[s]);
-}
-
 /**
  * Eine frei gewählte Stadt eröffnen (keine feste Reihenfolge). Kosten & Umsatz-Hürde
  * skalieren mit der Stadtgröße (poolFactor) — die Hauptstadt ist das teure Endgame-Ziel.

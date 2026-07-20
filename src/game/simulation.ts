@@ -1473,8 +1473,6 @@ function generateCustomerOrder(state: GameState, customer: Customer, line: Custo
     1,
     Math.round(line.volume * seasonal * discountUplift * jitter * strategyDemandFactor(state)),
   );
-  // Track actual demanded units this week (feeds the order recommendation).
-  state.demandThisWeek[line.productId] = (state.demandThisWeek[line.productId] ?? 0) + qty;
   const price = line.price * (1 - customer.activeDiscount);
   const dueWeek = week + customer.deliveryLeadWeeks;
 
@@ -3171,16 +3169,6 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
     deliveredOrders: 0,
     lateOrders: 0,
   };
-
-  // 4b. Roll the ended week's per-product demand into the log (keep the last 4
-  // weeks) and reset the running counter — feeds the order recommendation.
-  for (const product of state.products) {
-    const log = state.demandLog[product.id] ?? [];
-    log.push(state.demandThisWeek[product.id] ?? 0);
-    if (log.length > 4) log.shift();
-    state.demandLog[product.id] = log;
-  }
-  state.demandThisWeek = {};
 
   // 5. Quarterly triggers (start of a new quarter/season, not week 0). Keeps
   // running across years so seasons and supplier prices keep evolving.

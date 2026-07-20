@@ -29,7 +29,7 @@ import { STARTING_CUSTOMER_IDS, STEP, TUTORIAL_ORDER_ID } from './tutorial';
  * von der Gruppe, wenn der Artikel sie nicht überschreibt. */
 export function buildProduct(
   art: ArticleDef,
-  opts?: { batches?: Batch[]; autoRestock?: Product['autoRestock'] },
+  opts?: { batches?: Batch[] },
 ): Product {
   const g = getProductDef(art.groupId);
   return {
@@ -42,7 +42,6 @@ export function buildProduct(
     zielmarge: art.zielmarge ?? g.zielmarge,
     spoilageDays: art.spoilageDays ?? g.spoilageDays,
     batches: opts?.batches ?? [],
-    autoRestock: opts?.autoRestock ?? { enabled: false, min: 40, target: 120 },
   };
 }
 
@@ -67,15 +66,7 @@ function makeProducts(): Product[] {
           location: 'shelf', // starter stock is already shelved
         });
       }
-      return buildProduct(art, {
-        batches,
-        // Procurement starts fully MANUAL — automatic restock only after an
-        // Einkäufer is hired. The lead fish gets a demand-scaled min/target.
-        autoRestock:
-          art.id === STARTER_FISH
-            ? { enabled: false, min: 90, target: 160 }
-            : { enabled: false, min: 40, target: 120 },
-      });
+      return buildProduct(art, { batches });
     }),
   );
 }
@@ -265,8 +256,6 @@ export function createInitialState(): GameState {
     // seen the opening week's demand); the 80 starting fish cover until then.
     pendingOrderWeek: null,
     currentWeekPoBySite: {},
-    demandThisWeek: {},
-    demandLog: {},
 
     stats: {
       totalRevenue: 0,

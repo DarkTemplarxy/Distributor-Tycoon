@@ -3,7 +3,7 @@ import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { assignCustomerManager, repriceCooldownLeft, setCustomerLinePrice, setDiscount } from '../../game/actions';
 import { freeCapacity, managers, regionalKams, notify, repriceAcceptChance } from '../../game/simulation';
-import { demandUpliftFromDiscount, getProductDef, getArticleDef, SITE_META, MANAGER_SLOTS, REGIONAL_KAM_LARGE_SLOTS, SLOT_COST } from '../../game/constants';
+import { demandUpliftFromDiscount, getProductDef, getArticleDef, groupOfArticle, SITE_META, MANAGER_SLOTS, REGIONAL_KAM_LARGE_SLOTS, SLOT_COST } from '../../game/constants';
 import type { Customer, CustomerLine, CustomerType, Product } from '../../game/types';
 import { weekOf } from '../../game/util';
 import { CustomerTypeFilter, Stars, prodColor, useCustomerTypeFilter } from '../shared';
@@ -206,6 +206,19 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
                       </span>
                     )}{' '}
                     <span className="pill good">~{Math.round(weeklyRevenue)}€/Woche</span>
+                    {/* D3: Artikel-Sammlung sichtbar machen — etablierte Kunden nehmen über
+                        die Zeit immer mehr Artikel/Gruppen ab (Wachstumsmotor). */}
+                    {c.lines.length > 1 && (
+                      <>
+                        {' '}
+                        <span
+                          className="pill"
+                          title={`Dieser Kunde bezieht ${c.lines.length} Artikel aus ${new Set(c.lines.map((l) => groupOfArticle(l.productId))).size} Produktgruppen – aufklappen für Details.`}
+                        >
+                          🧺 {c.lines.length} Artikel · {new Set(c.lines.map((l) => groupOfArticle(l.productId))).size} Gruppen
+                        </span>
+                      </>
+                    )}
                     {demandInq && (
                       <>
                         {' '}
