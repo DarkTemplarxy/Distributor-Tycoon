@@ -1,10 +1,16 @@
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { marketRanking, marketShare, playerRank } from '../../game/simulation';
-import { COMPETITOR_DEFS, POACH_LOYALTY_CEILING } from '../../game/constants';
+import { marketRanking, marketShare, playerRank, yourHeld, competitorHeld, activeSites } from '../../game/simulation';
+import { COMPETITOR_DEFS, POACH_SAFE_LOYALTY, CUSTOMER_EMOJI } from '../../game/constants';
+import type { CustomerType } from '../../game/types';
 import { weekOf } from '../../game/util';
 
 const RANK_LABEL = ['', '🥇', '🥈', '🥉'];
+const TYPE_ROWS: { type: CustomerType; label: string }[] = [
+  { type: 'small', label: 'Kleinkunden' },
+  { type: 'medium', label: 'Mittelkunden' },
+  { type: 'large', label: 'Großkunden' },
+];
 
 function aggrLabel(a: number): string {
   if (a >= 0.65) return 'sehr aggressiv';
@@ -19,16 +25,43 @@ export function MarketModal({ onClose }: { onClose: () => void }) {
   const rank = playerRank(state);
   const week = weekOf(state.totalDays);
   const courted = state.customers.filter((c) => c.active && (c.courtedUntilWeek ?? 0) >= week);
+  const sites = activeSites(state);
+  const typeShare = TYPE_ROWS.map(({ type, label }) => {
+    const you = yourHeld(state, type);
+    const comp = type === 'large'
+      ? competitorHeld(state, 'large', 'hq')
+      : sites.reduce((s, site) => s + competitorHeld(state, type, site), 0);
+    const share = you + comp > 0 ? you / (you + comp) : 0;
+    return { type, label, you, comp, share };
+  });
 
   return (
     <Modal title="Markt & Konkurrenz" icon="📈" onClose={onClose} wide>
       <p className="hint">
         Du teilst dir den Markt mit <b>{COMPETITOR_DEFS.length} Wettbewerbern</b>. Dein{' '}
         <b>Marktanteil</b> wächst mit jedem aktiven Kunden (große zählen mehr). Wettbewerber{' '}
-        <b>werben unzufriedene oder zu teuer bepreiste Kunden ab</b> – zufriedene Kunden (Loyalität ≥{' '}
-        {POACH_LOYALTY_CEILING}%) bleiben treu. Halte mit <b>gutem Service</b>, <b>fairen Preisen</b>{' '}
-        und ggf. <b>Rabatten</b> dagegen.
+        <b>greifen unzufriedene oder zu teuer bepreiste Kunden an</b> – und zwar je nach Loyalität:
+        ab <b>{POACH_SAFE_LOYALTY}%</b> treu &amp; sicher, darunter kannst du mit einem{' '}
+        <b>Gegenangebot</b> gegenhalten, unter <b>30%</b> ist der Kunde direkt weg. Beste Abwehr:{' '}
+        <b>guter Service</b> &amp; <b>faire Preise</b>.
       </p>
+
+      <h3>Marktanteil je Kundengruppe</h3>
+      <div className="rows" style={{ marginBottom: 12 }}>
+        {typeShare.map(({ type, label, you, comp, share }) => (
+          <div key={type} className="row">
+            <span style={{ fontSize: 20, width: 26, textAlign: 'center' }}>{CUSTOMER_EMOJI[type]}</span>
+            <div className="grow">
+              <div className="title" style={{ fontSize: 14 }}>{label}</div>
+              <div className="sub">Du {you} · Konkurrenz {comp}{type === 'large' ? ' (fixer Markt)' : ''}</div>
+              <div className="progress" style={{ marginTop: 5 }}>
+                <span style={{ width: `${Math.round(share * 100)}%` }} />
+              </div>
+            </div>
+            <span className={`pill ${share >= 0.5 ? 'good' : ''}`}>{(share * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
 
       <div className="two-col" style={{ marginBottom: 12 }}>
         <div className="row" style={{ padding: '10px 12px' }}>

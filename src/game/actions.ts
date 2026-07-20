@@ -48,6 +48,8 @@ import {
   TABLE_PRICE,
   TRAINING_COST,
   TRAINING_SKILL_GAIN,
+  GEGENANGEBOT_LOYALTY_RESTORE,
+  POACH_SAFE_LOYALTY,
 } from './constants';
 import type { CustomerLine, EquipmentId, GameState, Order, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
 import {
@@ -91,6 +93,8 @@ import {
   spend,
   supplierUnitPrice,
   tryPrepareOrder,
+  releaseCustomerOrders,
+  addCompetitorSlot,
 } from './simulation';
 import { buildProduct, makeBranchWarehouse } from './init';
 import { clamp, uid, weekOf } from './util';
@@ -456,6 +460,45 @@ export function setDiscount(state: GameState, customerId: string, discount: numb
   const cust = state.customers.find((c) => c.id === customerId);
   if (!cust) return;
   cust.activeDiscount = clamp(discount, 0, 0.2);
+}
+
+/**
+ * Gegenangebot bei einer laufenden Abwerbe-Attacke (Konkurrenz Stufe 2). Du
+ * konzedierst den angebotenen Rabatt (Marge ein) und hältst den Kunden — seine
+ * Loyalität springt aus der Gefahrenzone (er fühlt sich umworben). Räumt die
+ * offene Entscheidung ab.
+ */
+export function defendCustomer(state: GameState): ActionResult {
+  const p = state.pendingPoach;
+  if (!p) return { ok: false, message: 'Keine offene Abwerbung.' };
+  const cust = state.customers.find((c) => c.id === p.customerId);
+  if (!cust || !cust.active) { state.pendingPoach = undefined; return { ok: false, message: 'Kunde nicht mehr aktiv.' }; }
+  cust.activeDiscount = clamp(cust.activeDiscount + p.discountOffer, 0, 0.2);
+  // Raise loyalty by the restore amount, but at least out of the danger zone (safe).
+  cust.loyalty = clamp(cust.loyalty + GEGENANGEBOT_LOYALTY_RESTORE, POACH_SAFE_LOYALTY, 100);
+  cust.lowLoyaltySinceWeek = undefined;
+  cust.courtedUntilWeek = undefined;
+  state.pendingPoach = undefined;
+  notify(state, `🤝 Gegenangebot angenommen: ${cust.name} bleibt (Rabatt +${Math.round(p.discountOffer * 100)} %). Die Marge sinkt, aber der Kunde ist gehalten.`, 'success');
+  return { ok: true };
+}
+
+/**
+ * Den umkämpften Kunden ziehen lassen (Konkurrenz Stufe 2): kein Gegenangebot,
+ * der Kunde wechselt zur Konkurrenz (ihr Slot wächst). Räumt die Entscheidung ab.
+ */
+export function surrenderCustomer(state: GameState): ActionResult {
+  const p = state.pendingPoach;
+  if (!p) return { ok: false, message: 'Keine offene Abwerbung.' };
+  const cust = state.customers.find((c) => c.id === p.customerId);
+  state.pendingPoach = undefined;
+  if (!cust || !cust.active) return { ok: false, message: 'Kunde nicht mehr aktiv.' };
+  const weekly = Math.round(cust.lines.reduce((s, l) => s + l.volume * l.price, 0));
+  cust.active = false;
+  releaseCustomerOrders(state, cust.id);
+  addCompetitorSlot(state, cust.type, cust.region ?? 'hq', 1);
+  notify(state, `🏴 ${cust.name} wechselt zu ${p.raiderEmoji} ${p.raiderName}. Verlorener Wochenumsatz: ~${weekly}€.`, 'warn');
+  return { ok: true };
 }
 
 /** Move a customer to another manager (Chef or a KAM). The target needs the

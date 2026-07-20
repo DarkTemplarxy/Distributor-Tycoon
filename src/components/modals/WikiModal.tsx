@@ -32,7 +32,9 @@ import {
   BUYER_PRODUCT_CAPACITY,
   COMPETITOR_DEFS,
   LOYALTY_CHURN_THRESHOLD,
-  POACH_LOYALTY_CEILING,
+  POACH_SAFE_LOYALTY,
+  POACH_DIRECT_LOSS_LOYALTY,
+  GEGENANGEBOT_DISCOUNT,
   MANAGER_SLOTS,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
@@ -306,22 +308,33 @@ const ENTRIES: WikiEntry[] = [
   {
     icon: '📈',
     title: 'Markt & Konkurrenz',
-    keywords: 'markt konkurrenz wettbewerber marktanteil ranking abwerben abwerbung umworben preiskampf',
+    keywords: 'markt konkurrenz wettbewerber marktanteil ranking abwerben abwerbung umworben preiskampf gegenangebot loyalität',
     body: (
       <>
         <p>
           Du bist nicht allein: <b>{COMPETITOR_DEFS.length} KI-Wettbewerber</b> teilen sich mit dir
-          den Markt. Dein <b>Marktanteil</b> (im 📈 <b>Markt</b>-Fenster) wächst mit jedem aktiven
-          Kunden – große zählen mehr als kleine. Ein Blick ins Ranking zeigt, wo du stehst.
+          den Markt. Dein <b>Marktanteil</b> (im 📈 <b>Markt</b>-Fenster, auch je Kundengruppe) wächst
+          mit jedem aktiven Kunden – große zählen mehr. Wie viele Kunden die Konkurrenz hält, ist{' '}
+          <b>nicht fix</b>: bei <b>schlechtem Service</b> oder aggressiven Rivalen wächst ihr Anteil,
+          bei starkem Service drängst du sie zurück.
         </p>
         <p>
-          Wettbewerber <b>werben Kunden ab</b> – aber nur <b>verwundbare</b>: Kunden mit niedriger
-          Loyalität (unter {POACH_LOYALTY_CEILING}%) oder solche, denen du deutlich <b>über dem
-          Listenpreis</b> verkaufst. Eine Abwerbung senkt die Loyalität und markiert den Kunden{' '}
-          <b>🎯 umworben</b>; hält das an, rutscht er unter die Kündigungsschwelle und ist weg.
-          Zufriedene, fair bepreiste Kunden sind <b>immun</b>. Gegenmittel: <b>pünktlich liefern</b>{' '}
-          (Sterne + Loyalität), <b>faire Preise</b> und im Notfall ein <b>Rabatt</b>. Aggressive
-          Wettbewerber (siehe Ranking) schlagen häufiger zu, je kleiner dein Anteil ist.
+          Ab dem <b>3. Monat</b> greifen Wettbewerber deine Kunden an. Der Ausgang hängt an der{' '}
+          <b>Loyalität</b> – drei Stufen:
+        </p>
+        <ul>
+          <li>🛡️ <b>≥ {POACH_SAFE_LOYALTY}%</b> – treu &amp; sicher: wird gar nicht erst angegriffen.</li>
+          <li>
+            🤝 <b>{POACH_DIRECT_LOSS_LOYALTY}–{POACH_SAFE_LOYALTY}%</b> – umkämpft: du kannst ein{' '}
+            <b>Gegenangebot</b> machen (Rabatt +{Math.round(GEGENANGEBOT_DISCOUNT * 100)} %, also{' '}
+            Marge einbüßen) und behältst den Kunden – oder du lässt ihn ziehen.
+          </li>
+          <li>🏴 <b>&lt; {POACH_DIRECT_LOSS_LOYALTY}%</b> – zu unzufrieden: der Kunde ist <b>direkt weg</b>.</li>
+        </ul>
+        <p>
+          Beste Abwehr ist die hohe Loyalität selbst: <b>pünktlich liefern</b> (Sterne + Loyalität)
+          und <b>faire Preise</b>. Aggressive Wettbewerber (siehe Ranking) schlagen häufiger zu, je
+          größer dein Kundenstamm ist.
         </p>
       </>
     ),

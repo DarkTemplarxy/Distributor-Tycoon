@@ -515,6 +515,29 @@ export interface GameState {
   /** Zuletzt berechneter Marktanteil des Spielers (0..1). */
   marketShare?: number;
 
+  /** Konkurrenz Stufe 2: von Wettbewerbern gehaltene Kundenzahl je Standort & Größe
+   * (Float, für die Anzeige gerundet). Wächst/schrumpft wöchentlich Richtung eines
+   * Service-abhängigen Gleichgewichts. Lazy-seed (ensureCompetitorSlots); fehlend =
+   * Basis-Anteil. Große Kunden bleiben ein fixer Pool, stehen daher nicht hier. */
+  competitorHeldBySite?: Partial<Record<SiteId, Partial<Record<CustomerType, number>>>>;
+  /** Laufende Abwerbe-Attacke mit offenem Gegenangebot (mittlere Loyalität). Genau
+   * eine Entscheidung gleichzeitig – die UI öffnet blockierend (wie pendingOrderWeek).
+   * Verstreicht die Frist (deadlineWeek), zieht der Kunde weiter. Optional. */
+  pendingPoach?: {
+    customerId: string;
+    raiderId: string;
+    raiderName: string;
+    raiderEmoji: string;
+    /** Zusätzlicher Rabatt, den ein Gegenangebot kostet (Marge). */
+    discountOffer: number;
+    /** Woche, in der das Angebot verfällt (Kunde geht). */
+    deadlineWeek: number;
+    /** Erste Attacke im 3. Monat → die UI zeigt die Mechanik-Erklärung. */
+    tutorial?: boolean;
+  };
+  /** Ob die erste (erklärende) Abwerbe-Attacke im 3. Monat schon lief. Optional. */
+  firstAttackShown?: boolean;
+
   /** Ruf (Renown, 0..100) je Standort — Bekanntheit der Marke. Baut sich aus Service
    * & Kundenzahl auf und zieht schneller Neukunden an. Ein neuer Standort erbt einen
    * Teil des Landes-Rufs (Summe/Mittel der Standorte) und wächst dadurch schneller.

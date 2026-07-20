@@ -59,10 +59,19 @@ import {
   COMPETITOR_STRENGTH_DRIFT,
   COMPETITOR_STRENGTH_BAND,
   POACH_BASE_CHANCE,
-  POACH_LOYALTY_HIT,
   POACH_COURT_WEEKS,
-  POACH_LOYALTY_CEILING,
   POACH_EXPOSURE_FULL,
+  POACH_SAFE_LOYALTY,
+  POACH_DIRECT_LOSS_LOYALTY,
+  GEGENANGEBOT_DISCOUNT,
+  POACH_DECISION_WEEKS,
+  FIRST_ATTACK_WEEK,
+  COMP_SERVICE_NEUTRAL,
+  COMP_SERVICE_SLOPE,
+  COMP_AGGR_SLOPE,
+  COMP_SHARE_MIN_MULT,
+  COMP_SHARE_MAX_MULT,
+  COMP_SLOT_EASE,
   supplierDeliversTo,
   SITE_META,
   BRANCH_RENT,
@@ -1606,7 +1615,7 @@ function truckPickup(state: GameState, week: number): void {
 }
 
 /** Return reserved goods and clear palettes for a terminated customer. */
-function releaseCustomerOrders(state: GameState, customerId: string): void {
+export function releaseCustomerOrders(state: GameState, customerId: string): void {
   const openOrders = state.orders.filter(
     (o) => o.customerId === customerId && o.status !== 'delivered',
   );
@@ -2091,11 +2100,53 @@ export function yourHeld(state: GameState, type: CustomerType, site?: SiteId): n
     (c) => c.active && c.type === type && (type === 'large' || site == null || (c.region ?? 'hq') === site),
   ).length;
 }
-/** Von Konkurrenten gehaltene Kunden. Stage 1: fixer Anteil des Basis-Markts;
- * Stage 2 wird er dynamisch (wächst je Aggressivität, gebremst durch deinen Service,
- * verschiebt sich per Abwerbung). site/type-abhängig für die spätere Dynamik. */
-export function competitorHeld(_state: GameState, type: CustomerType, _site: SiteId = 'hq'): number {
-  return Math.round(marketBase(type) * MARKET.COMPETITOR_SHARE);
+/** Basis-Konkurrenz-Anteil einer Größe (Anker: guter Service). */
+function competitorBase(type: CustomerType): number {
+  return marketBase(type) * MARKET.COMPETITOR_SHARE;
+}
+/** Von Konkurrenten gehaltene Kunden (Stufe 2: dynamisch). Große Kunden bleiben ein
+ * FIXER Pool (Basis-Anteil, kein Slot-Wachstum). Für klein/mittel liest die Funktion
+ * die wöchentlich fortgeschriebenen Slots (competitorHeldBySite), die sich einem
+ * Service-abhängigen Gleichgewicht nähern — fehlend = Basis-Anteil (Stufe-1-Wert). */
+export function competitorHeld(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
+  if (type === 'large') return Math.round(competitorBase('large'));
+  const held = state.competitorHeldBySite?.[site]?.[type];
+  return Math.round(held ?? competitorBase(type));
+}
+/** Ziel-Gleichgewicht der Konkurrenz-Slots: am Service-Anker (COMP_SERVICE_NEUTRAL)
+ * exakt der Basis-Anteil; schlechterer Service ODER aggressivere Wettbewerber heben
+ * es (sie erobern Markt), besserer Service drückt es (du gewinnst Anteil). */
+function competitorEquilibrium(state: GameState, type: CustomerType): number {
+  const comps = ensureCompetitors(state);
+  const avgAggr = comps.reduce((s, c) => s + c.aggressiveness, 0) / Math.max(1, comps.length);
+  const serviceAdj = 1 + COMP_SERVICE_SLOPE * (COMP_SERVICE_NEUTRAL - state.serviceStars);
+  const aggrAdj = 1 + (avgAggr - 0.5) * COMP_AGGR_SLOPE;
+  const mult = clamp(serviceAdj * aggrAdj, COMP_SHARE_MIN_MULT, COMP_SHARE_MAX_MULT);
+  return competitorBase(type) * mult;
+}
+/** Wöchentlich: die Konkurrenz-Slots (klein/mittel, je aktivem Standort) nähern sich
+ * träge ihrem Gleichgewicht. So wächst der Konkurrenz-Druck bei schlechtem Service /
+ * aggressiven Rivalen und schrumpft, wenn du den Markt dominierst. */
+function runCompetitorSlotsWeek(state: GameState): void {
+  if (!state.competitorHeldBySite) state.competitorHeldBySite = {};
+  for (const site of activeSites(state)) {
+    const bySite = (state.competitorHeldBySite[site] ??= {});
+    for (const type of ['small', 'medium'] as CustomerType[]) {
+      const cur = bySite[type] ?? competitorBase(type);
+      const target = competitorEquilibrium(state, type);
+      const next = cur + (target - cur) * COMP_SLOT_EASE;
+      bySite[type] = clamp(next, competitorBase(type) * COMP_SHARE_MIN_MULT, competitorBase(type) * COMP_SHARE_MAX_MULT);
+    }
+  }
+}
+/** Einen Konkurrenz-Slot um n erhöhen (ein abgeworbener Kunde ist jetzt bei der
+ * Konkurrenz) — bleibt im erlaubten Band. */
+export function addCompetitorSlot(state: GameState, type: CustomerType, site: SiteId, n: number): void {
+  if (type === 'large') return;
+  if (!state.competitorHeldBySite) state.competitorHeldBySite = {};
+  const bySite = (state.competitorHeldBySite[site] ??= {});
+  const cur = bySite[type] ?? competitorBase(type);
+  bySite[type] = clamp(cur + n, competitorBase(type) * COMP_SHARE_MIN_MULT, competitorBase(type) * COMP_SHARE_MAX_MULT);
 }
 /**
  * Gesamt-Markt (Anzeige/Marktanteil): WÄCHST mit dem bedienten Markt (deine Kunden + die der
@@ -2391,8 +2442,8 @@ export function playerRank(state: GameState): number {
  * comfortable customers — good service and fair prices protect them. Overpricing
  * (paying above the product's list price) and low loyalty raise the risk. */
 function poachRisk(cust: Customer): number {
-  if (cust.loyalty >= POACH_LOYALTY_CEILING) return 0;
-  const loyaltyGap = (POACH_LOYALTY_CEILING - cust.loyalty) / POACH_LOYALTY_CEILING; // 0..1
+  if (cust.loyalty >= POACH_SAFE_LOYALTY) return 0;
+  const loyaltyGap = (POACH_SAFE_LOYALTY - cust.loyalty) / POACH_SAFE_LOYALTY; // 0..1
   // Overpricing: agreed price vs the product's list price (verkaufspreis).
   let overprice = 0;
   for (const l of cust.lines) {
@@ -2404,13 +2455,77 @@ function poachRisk(cust: Customer): number {
   return loyaltyGap * priceFactor * serviceFactor;
 }
 
+/** Customers that already have an open decision/ask attached — not re-targeted. */
+function poachBusy(state: GameState): Set<string> {
+  const busy = new Set<string>();
+  for (const i of state.inquiries) if (i.status === 'open' && i.existingCustomerId) busy.add(i.existingCustomerId);
+  for (const u of state.pendingUltimatums) busy.add(u.customerId);
+  if (state.pendingPoach) busy.add(state.pendingPoach.customerId);
+  return busy;
+}
+/** The single most vulnerable free customer (highest poachRisk), or undefined. */
+function mostVulnerableCustomer(state: GameState): Customer | undefined {
+  const busy = poachBusy(state);
+  let target: Customer | undefined;
+  let bestRisk = 0;
+  for (const cust of state.customers) {
+    if (!cust.active || busy.has(cust.id)) continue;
+    const r = poachRisk(cust);
+    if (r > bestRisk) { bestRisk = r; target = cust; }
+  }
+  return target;
+}
+/** The raider: the most aggressive competitor. */
+function pickRaider(state: GameState): Competitor {
+  return ensureCompetitors(state).slice().sort((a, b) => b.aggressiveness - a.aggressiveness)[0];
+}
+
 /**
- * Weekly market step: competitor strengths drift (random walk within a band),
- * the player's share is recomputed, and — scaled by competitor aggressiveness and
- * how small the player's share is — a competitor may court the player's most
- * vulnerable customer. Courting is a loyalty hit + a warning; it feeds the
- * EXISTING loyalty-churn path (below threshold → warning → possible quit), so it
- * adds no new death mechanic. Comfortable, fairly-priced customers are immune.
+ * Resolve a competitor attack on a customer by LOYALTY TIER (Stufe 2):
+ *  - loyalty < POACH_DIRECT_LOSS_LOYALTY (30): DIRECT loss — the neglected customer
+ *    leaves for the competitor immediately (their slot grows). No decision.
+ *  - 30 … POACH_SAFE_LOYALTY (60): a GEGENANGEBOT decision opens (state.pendingPoach)
+ *    — hold the customer by conceding margin, or let them walk.
+ *  (loyalty ≥ 60 is SAFE and never targeted, see poachRisk.)
+ */
+function launchPoachAttack(state: GameState, target: Customer, raider: Competitor, newWeek: number, tutorial = false): void {
+  target.courtedUntilWeek = newWeek + POACH_COURT_WEEKS;
+  const site: SiteId = target.region ?? 'hq';
+  if (target.loyalty < POACH_DIRECT_LOSS_LOYALTY) {
+    const weekly = Math.round(target.lines.reduce((s, l) => s + l.volume * l.price, 0));
+    target.active = false;
+    releaseCustomerOrders(state, target.id);
+    addCompetitorSlot(state, target.type, site, 1);
+    notify(
+      state,
+      `🏴 ${raider.emoji} ${raider.name} hat ${target.name} abgeworben! Die Loyalität war zu niedrig für ein Gegenangebot. Verlorener Wochenumsatz: ~${weekly}€.`,
+      'error',
+    );
+    return;
+  }
+  // Mid loyalty → the player gets a counter-offer decision.
+  state.pendingPoach = {
+    customerId: target.id,
+    raiderId: raider.id,
+    raiderName: raider.name,
+    raiderEmoji: raider.emoji,
+    discountOffer: GEGENANGEBOT_DISCOUNT,
+    deadlineWeek: newWeek + POACH_DECISION_WEEKS,
+    tutorial,
+  };
+  notify(
+    state,
+    `🎯 ${raider.emoji} ${raider.name} greift nach ${target.name}! Mit einem Gegenangebot gegenhalten (Marge einbüßen) oder ziehen lassen?`,
+    'warn',
+  );
+}
+
+/**
+ * Weekly market step (Stufe 2). Competitor strengths drift, the player's share is
+ * recomputed, the competitor customer-slots ease toward their service-dependent
+ * equilibrium, and — gated by exposure & aggressiveness — a competitor may attack
+ * the most vulnerable customer, resolved by the 3-tier loyalty defense above. The
+ * first attack is scripted for month 3 (Woche 12) so the mechanic is taught once.
  */
 function runMarketWeek(state: GameState, newWeek: number): void {
   const comps = ensureCompetitors(state);
@@ -2420,41 +2535,51 @@ function runMarketWeek(state: GameState, newWeek: number): void {
     const drift = randRange(-COMPETITOR_STRENGTH_DRIFT, COMPETITOR_STRENGTH_DRIFT);
     c.strength = clamp(c.strength + drift, base * (1 - COMPETITOR_STRENGTH_BAND), base * (1 + COMPETITOR_STRENGTH_BAND));
   }
-  const share = marketShare(state);
-  state.marketShare = share;
+  state.marketShare = marketShare(state);
+  runCompetitorSlotsWeek(state);
 
-  // Poaching pressure. Skippable during the tutorial (no early-game harassment).
+  // No competitive harassment during the tutorial.
   if (state.tutorial?.active) return;
+
+  // An unanswered counter-offer expires → the customer walks to the competitor.
+  if (state.pendingPoach && newWeek >= state.pendingPoach.deadlineWeek) {
+    const cust = state.customers.find((c) => c.id === state.pendingPoach!.customerId);
+    if (cust && cust.active) {
+      const weekly = Math.round(cust.lines.reduce((s, l) => s + l.volume * l.price, 0));
+      cust.active = false;
+      releaseCustomerOrders(state, cust.id);
+      addCompetitorSlot(state, cust.type, cust.region ?? 'hq', 1);
+      notify(state, `🏴 ${cust.name} ist zur Konkurrenz gewechselt – das Gegenangebot blieb aus. Verlorener Wochenumsatz: ~${weekly}€.`, 'error');
+    }
+    state.pendingPoach = undefined;
+  }
+  // Only one open poach decision at a time.
+  if (state.pendingPoach) return;
+
+  // Month-3 scripted first attack — always a GEGENANGEBOT (mid loyalty) so the
+  // player experiences the counter-offer choice with a clear explanation.
+  if (!state.firstAttackShown && newWeek >= FIRST_ATTACK_WEEK) {
+    const target = mostVulnerableCustomer(state)
+      ?? state.customers.filter((c) => c.active && !poachBusy(state).has(c.id))
+        .sort((a, b) => a.loyalty - b.loyalty)[0];
+    if (target) {
+      state.firstAttackShown = true;
+      // Guarantee the mid-loyalty tier for the teaching moment.
+      target.loyalty = clamp(Math.min(target.loyalty, 48), POACH_DIRECT_LOSS_LOYALTY + 5, POACH_SAFE_LOYALTY - 5);
+      launchPoachAttack(state, target, pickRaider(state), newWeek, true);
+    }
+    return;
+  }
+
+  // Ongoing pressure — ramps with your footprint (a late-game force, not a
+  // newcomer nuisance) and competitor aggressiveness.
   const avgAggr = comps.reduce((s, c) => s + c.aggressiveness, 0) / Math.max(1, comps.length);
-  // Pressure ramps with your FOOTPRINT: a tiny newcomer is barely noticed, a big
-  // operation attracts real competitive attention (a late-game force). Only ever
-  // targets vulnerable customers below, so a well-run late business stays safe.
   const active = state.customers.filter((c) => c.active).length;
   const exposure = clamp(active / POACH_EXPOSURE_FULL, 0, 1);
-  const chance = POACH_BASE_CHANCE * avgAggr * exposure;
-  if (Math.random() >= chance) return;
-
-  // Target the most vulnerable active customer not already being courted / asked.
-  const busy = new Set<string>();
-  for (const i of state.inquiries) if (i.status === 'open' && i.existingCustomerId) busy.add(i.existingCustomerId);
-  for (const u of state.pendingUltimatums) busy.add(u.customerId);
-  let target: Customer | undefined;
-  let bestRisk = 0;
-  for (const cust of state.customers) {
-    if (!cust.active || busy.has(cust.id)) continue;
-    const r = poachRisk(cust);
-    if (r > bestRisk) { bestRisk = r; target = cust; }
-  }
-  if (!target || bestRisk <= 0) return;
-
-  const raider = comps.slice().sort((a, b) => b.aggressiveness - a.aggressiveness)[0];
-  target.loyalty = clamp(target.loyalty - POACH_LOYALTY_HIT, 0, 100);
-  target.courtedUntilWeek = newWeek + POACH_COURT_WEEKS;
-  notify(
-    state,
-    `🎯 ${raider.emoji} ${raider.name} umwirbt ${target.name}! Loyalität gesunken – mit besserem Service oder Preis gegenhalten, sonst wandert der Kunde ab.`,
-    'warn',
-  );
+  if (Math.random() >= POACH_BASE_CHANCE * avgAggr * exposure) return;
+  const target = mostVulnerableCustomer(state);
+  if (!target) return;
+  launchPoachAttack(state, target, pickRaider(state), newWeek);
 }
 
 function maybeGenerateDemand(state: GameState): void {

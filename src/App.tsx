@@ -32,6 +32,7 @@ import { InquiriesModal } from './components/modals/InquiriesModal';
 import { EmployeesModal } from './components/modals/EmployeesModal';
 import { CompanyModal } from './components/modals/CompanyModal';
 import { MarketModal } from './components/modals/MarketModal';
+import { PoachModal } from './components/modals/PoachModal';
 import { KonzernMap } from './components/KonzernMap';
 import { FinanceModal } from './components/modals/FinanceModal';
 import { ReportsModal } from './components/modals/ReportsModal';
@@ -50,6 +51,7 @@ export type ModalId =
   | 'employees'
   | 'company'
   | 'market'
+  | 'poach'
   | 'konzern'
   | 'finance'
   | 'reports'
@@ -185,6 +187,18 @@ export function App() {
     closeModal();
   };
 
+  // A competitor attack with an open counter-offer (Konkurrenz Stufe 2) is a
+  // BLOCKING decision: auto-open the Gegenangebot screen so it can't slip by. Keyed
+  // on the targeted customer so each fresh attack re-opens; deferring is allowed
+  // (the deadline auto-resolves it, and the Market screen also surfaces it).
+  const poachId = state.pendingPoach?.customerId ?? null;
+  useEffect(() => {
+    if (poachId != null && !state.gameOver && !state.yearComplete) {
+      openModal('poach');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poachId, state.gameOver, state.yearComplete]);
+
   // One-time unlock roadmap ("Jetzt geht's los"): after the first full week —
   // or, for tutorial players, once the tutorial (and its intro/help chain) is
   // done — show WHAT is still locked and HOW to unlock it. Never stacked on
@@ -194,6 +208,7 @@ export function App() {
   useEffect(() => {
     if (unlockIntro || state.unlockIntroShown) return;
     if (state.tutorial !== null || state.gameOver || state.yearComplete) return;
+    if (state.pendingPoach) return; // never stack the roadmap over a blocking decision
     if (week < 1 || modal !== null || notebookIntro || buildMode || restartOpen) return;
     if ((state.celebrateMilestones ?? []).length > 0) return; // Feier zuerst
     const anythingLocked =
@@ -208,7 +223,7 @@ export function App() {
     setUnlockIntro(true);
     openUi();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [week, state.tutorial, state.gameOver, state.yearComplete, modal, notebookIntro, buildMode, restartOpen]);
+  }, [week, state.tutorial, state.gameOver, state.yearComplete, modal, notebookIntro, buildMode, restartOpen, state.pendingPoach]);
   const closeUnlockIntro = () => {
     setUnlockIntro(false);
     mutate((s) => {
@@ -338,6 +353,7 @@ export function App() {
       {modal === 'employees' && <EmployeesModal onClose={closeModal} />}
       {modal === 'company' && <CompanyModal onClose={closeModal} />}
       {modal === 'market' && <MarketModal onClose={closeModal} />}
+      {modal === 'poach' && <PoachModal onClose={closeModal} />}
       {modal === 'konzern' && (
         <KonzernMap
           onClose={closeModal}

@@ -1051,6 +1051,45 @@ export const POACH_LOYALTY_CEILING = 55;
  * schwächer) – Konkurrenz ist eine LATE-GAME-Kraft, kein Newcomer-Ärgernis. */
 export const POACH_EXPOSURE_FULL = 25;
 
+// --- Konkurrenz Stufe 2: 3-Stufen-Abwehr + dynamische Konkurrenz-Slots -------
+// Eine Abwerbe-Attacke wird nach Loyalität aufgelöst: hohe Loyalität = sicher
+// (wird gar nicht erst attackiert), mittlere = du kannst mit einem Gegenangebot
+// (Marge einbüßen) gegenhalten, niedrige = der Kunde ist direkt weg.
+/** Ab dieser Loyalität ist ein Kunde SICHER – Wettbewerber greifen ihn nicht an. */
+export const POACH_SAFE_LOYALTY = 60;
+/** Unter dieser Loyalität ist ein angegriffener Kunde DIREKT verloren (kein
+ * Gegenangebot mehr möglich) – identisch mit der Kündigungsschwelle. */
+export const POACH_DIRECT_LOSS_LOYALTY = LOYALTY_CHURN_THRESHOLD;
+/** Gegenangebot: so viel zusätzlichen Rabatt (Marge) konzedierst du, um den
+ * umkämpften Kunden zu halten. Kumuliert auf den bestehenden Rabatt (Deckel 20 %). */
+export const GEGENANGEBOT_DISCOUNT = 0.08;
+/** Ein angenommenes Gegenangebot hebt die Loyalität des Kunden wieder (er fühlt
+ * sich umworben & wertgeschätzt) über die Gefahrenzone. */
+export const GEGENANGEBOT_LOYALTY_RESTORE = 24;
+/** So viele Wochen hast du Zeit, auf ein Gegenangebot zu reagieren – verstreicht
+ * die Frist ungenutzt, zieht der Kunde weiter. */
+export const POACH_DECISION_WEEKS = 2;
+/** Im 3. Monat (Woche 12) läuft die ERSTE Abwerbe-Attacke garantiert – sie
+ * erklärt die Mechanik (mittlere Loyalität → Gegenangebot). */
+export const FIRST_ATTACK_WEEK = 12;
+
+// Dynamische Konkurrenz-Slots: die von Wettbewerbern gehaltene Kundenzahl je
+// Größe ist nicht mehr fix, sondern nähert sich einem Gleichgewicht, das von
+// DEINEM Service (guter Service drängt sie zurück) und ihrer Aggressivität
+// abhängt. Am Service-Anker (4★) bleibt sie exakt beim Stufe-1-Wert.
+/** Service-Sterne, bei denen die Konkurrenz genau ihren Basis-Anteil hält. */
+export const COMP_SERVICE_NEUTRAL = 4.0;
+/** Je Stern unter dem Anker wächst der Konkurrenz-Anteil um diesen Faktor
+ * (über dem Anker schrumpft er entsprechend). */
+export const COMP_SERVICE_SLOPE = 0.12;
+/** Aggressivität über 0,5 hebt das Gleichgewicht zusätzlich (× diesem Faktor). */
+export const COMP_AGGR_SLOPE = 0.35;
+/** Konkurrenz-Anteil bleibt in diesem Band um den Basis-Anteil (COMPETITOR_SHARE). */
+export const COMP_SHARE_MIN_MULT = 0.55;
+export const COMP_SHARE_MAX_MULT = 1.6;
+/** Wöchentliche Annäherung der Slots ans Gleichgewicht (träge). */
+export const COMP_SLOT_EASE = 0.1;
+
 // ============================================================================
 // Milestones — "Onkels Notizbuch". Definitions (title, description, condition,
 // uncle comment) live here as constants, matched to the per-save progress by id
