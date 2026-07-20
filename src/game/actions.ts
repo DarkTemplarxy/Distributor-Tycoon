@@ -86,6 +86,7 @@ import {
   branchOpen,
   siteOfOrder,
   shelfStock,
+  inboundStock,
   warehouseOf,
   spend,
   supplierUnitPrice,
@@ -996,6 +997,7 @@ export function transferStock(
       ? `📦 Logistikleiter: ${qty}× ${product.emoji} ${product.name} ${SITE_META[fromSite].short} → ${SITE_META[toSite].short} disponiert (${cost}€ · ${via}).`
       : `🚚 Transfer unterwegs: ${qty}× ${product.emoji} ${product.name} ${SITE_META[fromSite].short} → ${SITE_META[toSite].short} (${cost}€ · ${via}, ~${TRANSFER_DAYS} Tag).`,
     'info',
+    auto ? { channel: 'log' } : undefined,
   );
   return { ok: true };
 }
@@ -1299,7 +1301,10 @@ export function runLogistikleiter(state: GameState): void {
       if (supplierDeliversTo(p.id, to) || !supplierDeliversTo(p.id, from)) continue;
       const demand = siteProductWeeklyDemand(state, p.id, to);
       if (demand <= 0) continue;
-      const have = shelfStock(p, to) + inflightTransferQty(state, p.id, to);
+      // Vorhanden = Regal + WARENEINGANG (bereits angekommen, wartet aufs Einlagern)
+      // + noch unterwegs. Ohne den Wareneingang würde der Logistikleiter nachbestellen,
+      // während die Ware am Ziel schon im Wareneingang liegt (Doppel-Transfer).
+      const have = shelfStock(p, to) + inboundStock(p, to) + inflightTransferQty(state, p.id, to);
       const gap = demand * A.COVER_WEEKS - have;
       if (gap < A.MIN_UNITS) continue;
       const srcKeep = siteProductWeeklyDemand(state, p.id, from) * A.SOURCE_KEEP_WEEKS;
