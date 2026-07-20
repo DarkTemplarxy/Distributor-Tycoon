@@ -4,7 +4,7 @@
 
 import type { CustomerType, EquipmentId, GameState, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
 
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -581,11 +581,25 @@ export function supplierDeliversTo(productId: ProductId, siteId: SiteId): boolea
 export const SITE_META: Record<SiteId, { name: string; short: string; emoji: string }> = {
   hq: { name: 'Hauptlager Nord', short: 'Nord', emoji: '🏭' },
   sued: { name: 'Standort Süd', short: 'Süd', emoji: '🏗️' },
+  west: { name: 'Standort West', short: 'West', emoji: '🏢' },
+  ost: { name: 'Standort Ost', short: 'Ost', emoji: '🏙️' },
+  suedwest: { name: 'Standort Südwest', short: 'Südwest', emoji: '🏬' },
+  mitte: { name: 'Standort Mitte', short: 'Mitte', emoji: '🏦' },
 };
-/** Eröffnung des Standorts Süd — bewusst VOR der bequemen Leistbarkeit
- * freigeschaltet (gleicher Spannungs-Loop wie bei den Produktgruppen). */
+/** Reihenfolge, in der Zweigstellen eröffnet werden (hq ist der Start, steht nicht hier). */
+export const BRANCH_ORDER: SiteId[] = ['sued', 'west', 'ost', 'suedwest', 'mitte'];
+/** Eröffnung des 1. Standorts — bewusst VOR der bequemen Leistbarkeit freigeschaltet.
+ * Jede WEITERE Stadt hebt Umsatz-Hürde & Preis (eskalierender Spannungs-Loop). */
 export const BRANCH_UNLOCK_MONTHLY = 250_000;
 export const BRANCH_PRICE = 120_000;
+/** Umsatz-Hürde für die (0-basiert) n-te Zweigstelle: steigt je weitere Stadt. */
+export function branchUnlockMonthly(index: number): number {
+  return Math.round(BRANCH_UNLOCK_MONTHLY * (1 + 0.5 * index));
+}
+/** Eröffnungspreis der (0-basiert) n-ten Zweigstelle: steigt je weitere Stadt. */
+export function branchPrice(index: number): number {
+  return Math.round(BRANCH_PRICE * (1 + 0.6 * index));
+}
 /** Zusätzliche Monatsmiete des Standorts (wächst mit dessen Erweiterungen wie im
  * Hauptlager über RENT_PER_EXPANSION). */
 export const BRANCH_RENT = 1_500;

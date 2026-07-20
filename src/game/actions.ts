@@ -41,8 +41,9 @@ import {
   STRATEGY_COOLDOWN_WEEKS,
   supplierDeliversTo,
   SITE_META,
-  BRANCH_PRICE,
-  BRANCH_UNLOCK_MONTHLY,
+  BRANCH_ORDER,
+  branchUnlockMonthly,
+  branchPrice,
   monthlyRevenue,
   TRANSFER_DAYS,
   TABLE_PRICE,
@@ -93,6 +94,7 @@ import {
   repriceAcceptChance,
   resolveDemandRejection,
   branchOpen,
+  activeSites,
   siteOfOrder,
   shelfStock,
   inboundStock,
@@ -308,8 +310,8 @@ export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'):
   if (!siteBound && !isRegionalRole && site !== 'hq') {
     return { ok: false, message: 'Büro-Personal sitzt zentral im Hauptlager.' };
   }
-  if (site === 'sued' && !state.branchWarehouse) {
-    return { ok: false, message: 'Standort Süd ist noch nicht eröffnet.' };
+  if (site !== 'hq' && !state.branches?.[site]) {
+    return { ok: false, message: `${SITE_META[site].name} ist noch nicht eröffnet.` };
   }
   // A site is led by at most ONE Standortleiter (the UI hides the option once led).
   if (role === 'standortleiter' && state.employees.some((e) => e.role === 'standortleiter' && (e.siteId ?? 'hq') === site)) {
@@ -331,7 +333,7 @@ export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'):
     // A manager starts more capable than a fresh floor hire; Regionalbüro leads are
     // seasoned (they run a country's function).
     skill: role === 'standortleiter' ? 60 : isRegionalRole ? 55 : 45,
-    siteId: role === 'standortleiter' ? site : role === 'lager' && site === 'sued' ? 'sued' : undefined,
+    siteId: role === 'standortleiter' ? site : role === 'lager' && site !== 'hq' ? site : undefined,
   });
   if (role === 'standortleiter') {
     notify(state, `🧑‍✈️ ${name} übernimmt ${SITE_META[site].name} – führt den Standort ab jetzt automatisch (Personal, Ausbau, Training). Du steuerst nur noch übers Konzern-Cockpit.`, 'success');
@@ -990,27 +992,38 @@ export function buildTable(state: GameState, gx: number, gy: number, site: SiteI
 /** Eröffnet den Standort Süd: neue Halle, neuer Regionalmarkt, Regionalprodukte.
  * Freigeschaltet ab BRANCH_UNLOCK_MONTHLY Monatsumsatz — bewusst bevor man es
  * sich bequem leisten kann (Übernahme-Risiko ist Teil des Spiels). */
+/** Die nächste noch nicht eröffnete Zweigstelle (in BRANCH_ORDER) und ihr 0-basierter Index. */
+export function nextBranch(state: GameState): { site: SiteId; index: number } | null {
+  for (let i = 0; i < BRANCH_ORDER.length; i++) {
+    if (!state.branches?.[BRANCH_ORDER[i]]) return { site: BRANCH_ORDER[i], index: i };
+  }
+  return null;
+}
+
 export function openBranch(state: GameState): ActionResult {
-  if (state.branchWarehouse) return { ok: false, message: 'Standort Süd ist bereits eröffnet.' };
-  if (monthlyRevenue(state) < BRANCH_UNLOCK_MONTHLY) {
-    return {
-      ok: false,
-      message: `Ab ${Math.round(BRANCH_UNLOCK_MONTHLY / 1000)}k € Monatsumsatz möglich.`,
-    };
+  const next = nextBranch(state);
+  if (!next) return { ok: false, message: 'Alle Standorte sind bereits eröffnet.' };
+  const { site, index } = next;
+  const unlock = branchUnlockMonthly(index);
+  const price = branchPrice(index);
+  if (monthlyRevenue(state) < unlock) {
+    return { ok: false, message: `${SITE_META[site].name} ab ${Math.round(unlock / 1000)}k € Monatsumsatz möglich.` };
   }
-  if (state.cash + availableCredit(state) < BRANCH_PRICE) {
-    return { ok: false, message: `Eröffnung kostet ${BRANCH_PRICE}€.` };
+  if (state.cash + availableCredit(state) < price) {
+    return { ok: false, message: `Eröffnung von ${SITE_META[site].name} kostet ${price.toLocaleString('de-DE')}€.` };
   }
-  spend(state, BRANCH_PRICE);
-  state.branchWarehouse = makeBranchWarehouse();
-  state.branchOpenedWeek = weekOf(state.totalDays);
+  spend(state, price);
+  if (!state.branches) state.branches = {};
+  state.branches[site] = makeBranchWarehouse();
+  if (state.branchOpenedWeek == null) state.branchOpenedWeek = weekOf(state.totalDays);
   // Renown-Vorsprung: der neue Standort erbt einen Teil des Landes-Rufs und zieht
   // dadurch von Anfang an schneller Neukunden an als der erste Standort damals.
   if (!state.renownBySite) state.renownBySite = {};
-  state.renownBySite.sued = RENOWN.NEW_SITE_INHERIT * nationalRenown(state);
+  state.renownBySite[site] = RENOWN.NEW_SITE_INHERIT * nationalRenown(state);
+  const suedHint = site === 'sued' ? ' 🍷 Wein & 🫒 Oliven sind dort listbar.' : '';
   notify(
     state,
-    `🎉 ${SITE_META.sued.name} eröffnet (${BRANCH_PRICE}€)! Neue Region: Süd-Kunden fragen bald an, 🍷 Wein & 🫒 Oliven sind dort listbar. Nächster Schritt: Auf der 🗺️ Konzern-Karte kannst du jetzt für dein Land ein 🏢 Regionalbüro gründen – dann schalten Marketing-Manager, Regional-KAM & Co. frei.`,
+    `🎉 ${SITE_META[site].name} eröffnet (${price.toLocaleString('de-DE')}€)! Neue Region: ${SITE_META[site].short}-Kunden fragen bald an.${suedHint} Auf der 🗺️ Konzern-Karte kannst du den Standort führen lassen und weiter ausbauen.`,
     'success',
   );
   return { ok: true };
@@ -1307,7 +1320,7 @@ export function siteWeeklyVolume(state: GameState, site: SiteId): number {
  */
 export function autoManageSite(state: GameState, site: SiteId): void {
   if (!siteManager(state, site)) return;
-  if (site === 'sued' && !state.branchWarehouse) return;
+  if (site !== 'hq' && !state.branches?.[site]) return;
 
   const A = STANDORTLEITER_AUTO;
   const reserve = Math.max(A.RESERVE_FLOOR, monthlyRevenue(state) * A.RESERVE_PER_MONTHLY);
@@ -1364,8 +1377,7 @@ export function autoManageSite(state: GameState, site: SiteId): void {
 
 /** Alle Standorte mit zugewiesenem Standortleiter je Tick automatisch führen. */
 export function runSiteManagers(state: GameState): void {
-  autoManageSite(state, 'hq');
-  if (state.branchWarehouse) autoManageSite(state, 'sued');
+  for (const s of activeSites(state)) autoManageSite(state, s);
 }
 
 /** Wochenbedarf eines Produkts am Standort: Summe der Linien-Volumina der Kunden dieser
@@ -1398,27 +1410,29 @@ export function runLogistikleiter(state: GameState): void {
   const A = LOGISTIK_AUTO;
   const reserve = Math.max(A.RESERVE_FLOOR, monthlyRevenue(state) * A.RESERVE_PER_MONTHLY);
 
-  const sites: SiteId[] = ['hq', 'sued'];
+  const sites: SiteId[] = activeSites(state);
   let best: { productId: ProductId; from: SiteId; to: SiteId; qty: number; gap: number } | null = null;
   for (const to of sites) {
-    const from: SiteId = to === 'hq' ? 'sued' : 'hq';
-    for (const p of state.products) {
-      // Nur Produkte, die der Lieferant NICHT ans Ziel liefert (müssen per Transfer kommen),
-      // aber an die Quelle liefert (die kann sie also bevorraten).
-      if (supplierDeliversTo(p.id, to) || !supplierDeliversTo(p.id, from)) continue;
-      const demand = siteProductWeeklyDemand(state, p.id, to);
-      if (demand <= 0) continue;
-      // Vorhanden = Regal + WARENEINGANG (bereits angekommen, wartet aufs Einlagern)
-      // + noch unterwegs. Ohne den Wareneingang würde der Logistikleiter nachbestellen,
-      // während die Ware am Ziel schon im Wareneingang liegt (Doppel-Transfer).
-      const have = shelfStock(p, to) + inboundStock(p, to) + inflightTransferQty(state, p.id, to);
-      const gap = demand * A.COVER_WEEKS - have;
-      if (gap < A.MIN_UNITS) continue;
-      const srcKeep = siteProductWeeklyDemand(state, p.id, from) * A.SOURCE_KEEP_WEEKS;
-      const srcAvail = Math.max(0, shelfStock(p, from) - srcKeep);
-      const qty = Math.min(gap, srcAvail);
-      if (qty < A.MIN_UNITS) continue;
-      if (!best || gap > best.gap) best = { productId: p.id, from, to, qty, gap };
+    for (const from of sites) {
+      if (from === to) continue;
+      for (const p of state.products) {
+        // Nur Produkte, die der Lieferant NICHT ans Ziel liefert (müssen per Transfer kommen),
+        // aber an die Quelle liefert (die kann sie also bevorraten).
+        if (supplierDeliversTo(p.id, to) || !supplierDeliversTo(p.id, from)) continue;
+        const demand = siteProductWeeklyDemand(state, p.id, to);
+        if (demand <= 0) continue;
+        // Vorhanden = Regal + WARENEINGANG (bereits angekommen, wartet aufs Einlagern)
+        // + noch unterwegs. Ohne den Wareneingang würde der Logistikleiter nachbestellen,
+        // während die Ware am Ziel schon im Wareneingang liegt (Doppel-Transfer).
+        const have = shelfStock(p, to) + inboundStock(p, to) + inflightTransferQty(state, p.id, to);
+        const gap = demand * A.COVER_WEEKS - have;
+        if (gap < A.MIN_UNITS) continue;
+        const srcKeep = siteProductWeeklyDemand(state, p.id, from) * A.SOURCE_KEEP_WEEKS;
+        const srcAvail = Math.max(0, shelfStock(p, from) - srcKeep);
+        const qty = Math.min(gap, srcAvail);
+        if (qty < A.MIN_UNITS) continue;
+        if (!best || gap > best.gap) best = { productId: p.id, from, to, qty, gap };
+      }
     }
   }
   if (!best) return;

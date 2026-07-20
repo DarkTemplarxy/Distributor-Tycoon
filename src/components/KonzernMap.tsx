@@ -51,13 +51,16 @@ const LEVELS: { id: Level; icon: string; label: string }[] = [
   { id: 'kontinent', icon: '🌍', label: 'Europa' },
 ];
 
-/** Feste Bildschirm-Positionen der Standort-Pins auf der Stadtkarte (viewBox 1000×640).
- * Route und LKW nutzen dieselben Punkte, damit alles deckungsgleich sitzt. Die zwei
- * Städte liegen bewusst weit auseinander (Land dazwischen) — es sind ZWEI Städte, keine
- * Bezirke einer Stadt. */
+/** Feste Bildschirm-Positionen der Standort-Pins auf der Landkarte (viewBox 1000×640),
+ * grob nach deutscher Geografie (Nord oben, Süd unten). Route und LKW nutzen dieselben
+ * Punkte, damit alles deckungsgleich sitzt. */
 const PIN_XY: Record<SiteId, { x: number; y: number }> = {
-  hq: { x: 300, y: 235 },
-  sued: { x: 700, y: 420 },
+  hq: { x: 430, y: 120 },       // Nord (Hamburg)
+  ost: { x: 660, y: 180 },      // Ost (Berlin)
+  west: { x: 250, y: 320 },     // West (Köln)
+  mitte: { x: 440, y: 360 },    // Mitte (Frankfurt)
+  suedwest: { x: 370, y: 500 }, // Südwest (Stuttgart)
+  sued: { x: 600, y: 540 },     // Süd (München)
 };
 
 interface Kpis {
@@ -392,7 +395,7 @@ function FuhrparkPanel({ state, fleet, fleetCapPal, fleetMonthly, onBuy }: {
 
 export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEnterSite: (site: SiteId) => void }) {
   const { state, mutate } = useGame();
-  const branchOpen = !!state.branchWarehouse;
+  const branchOpen = !!state.branches && Object.keys(state.branches).length > 0;
   const [level, setLevel] = useState<Level>('stadt');
   const [selected, setSelected] = useState<SiteId | null>('hq');
   // Transfer-Formular (Waren zwischen den Standorten verschieben)

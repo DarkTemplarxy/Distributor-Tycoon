@@ -21,7 +21,7 @@ export type ProductId =
 /** Standorte (L3): 'hq' = Hauptlager Nord (immer da), 'sued' = Standort Süd
  * (eröffenbar). Alle siteId-Felder sind optional; undefined bedeutet 'hq' —
  * so bleiben alte Spielstände ohne Migration gültig. */
-export type SiteId = 'hq' | 'sued';
+export type SiteId = 'hq' | 'sued' | 'west' | 'ost' | 'suedwest' | 'mitte';
 
 /** Ein laufender Waren-Transfer zwischen Standorten (LKW unterwegs). */
 export interface Transfer {
@@ -554,11 +554,12 @@ export interface GameState {
    * Optional → kein SAVE-Bump; fehlend = 0. */
   renownBySite?: Partial<Record<SiteId, number>>;
 
-  /** Standort Süd (L3): eigene Halle, wenn eröffnet. Undefined = nicht eröffnet.
-   * Gleiche Struktur wie `warehouse` — alle Bau-/Kapazitäts-Helfer laufen über
-   * warehouseOf(state, siteId). */
-  branchWarehouse?: GameState['warehouse'];
-  /** Woche der Standort-Eröffnung (für Reports/Meilensteine). */
+  /** Eröffnete Zweigstellen (L3, bis zu 5 weitere Städte je Land): je Standort eine
+   * eigene Halle mit gleicher Struktur wie `warehouse` (hq ist das Hauptlager und steht
+   * NICHT hier). Alle Bau-/Kapazitäts-Helfer laufen über warehouseOf(state, siteId).
+   * Ersetzt das alte Einzelfeld branchWarehouse. */
+  branches?: Partial<Record<SiteId, GameState['warehouse']>>;
+  /** Woche der ERSTEN Standort-Eröffnung (für Reports/Meilensteine). */
   branchOpenedWeek?: number;
   /** Laufende Waren-Transfers zwischen Standorten (L3). */
   transfers?: Transfer[];

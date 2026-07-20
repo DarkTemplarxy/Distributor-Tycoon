@@ -34,16 +34,16 @@ import type { GameState, ProductId, SiteId } from '../game/types';
  * gewählten Standorts. Nur Lese-Pfad; Mutationen laufen über die Actions mit
  * explizitem site-Parameter.
  */
-function projectBranchView(raw: GameState): GameState {
+function projectBranchView(raw: GameState, site: SiteId): GameState {
   return {
     ...raw,
-    warehouse: raw.branchWarehouse!,
-    employees: raw.employees.filter((e) => e.role === 'lager' && (e.siteId ?? 'hq') === 'sued'),
-    palettes: raw.palettes.filter((pal) => (pal.siteId ?? 'hq') === 'sued'),
+    warehouse: raw.branches?.[site] ?? raw.warehouse,
+    employees: raw.employees.filter((e) => e.role === 'lager' && (e.siteId ?? 'hq') === site),
+    palettes: raw.palettes.filter((pal) => (pal.siteId ?? 'hq') === site),
     products: raw.products.map((pr) => ({
       ...pr,
       batches: pr.batches
-        .filter((b) => (b.siteId ?? 'hq') === 'sued')
+        .filter((b) => (b.siteId ?? 'hq') === site)
         .map((b) => ({ ...b, siteId: undefined })),
     })),
   };
@@ -308,7 +308,7 @@ export function IsometricWarehouse({
   site?: SiteId;
 }) {
   const { state: rawState } = useGame();
-  const state = site === 'sued' && rawState.branchWarehouse ? projectBranchView(rawState) : rawState;
+  const state = site && site !== 'hq' && rawState.branches?.[site] ? projectBranchView(rawState, site) : rawState;
   const stateRef = useRef(state);
   stateRef.current = state;
   const buildRef = useRef(build);

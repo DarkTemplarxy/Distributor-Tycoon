@@ -9,7 +9,7 @@ import { OpsCockpit } from './components/OpsCockpit';
 import { OrdersPanel } from './components/OrdersPanel';
 import { ActionBar } from './components/ActionBar';
 import { buildCoolZone, buildShelf, buildTable, buildInboundSlot, buildDesk, demolishAt, expandHall, expandOffice } from './game/actions';
-import { isInAssortment, notify } from './game/simulation';
+import { isInAssortment, notify, branchOpen } from './game/simulation';
 import {
   LARGE_UNLOCK_MONTHLY,
   MEDIUM_UNLOCK_MONTHLY,
@@ -66,7 +66,7 @@ export function App() {
   const [modal, setModal] = useState<ModalId>(null);
   // L3: welcher Standort in der Halle angezeigt wird ('hq' | 'sued').
   const [activeSite, setActiveSite] = useState<SiteId>('hq');
-  const siteAvailable = !!state.branchWarehouse;
+  const siteAvailable = branchOpen(state);
   const site: SiteId = siteAvailable ? activeSite : 'hq';
   const [restartOpen, setRestartOpen] = useState(false);
   const [buildMode, setBuildMode] = useState(false);

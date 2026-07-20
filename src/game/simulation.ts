@@ -81,6 +81,7 @@ import {
   COMP_SLOT_EASE,
   supplierDeliversTo,
   SITE_META,
+  BRANCH_ORDER,
   BRANCH_RENT,
   MEDIUM_UNLOCK_MONTHLY,
   MILESTONE_DEFS,
@@ -255,11 +256,16 @@ export function inboundStock(product: Product, site: SiteId = 'hq'): number {
 
 // --- Standorte (L3) ---------------------------------------------------------
 export function branchOpen(state: GameState): boolean {
-  return !!state.branchWarehouse;
+  return !!state.branches && Object.keys(state.branches).length > 0;
 }
-/** Das Warehouse des Standorts ('hq' = Hauptlager, 'sued' = Standort Süd). */
+/** Ist DIESER Standort in Betrieb (hq immer, sonst eröffnete Zweigstelle)? */
+export function branchOpenAt(state: GameState, site: SiteId): boolean {
+  return site === 'hq' || !!state.branches?.[site];
+}
+/** Das Warehouse eines Standorts ('hq' = Hauptlager, sonst die eröffnete Zweigstelle). */
 export function warehouseOf(state: GameState, site: SiteId = 'hq'): GameState['warehouse'] {
-  return site === 'sued' && state.branchWarehouse ? state.branchWarehouse : state.warehouse;
+  const branch = site !== 'hq' ? state.branches?.[site] : undefined;
+  return branch ?? state.warehouse;
 }
 export function siteOfCustomer(c: { region?: SiteId } | undefined): SiteId {
   return c?.region ?? 'hq';
@@ -270,9 +276,9 @@ export function siteOfEmployee(e: { siteId?: SiteId }): SiteId {
 export function siteOfOrder(state: GameState, order: { customerId: string }): SiteId {
   return siteOfCustomer(state.customers.find((c) => c.id === order.customerId));
 }
-/** Alle aktiven Standorte (fürs Auto-Assign u. Ä.). */
+/** Alle aktiven Standorte (Hauptlager + eröffnete Zweigstellen, in Eröffnungs-Reihenfolge). */
 export function activeSites(state: GameState): SiteId[] {
-  return branchOpen(state) ? ['hq', 'sued'] : ['hq'];
+  return ['hq', ...BRANCH_ORDER.filter((s) => state.branches?.[s])];
 }
 
 /** Total shelf capacity in units at a site: shelves × slots × palette size. */
@@ -569,9 +575,11 @@ export function placementBlocksAccess(
 export function currentMonthlyRent(state: GameState): number {
   const hq =
     MONTHLY_RENT + RENT_PER_EXPANSION * (state.warehouse.expansions + state.warehouse.officeExpansions);
-  const branch = state.branchWarehouse
-    ? BRANCH_RENT + RENT_PER_EXPANSION * state.branchWarehouse.expansions
-    : 0;
+  let branch = 0;
+  for (const s of BRANCH_ORDER) {
+    const wh = state.branches?.[s];
+    if (wh) branch += BRANCH_RENT + RENT_PER_EXPANSION * wh.expansions;
+  }
   return hq + branch;
 }
 
