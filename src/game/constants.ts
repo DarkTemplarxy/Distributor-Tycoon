@@ -645,34 +645,32 @@ export function articleEconomics(id: string): ArticleEconomics | undefined {
   };
 }
 
-/** Wie viele FREMD-Artikel (über die eigene Stadt + landesweite hinaus) ein Kunde je
- * Größe listen kann — die „Reichweite": Großkunden alles, Mittelkunden bis zu 3
- * weitere, Kleinkunden genau einen aus einer anderen Stadt. */
+/** Phase B4: Wie viele ZUSÄTZLICHE Artikel-Linien (über die erste hinaus) ein Kunde je
+ * Größe im Laufe der Zeit sammelt — der Kern-Wachstumsmotor des Artikel-Modells.
+ * Kleinkunden +1 (also 2 Linien), Mittel +3, Groß unbegrenzt (treiben 120k→600k). */
 export const ARTICLE_REACH: Record<CustomerType, number> = {
   small: 1,
   medium: 3,
   large: Infinity,
 };
 
-/** Ab dieser Woche beginnen Kunden, Spezialitäten-Artikel zu entwickeln — davor ist
- * das Spiel bewusst rein Gruppen-basiert (der Übergang setzt erst im Late-Game ein,
- * wenn der Betrieb steht — Jahr 1 bleibt so ganz beim Gruppen-Spiel). */
-export const ARTICLE_DEV_START_WEEK = 24;
-/** Ein Kunde entwickelt Spezialitäten erst, wenn er DICH schon so viele Wochen kennt
- * (Geschmack entwickelt sich über die Zeit) — junge, noch wacklige Kunden im Aufbau
- * bleiben beim Gruppen-Geschäft. */
-export const ARTICLE_DEV_CUSTOMER_AGE = 24;
-/** Wöchentliche Chance je aktivem Kunden, eine neue Artikel-Linie zu entwickeln
- * (nur solange die Reichweite es erlaubt). Großkunden treiben den Übergang. */
+/** Ab dieser Woche sammeln etablierte Kunden automatisch weitere Artikel — der
+ * Umsatz je Kunde wächst mit. Bewusst schon in Jahr 1 (treibt den 120k-Checkpoint),
+ * aber erst nachdem der Grundbetrieb steht. */
+export const ARTICLE_DEV_START_WEEK = 10;
+/** Ein Kunde sammelt erst, wenn er DICH schon so viele Wochen kennt (junge, noch
+ * wacklige Kunden im Aufbau bleiben bei ihrer ersten Linie). */
+export const ARTICLE_DEV_CUSTOMER_AGE = 6;
+/** Wöchentliche Chance je aktivem Kunden, eine weitere Artikel-Linie zu sammeln
+ * (nur solange die Reichweite es erlaubt). Größere Kunden sammeln schneller. */
 export const ARTICLE_DEV_CHANCE: Record<CustomerType, number> = {
-  small: 0.02,
-  medium: 0.05,
-  large: 0.14,
+  small: 0.06,
+  medium: 0.1,
+  large: 0.16,
 };
-/** Spezialitäten sind PREMIUM & NISCHIG: eine NEUE Artikel-Linie hat nur diesen
- * Bruchteil der üblichen Menge (kein Durchsatz-Schock, aber echte Sammel-Tiefe).
- * Wird eine bestehende Gruppen-Linie zur Spezialität veredelt, bleibt ihre Menge. */
-export const ARTICLE_VOLUME_FACTOR = 0.4;
+/** Eine NEUE Artikel-Linie startet mit diesem Bruchteil der üblichen Menge (kein
+ * Durchsatz-Schock, aber echtes Umsatzwachstum je Kunde über die Zeit). */
+export const ARTICLE_VOLUME_FACTOR = 0.5;
 
 /** Umgekehrt ist 🐟 Fisch Küstenware: der Lieferant bringt ihn nur ans
  * HAUPTLAGER (Nord) — der Süden bekommt Fisch ausschließlich per Transfer.

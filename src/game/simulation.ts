@@ -51,6 +51,11 @@ import {
   articlesOfGroup,
   pickArticleForRegion,
   defaultArticleOf,
+  ARTICLE_REACH,
+  ARTICLE_DEV_START_WEEK,
+  ARTICLE_DEV_CUSTOMER_AGE,
+  ARTICLE_DEV_CHANCE,
+  ARTICLE_VOLUME_FACTOR,
   INQUIRY_DAY_OF_WEEK,
   ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
@@ -2125,10 +2130,49 @@ export function marketingPower(state: GameState): number {
     .reduce((sum, e) => sum + 0.5 + 0.5 * (e.skill / 100), 0);
 }
 
-// Phase B2: Der frühere „Spezialitäten-Übergang" (developProductLines) entfällt —
-// Kunden kaufen jetzt von Anfang an konkrete Artikel (pickArticleForRegion), und
-// mehr Artikel-Linien wachsen über den normalen Erweiterungs-Motor (neue Gruppe →
-// konkreter Artikel). Die Gruppe bleibt Kategorie für Freischaltung/Kühlpflicht.
+// --- Artikel-Sammel-Motor (Phase B4): der Kern-Wachstumsmotor des Artikel-Modells --
+// Etablierte, loyale Kunden nehmen mit der Zeit AUTOMATISCH weitere gelistete Artikel
+// in ihr Programm auf (bis zu ihrer größen-abhängigen Reichweite). So wächst der
+// Umsatz je Kunde über Jahr 1 hinweg — das ist, was den 120k-Checkpoint trägt und
+// später (Groß-Kunden, unbegrenzt) Richtung 600k zieht. Kühl-Artikel nur mit Kühl-
+// Platz (kein Verderb-Schock), Regional-Artikel nur wenn am Standort belieferbar.
+
+/** Anzahl zusätzlicher Artikel-Linien (über die erste hinaus), die ein Kunde hat. */
+function extraArticleCount(cust: Customer): number {
+  return Math.max(0, cust.lines.length - 1);
+}
+
+function growCustomerArticles(state: GameState, newWeek: number): void {
+  if (state.tutorial?.active) return;
+  if (newWeek < ARTICLE_DEV_START_WEEK) return;
+  for (const cust of state.customers) {
+    if (!cust.active) continue;
+    if (newWeek - (cust.sinceWeek ?? 0) < ARTICLE_DEV_CUSTOMER_AGE) continue;
+    if (cust.loyalty < 55) continue; // nur zufriedene Kunden sammeln
+    if (extraArticleCount(cust) >= ARTICLE_REACH[cust.type]) continue;
+    if (Math.random() >= ARTICLE_DEV_CHANCE[cust.type]) continue;
+    const site = siteOfCustomer(cust);
+    const have = new Set(cust.lines.map((l) => l.productId));
+    // Kandidaten: gelistete Artikel, die der Kunde noch nicht hat, am Standort
+    // belieferbar; kühlpflichtige nur mit genügend freiem Kühlregal.
+    const cand = state.products.filter((p) => {
+      if (have.has(p.id)) return false;
+      if (!supplierDeliversTo(p.id, site)) return false;
+      if (getProductDef(p.groupId).requiresCooling && coldShelfFree(state, site) < 60) return false;
+      return true;
+    });
+    if (cand.length === 0) continue;
+    const p = pick(cand);
+    const vol = Math.max(1, Math.round(rollLineVolume(cust.type, p.id) * ARTICLE_VOLUME_FACTOR));
+    cust.lines.push({ productId: p.id, price: p.verkaufspreis, agreedPrice: p.verkaufspreis, volume: vol });
+    // KEIN Loyalitäts-Bonus: das Sammeln macht Kunden nicht künstlich klebrig — der
+    // Wunsch→Ultimatum-Druck (ignorierte Forderungen → Abwanderung) bleibt scharf.
+    // Nur Großkunden melden (sichtbarer Late-Game-Sog); klein/mittel still wachsen.
+    if (cust.type === 'large') {
+      notify(state, `⭐ ${cust.name} nimmt jetzt auch ${p.emoji} ${p.name} ins Programm – ${vol}×/Woche.`, 'success');
+    }
+  }
+}
 
 // --- Marktanteil-Modell (entkoppelt) ----------------------------------------
 
@@ -3135,6 +3179,7 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   // speist den bestehenden Abwanderungs-Pfad direkt darunter).
   runMarketWeek(state, newWeek);
   runRenownWeek(state);
+  growCustomerArticles(state, newWeek);
 
   // 5c. Loyalty with teeth: deeply unhappy customers (below the threshold) may
   // quit — but NEVER without warning. Crossing the threshold raises the warning
