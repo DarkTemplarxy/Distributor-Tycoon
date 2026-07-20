@@ -32,10 +32,12 @@ import {
   SLOT_COST,
   SHELF_SLOTS,
   REGIONAL_OFFICE_FOUND_COST,
+  VERTEILZENTRUM_COST,
   REGIONAL_OFFICE_ROLES,
   REGIONAL_KAM_LARGE_SLOTS,
   RENOWN,
   STANDORTLEITER_AUTO,
+  LOGISTIK_AUTO,
   STRATEGY_COOLDOWN_WEEKS,
   supplierDeliversTo,
   SITE_META,
@@ -277,7 +279,7 @@ export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'):
   // per-role unlock hurdle. Central office roles (KAM/Einkäufer/Vertrieb) sit at HQ
   // and need a desk (Konzern-Verwaltung im Hauptlager, L3).
   const siteBound = role === 'lager' || role === 'standortleiter';
-  const isRegionalRole = role === 'marketing' || role === 'regionalkam';
+  const isRegionalRole = role === 'marketing' || role === 'regionalkam' || role === 'logistik';
   if (isRegionalRole) {
     if (!state.konzern) {
       return { ok: false, message: 'Gründe erst dein Regionalbüro (auf der Konzern-Karte).' };
@@ -329,6 +331,9 @@ export function hireEmployee(state: GameState, role: Role, site: SiteId = 'hq'):
   }
   if (role === 'regionalkam') {
     notify(state, `🏬 ${name} betreut die landesweiten Großkunden (bis zu ${REGIONAL_KAM_LARGE_SLOTS}). Erst jetzt können Großkunden gewonnen werden.`, 'info');
+  }
+  if (role === 'logistik') {
+    notify(state, `🚚 ${name} übernimmt die Disposition: Waren-Transfers zwischen den Standorten laufen ab jetzt automatisch übers Verteilzentrum – kein manuelles Verschieben mehr.`, 'info');
   }
 
   // A newly hired Einkäufer takes over the weekly Monday order: from now on the
@@ -936,6 +941,7 @@ export function transferStock(
   quantity: number,
   fromSite: SiteId,
   toSite: SiteId,
+  auto = false,
 ): ActionResult {
   if (!branchOpen(state)) return { ok: false, message: 'Standort Süd ist noch nicht eröffnet.' };
   if (fromSite === toSite) return { ok: false, message: 'Gleicher Standort.' };
@@ -986,7 +992,9 @@ export function transferStock(
   const via = ownPallets >= pallets ? 'eigener Fuhrpark' : ownPallets > 0 ? `Fuhrpark + Fremd-Spedition` : 'Fremd-Spedition';
   notify(
     state,
-    `🚚 Transfer unterwegs: ${qty}× ${product.emoji} ${product.name} ${SITE_META[fromSite].short} → ${SITE_META[toSite].short} (${cost}€ · ${via}, ~${TRANSFER_DAYS} Tag).`,
+    auto
+      ? `📦 Logistikleiter: ${qty}× ${product.emoji} ${product.name} ${SITE_META[fromSite].short} → ${SITE_META[toSite].short} disponiert (${cost}€ · ${via}).`
+      : `🚚 Transfer unterwegs: ${qty}× ${product.emoji} ${product.name} ${SITE_META[fromSite].short} → ${SITE_META[toSite].short} (${cost}€ · ${via}, ~${TRANSFER_DAYS} Tag).`,
     'info',
   );
   return { ok: true };
@@ -1130,6 +1138,29 @@ export function expandOffice(state: GameState, block: { gx: number; gy: number }
 // so, wie die ganze Wirtschaft schon headless im Balancing-Harness läuft.
 // ============================================================================
 
+/**
+ * Verteilzentrum (Hub) bauen — das Konzern-Logistikbauwerk. Danach kann ein
+ * Logistikleiter eingestellt werden, der Waren-Transfers automatisch disponiert.
+ * Braucht ein gegründetes Regionalbüro. Idempotent-sicher.
+ */
+export function buildVerteilzentrum(state: GameState): ActionResult {
+  if (state.hub) return { ok: false, message: 'Das Verteilzentrum besteht bereits.' };
+  if (!state.konzern) {
+    return { ok: false, message: 'Gründe erst dein Regionalbüro (auf der Konzern-Karte).' };
+  }
+  if (state.cash + availableCredit(state) < VERTEILZENTRUM_COST) {
+    return { ok: false, message: `Das Verteilzentrum kostet ${VERTEILZENTRUM_COST.toLocaleString('de-DE')}€.` };
+  }
+  spend(state, VERTEILZENTRUM_COST);
+  state.hub = { builtWeek: weekOf(state.totalDays) };
+  notify(
+    state,
+    `📦 Verteilzentrum gebaut (${VERTEILZENTRUM_COST.toLocaleString('de-DE')}€)! Jetzt kannst du einen 🚚 Logistikleiter einstellen – der disponiert Waren-Transfers automatisch, sodass Regionalprodukte & Großkunden lagerübergreifend beliefert werden.`,
+    'success',
+  );
+  return { ok: true };
+}
+
 /** Der Standortleiter eines Standorts (führt ihn automatisch), falls vorhanden. */
 export function siteManager(state: GameState, site: SiteId): GameState['employees'][number] | undefined {
   return state.employees.find((e) => e.role === 'standortleiter' && (e.siteId ?? 'hq') === site);
@@ -1226,4 +1257,60 @@ export function autoManageSite(state: GameState, site: SiteId): void {
 export function runSiteManagers(state: GameState): void {
   autoManageSite(state, 'hq');
   if (state.branchWarehouse) autoManageSite(state, 'sued');
+}
+
+/** Wochenbedarf eines Produkts am Standort: Summe der Linien-Volumina der Kunden dieser
+ * Region (Näherung für „wie viel braucht der Standort davon pro Woche"). */
+function siteProductWeeklyDemand(state: GameState, productId: ProductId, site: SiteId): number {
+  return state.customers
+    .filter((c) => c.active && (c.region ?? 'hq') === site)
+    .reduce((sum, c) => sum + c.lines.filter((l) => l.productId === productId).reduce((a, l) => a + l.volume, 0), 0);
+}
+/** Bereits zu diesem Standort unterwegs (in-flight Transfers) für ein Produkt. */
+function inflightTransferQty(state: GameState, productId: ProductId, toSite: SiteId): number {
+  return (state.transfers ?? [])
+    .filter((t) => t.productId === productId && t.toSite === toSite)
+    .reduce((a, t) => a + t.quantity, 0);
+}
+
+/**
+ * Logistikleiter (Auto-Transfer-Dispatch) — pro Sim-Tick aus dem Treiber aufgerufen.
+ * Erfordert ein gebautes Verteilzentrum UND einen eingestellten Logistikleiter. Er sucht
+ * den größten ungedeckten Regionalprodukt-Engpass (ein Standort braucht ein Produkt, das
+ * sein Lieferant NICHT dorthin liefert — z. B. Fisch nur Nord, Wein/Oliven nur Süd — und
+ * der andere Standort hat Überschuss) und disponiert genau EINEN Transfer dagegen (über
+ * den Fuhrpark, kassen-reserve-gedeckelt). So werden Regionalprodukte & Großkunden
+ * lagerübergreifend beliefert, ganz ohne manuelles Verschieben. No-op ohne Hub/Leiter.
+ */
+export function runLogistikleiter(state: GameState): void {
+  if (!state.hub || !branchOpen(state)) return;
+  if (!state.employees.some((e) => e.role === 'logistik')) return;
+
+  const A = LOGISTIK_AUTO;
+  const reserve = Math.max(A.RESERVE_FLOOR, monthlyRevenue(state) * A.RESERVE_PER_MONTHLY);
+
+  const sites: SiteId[] = ['hq', 'sued'];
+  let best: { productId: ProductId; from: SiteId; to: SiteId; qty: number; gap: number } | null = null;
+  for (const to of sites) {
+    const from: SiteId = to === 'hq' ? 'sued' : 'hq';
+    for (const p of state.products) {
+      // Nur Produkte, die der Lieferant NICHT ans Ziel liefert (müssen per Transfer kommen),
+      // aber an die Quelle liefert (die kann sie also bevorraten).
+      if (supplierDeliversTo(p.id, to) || !supplierDeliversTo(p.id, from)) continue;
+      const demand = siteProductWeeklyDemand(state, p.id, to);
+      if (demand <= 0) continue;
+      const have = shelfStock(p, to) + inflightTransferQty(state, p.id, to);
+      const gap = demand * A.COVER_WEEKS - have;
+      if (gap < A.MIN_UNITS) continue;
+      const srcKeep = siteProductWeeklyDemand(state, p.id, from) * A.SOURCE_KEEP_WEEKS;
+      const srcAvail = Math.max(0, shelfStock(p, from) - srcKeep);
+      const qty = Math.min(gap, srcAvail);
+      if (qty < A.MIN_UNITS) continue;
+      if (!best || gap > best.gap) best = { productId: p.id, from, to, qty, gap };
+    }
+  }
+  if (!best) return;
+  const pallets = Math.ceil(best.qty / PALETTE_SIZE);
+  if (state.cash - transferCost(state, pallets) < reserve) return;
+  transferStock(state, best.productId, best.qty, best.from, best.to, true);
 }

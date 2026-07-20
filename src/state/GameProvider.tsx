@@ -16,7 +16,7 @@ import {
 } from 'react';
 import type { GameState, Speed } from '../game/types';
 import { advance, computeYearStats } from '../game/simulation';
-import { runSiteManagers } from '../game/actions';
+import { runSiteManagers, runLogistikleiter } from '../game/actions';
 import { createInitialState } from '../game/init';
 import { tutorialPausesGame } from '../game/tutorial';
 import { deleteSave, load, save } from '../game/save/saveManager';
@@ -66,6 +66,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
         // Delegated sites run themselves headlessly each tick (Konzern-Delegation),
         // regardless of which site is on screen — no-op unless a Standortleiter is set.
         runSiteManagers(st);
+        // Logistikleiter disponiert Waren-Transfers automatisch übers Verteilzentrum
+        // (no-op ohne Hub + Logistikleiter).
+        runLogistikleiter(st);
       }
 
       if (now - lastRenderRef.current >= RENDER_INTERVAL_MS) {

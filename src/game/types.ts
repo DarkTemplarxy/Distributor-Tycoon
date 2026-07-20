@@ -48,7 +48,8 @@ export type Role =
   // Regionalbüro-Rollen (Konzern, ab 2 Standorten): sitzen im abstrakten Regionalbüro
   // des Landes (kein physischer Schreibtisch), werden über Hürden freigeschaltet.
   | 'marketing' // Marketing-Manager: beschleunigt den Ruf (Renown), vor allem initial.
-  | 'regionalkam'; // Regional-KAM: betreut die landesweiten Großkunden (bis zu 3 je Kopf).
+  | 'regionalkam' // Regional-KAM: betreut die landesweiten Großkunden (bis zu 3 je Kopf).
+  | 'logistik'; // Logistikleiter: disponiert automatisch Transfers übers Verteilzentrum.
 
 /** Buyable capital upgrades (Paket 2). */
 export type EquipmentId = 'forklift' | 'packstation' | 'cooling';
@@ -536,6 +537,12 @@ export interface GameState {
     foundedWeek: number;
     name: string;
   };
+
+  /** Verteilzentrum (Hub) des Konzerns: einmalig gebaut, danach disponiert der
+   * Logistikleiter automatisch Waren-Transfers zwischen den Standorten (Großkunden &
+   * Regionalprodukte lagerübergreifend). Undefined = noch nicht gebaut. Optional →
+   * kein SAVE-Bump. */
+  hub?: { builtWeek: number };
 
   stats: GameStats;
   /** Progress on "Onkels Notizbuch" milestones (see MILESTONE_DEFS). Checks run

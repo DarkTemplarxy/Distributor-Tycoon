@@ -27,12 +27,12 @@ import {
   fleetMonthlyCost,
   transferCost,
 } from '../game/simulation';
-import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundRegionalOffice, buyVehicle } from '../game/actions';
+import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundRegionalOffice, buyVehicle, buildVerteilzentrum } from '../game/actions';
 import {
   SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT, BRANCH_UNLOCK_MONTHLY,
   TRANSFER_DAYS, TRANSFER_COST_PER_PALLET, TRANSFER_COST_OWN_PER_PALLET, PALETTE_SIZE,
   KONZERN_C_LEVEL, REGIONAL_OFFICE_ROLES, REGIONAL_KAM_LARGE_SLOTS,
-  REGIONAL_OFFICE_FOUND_COST, FLEET_VEHICLES,
+  REGIONAL_OFFICE_FOUND_COST, VERTEILZENTRUM_COST, FLEET_VEHICLES,
 } from '../game/constants';
 import type { OfficeRole } from '../game/constants';
 import {
@@ -202,6 +202,23 @@ function FleetDepot({ x, y, emojis, inTransit }: { x: number; y: number; emojis:
         <text key={i} x={-2 + i * 34} y={22} fontSize={24}>{e}</text>
       ))}
       {parkedEmojis.length === 0 && total > 0 && <text x={-2} y={20} fontSize={11} fill="var(--text-faint)">alle unterwegs</text>}
+    </g>
+  );
+}
+
+/** Das Verteilzentrum (Hub): Konsolidierungs-Knoten zwischen den Städten, über den der
+ * Logistikleiter die Waren-Transfers disponiert. Linien zu beiden Städten. */
+function HubNode({ x, y, active }: { x: number; y: number; active: boolean }) {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <circle r={26} fill="var(--bg-elev)" stroke={active ? 'var(--good)' : 'var(--accent)'} strokeWidth={4} />
+      <text y={9} textAnchor="middle" fontSize={26}>📦</text>
+      <g transform="translate(0,44)">
+        <rect x={-74} y={-15} width={148} height={24} rx={7} fill="var(--bg-panel)" stroke="var(--border)" />
+        <text y={2} textAnchor="middle" fontSize={13} fill="var(--text)" fontWeight={600}>
+          Verteilzentrum{active ? ' · aktiv' : ''}
+        </text>
+      </g>
     </g>
   );
 }
@@ -391,6 +408,10 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   const regionalOpen = !!konzern;
   const foundedWeek = konzern?.foundedWeek ?? 0;
   const foundRegionalNow = () => mutate((s) => foundRegionalOffice(s));
+  // Verteilzentrum (Hub) + Logistikleiter-Auto-Dispatch (Step 2 der Konzern-Logistik).
+  const hub = !!state.hub;
+  const hasLogistiker = state.employees.some((e) => e.role === 'logistik');
+  const buildHubNow = () => mutate((s) => buildVerteilzentrum(s));
   // Länder, in denen der Konzern tätig ist. Aktuell nur Deutschland — die
   // Konzernzentrale (C-Level) schaltet erst mit dem ZWEITEN Land frei.
   const countries = 1;
@@ -454,9 +475,20 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
           </button>
         </div>
       )}
-      {regionalOpen && (
+      {regionalOpen && !hub && (
         <div className="konzern-banner">
-          <span>🏢 <b>Regionalbüro Deutschland</b> ist gegründet. Seine Mitarbeiter (Marketing-Manager, Regional-KAM …) schalten über eigene Hürden frei.</span>
+          <span>📦 <b>Verteilzentrum bauen</b> – danach disponiert ein 🚚 Logistikleiter Waren-Transfers automatisch (Regionalprodukte & Großkunden lagerübergreifend, kein manuelles Verschieben).</span>
+          <button className="btn primary" disabled={state.cash < VERTEILZENTRUM_COST} onClick={buildHubNow}
+            title={state.cash < VERTEILZENTRUM_COST ? `Kostet ${eur(VERTEILZENTRUM_COST)}€` : undefined}>
+            Verteilzentrum bauen ({eur(VERTEILZENTRUM_COST)}€)
+          </button>
+        </div>
+      )}
+      {regionalOpen && hub && (
+        <div className="konzern-banner">
+          <span>📦 <b>Verteilzentrum aktiv.</b> {hasLogistiker
+            ? 'Der Logistikleiter disponiert Waren-Transfers automatisch übers Verteilzentrum.'
+            : 'Stelle im Regionalbüro einen 🚚 Logistikleiter ein, damit Transfers automatisch disponiert werden.'}</span>
           <button className="btn primary" onClick={() => { setOffice('regional-de'); }}>Regionalbüro öffnen</button>
         </div>
       )}
@@ -496,6 +528,19 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                     stroke="var(--accent)" strokeWidth={3} strokeDasharray="12 10" opacity={0.7} />
                 </>
               )}
+
+              {/* Verteilzentrum (Hub): Konsolidierungs-Knoten zwischen den Städten */}
+              {hub && (() => {
+                const hx = (PIN_XY.hq.x + PIN_XY.sued.x) / 2;
+                const hy = (PIN_XY.hq.y + PIN_XY.sued.y) / 2 - 110;
+                return (
+                  <>
+                    <line x1={PIN_XY.hq.x} y1={PIN_XY.hq.y} x2={hx} y2={hy} stroke="var(--good)" strokeWidth={2.5} strokeDasharray="8 6" opacity={0.5} />
+                    <line x1={PIN_XY.sued.x} y1={PIN_XY.sued.y} x2={hx} y2={hy} stroke="var(--good)" strokeWidth={2.5} strokeDasharray="8 6" opacity={0.5} />
+                    <HubNode x={hx} y={hy} active={hasLogistiker} />
+                  </>
+                );
+              })()}
 
               {/* Zwei Städte */}
               <CityCluster x={PIN_XY.hq.x} y={PIN_XY.hq.y} name={SITE_META.hq.short} />

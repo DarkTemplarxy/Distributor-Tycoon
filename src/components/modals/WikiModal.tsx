@@ -254,7 +254,10 @@ const ENTRIES: WikiEntry[] = [
           🚛 Sattelzug 20, Lastzug 30 Paletten) – je <b>Kaufpreis + Monatskosten</b> (Instandhaltung
           & Treibstoff). Die Gesamtkapazität fährt Transfer-Paletten günstig (darüber der teurere
           Fremd-Spediteur) und senkt die Abholkosten; die Fahrzeuge siehst du live auf der Karte.
-          Jeder Standort hat
+          Baust du zusätzlich ein <b>📦 Verteilzentrum</b> (Konzern-Bauwerk auf der Konzern-Karte)
+          und stellst einen <b>🚚 Logistikleiter</b> ein, laufen diese Transfers <b>automatisch</b>:
+          Regionalprodukte & Großkunden werden lagerübergreifend beliefert, ohne dass du noch etwas
+          verschieben musst. Jeder Standort hat
           sein eigenes Samstags-Bestellfenster; der Umschalter über der Halle wechselt die Ansicht.
           Vorsicht: Eröffnung + Personal + Warenaufbau summieren sich — wer zu früh expandiert,
           kann sich übernehmen.

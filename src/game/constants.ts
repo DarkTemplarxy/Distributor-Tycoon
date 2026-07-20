@@ -161,6 +161,7 @@ export const ROLE_SALARY: Record<Role, number> = {
   standortleiter: 1000,
   marketing: 750,
   regionalkam: 900,
+  logistik: 850,
 };
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -172,6 +173,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   standortleiter: 'Standortleiter',
   marketing: 'Marketing-Manager',
   regionalkam: 'Regional-KAM',
+  logistik: 'Logistikleiter',
 };
 
 export const ROLE_EMOJI: Record<Role, string> = {
@@ -183,6 +185,7 @@ export const ROLE_EMOJI: Record<Role, string> = {
   standortleiter: '🧑‍✈️',
   marketing: '📣',
   regionalkam: '🏬',
+  logistik: '🚚',
 };
 
 /**
@@ -280,9 +283,10 @@ export const REGIONAL_OFFICE_ROLES: RegionalRoleDef[] = [
     progress: (s) => `${Math.min(s.products.length, REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS)}/${REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS} Gruppen`,
   },
   {
-    emoji: '🚚', title: 'Logistikleiter', blurb: 'Automatisiert Transfers & Großkunden-Konsolidierung übers Verteilzentrum.',
-    hurdle: 'Sobald Waren-Transfers zwischen den Standorten zur Routine werden.',
-    unlocked: () => false,
+    emoji: '🚚', title: 'Logistikleiter', role: 'logistik',
+    blurb: 'Disponiert automatisch Waren-Transfers übers Verteilzentrum – Regionalprodukte & Großkunden lagerübergreifend, ganz ohne manuelles Verschieben.',
+    hurdle: 'Baue erst das Verteilzentrum (auf der Konzern-Karte).',
+    unlocked: (s) => !!s.hub,
   },
   {
     emoji: '🏬', title: 'Regional-KAM', role: 'regionalkam',
@@ -301,6 +305,28 @@ export const REGIONAL_OFFICE_ROLES: RegionalRoleDef[] = [
 
 /** Ein Regional-KAM betreut bis zu so viele Großkunden (Landeskunden). */
 export const REGIONAL_KAM_LARGE_SLOTS = 3;
+
+/**
+ * Verteilzentrum (Hub): einmalig gebautes Konzern-Bauwerk. Danach kann ein
+ * Logistikleiter eingestellt werden, der automatisch Waren-Transfers zwischen den
+ * Standorten disponiert — Regionalprodukte (z. B. Fisch nur Nord, Wein/Oliven nur Süd)
+ * und Großkunden-Bedarf fließen so lagerübergreifend, ganz ohne manuelles Verschieben.
+ */
+export const VERTEILZENTRUM_COST = 60_000;
+
+/** Logistikleiter-Auto-Dispatch: Regeln, damit die Automatik flüssig bleibt. */
+export const LOGISTIK_AUTO = {
+  /** Kassen-Reserve wie beim Standortleiter (Boden + Anteil vom Monatsumsatz). */
+  RESERVE_FLOOR: 12_000,
+  RESERVE_PER_MONTHLY: 0.25,
+  /** Ziel-Vorrat am Zielstandort: so viele Wochen Regionalbedarf abdecken. */
+  COVER_WEEKS: 2,
+  /** Mindestmenge (Einheiten), ab der ein Auto-Transfer überhaupt gefahren wird
+   *  (keine Mini-Fahrten). */
+  MIN_UNITS: 40,
+  /** Am Absender bleibt mindestens dieser Anteil seines eigenen Wochenbedarfs stehen. */
+  SOURCE_KEEP_WEEKS: 1,
+} as const;
 
 /** Konzernzentrale: die C-Level-Führung ÜBER mehreren Ländern. Wird erst mit dem
  * ZWEITEN Land freigeschaltet – mit nur einem Land wäre sie redundant zum
@@ -530,10 +556,10 @@ export interface VehicleDef {
   monthly: number;
 }
 export const FLEET_VEHICLES: VehicleDef[] = [
-  { id: 'transporter', name: 'Transporter', emoji: '🚐', capacity: 5, price: 4_000, monthly: 400 },
-  { id: 'lkw', name: 'LKW', emoji: '🚚', capacity: 10, price: 7_000, monthly: 700 },
-  { id: 'sattelzug', name: 'Sattelzug', emoji: '🚛', capacity: 20, price: 13_000, monthly: 1_200 },
-  { id: 'lastzug', name: 'Lastzug', emoji: '🚛', capacity: 30, price: 18_000, monthly: 1_600 },
+  { id: 'transporter', name: 'Transporter', emoji: '🚐', capacity: 5, price: 14_000, monthly: 400 },
+  { id: 'lkw', name: 'LKW', emoji: '🚚', capacity: 10, price: 26_000, monthly: 700 },
+  { id: 'sattelzug', name: 'Sattelzug', emoji: '🚛', capacity: 20, price: 48_000, monthly: 1_200 },
+  { id: 'lastzug', name: 'Lastzug', emoji: '🚛', capacity: 30, price: 68_000, monthly: 1_600 },
 ];
 export function getVehicleDef(id: VehicleId): VehicleDef {
   return FLEET_VEHICLES.find((v) => v.id === id)!;
