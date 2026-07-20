@@ -674,35 +674,37 @@ export const INQUIRY_MARKET: Record<CustomerType, number> = {
   medium: 5,
   large: 2,
 };
+// Basis-Wochenchance je Größe. Nach dem Wechsel aufs Marktanteil-Modell nachkalibriert
+// (die Sättigung läuft jetzt gegen Basis-Markt + Konkurrenz statt nur gegen deine Zahl),
+// sodass die Neukunden-RATE praktisch wie zuvor bleibt.
 export const INQUIRY_BASE_CHANCE: Record<CustomerType, number> = {
-  small: 0.9,
-  medium: 0.55,
-  large: 0.35,
+  small: 1.1,
+  medium: 0.72,
+  large: 0.48,
 };
 
 /**
- * Expliziter Markt-Pool (Marktanteil-Modell). Je Stadt gibt es einen ENDLICHEN
- * Kunden-Pool je Größe, aufgeteilt in DEINE Kunden, von KONKURRENTEN gehaltene und
- * FREIE. Du wächst in die freien Slots; die Konkurrenz drückt (COMPETITOR_SHARE). Der
- * kleine Pool wächst mit der Sortimentsbreite — manche Kunden kommen erst, wenn du ihre
- * Produktgruppe listest (+SMALL_PER_GROUP je Gruppe) → bei vollem Sortiment ~38, davon
- * ~40 % (≈15) für dich. Vertrieb & Ruf vergrößern den Pool zusätzlich, guter Service
- * beschleunigt die Akquise. (Die Rate-Kurve bleibt wie gehabt, Service & Ruf kommen als
- * Faktoren dazu; INQUIRY_MARKET/INQUIRY_BASE_CHANCE bleiben die Kalibrier-Basis.)
- */
+ * Marktanteil-Modell (entkoppelt). Der Gesamt-Markt je Stadt ist eine wachsende
+ * Marktgröße, die KUNDENMECHANIK läuft SEPARAT darüber (Akquise/Churn/Abwerbung), nichts
+ * wird aus einem festen Pool „herausgerechnet". Der Markt = BASE + bereits bediente Kunden
+ * (deine + die der Konkurrenz) → er WÄCHST mit dem Markt, kein harter Deckel; der Marktanteil
+ * = deine Kunden ÷ (deine + Konkurrenz). Die Akquise-RATE saturiert am BASIS-Markt (je mehr du
+ * schon hast, desto seltener Neue) + Service- & Ruf-Faktor + Vertrieb (Vertrieb & Ruf heben die
+ * RATE, nicht den Pool). Große Kunden: kleiner FIXER Pool je LAND (kein Wachstum) — sie werden
+ * dafür mit der Zeit „groß" (listen alle Produkte). */
 export const MARKET = {
-  /** Basis-Pool je Stadt (large = pro LAND, nicht pro Stadt). */
-  BASE: { small: 20, medium: 10, large: 5 } as Record<CustomerType, number>,
-  /** Zusätzliche kleine Kunden je gelisteter Produktgruppe. */
-  SMALL_PER_GROUP: 2,
-  /** Pool-Zuwachs je Vertriebs-Kraft (skill-gewichtet), je Größe. */
-  SALES_POOL_PER_REP: { small: 5, medium: 2, large: 0.5 } as Record<CustomerType, number>,
-  /** Anteil des Pools, den die Konkurrenz hält → dein Deckel ≈ (1 − dieser Anteil). */
+  /** Basis-Markt je Stadt (klein/mittel wachsen mit dem bedienten Markt); large = FIX PRO LAND. */
+  BASE: { small: 30, medium: 8, large: 5 } as Record<CustomerType, number>,
+  /** Anteil des BASIS-Markts, den die Konkurrenz hält (Stage 1 fix; Stage 2 dynamisch je
+   *  Aggressivität & deinem Service). */
   COMPETITOR_SHARE: 0.6,
-  /** Ruf (0..100) hebt den Pool um bis zu diesem Anteil (bei Ruf 100). */
-  RENOWN_POOL_BONUS: 0.25,
-  /** Service-Faktor auf die Akquise-Rate: Boden + Rest × (Sterne/5). */
+  /** Service-Faktor auf die Akquise-Rate (neutral bei 3★): 1 + 0.1×(Sterne−3), Boden … 1.2. */
   SERVICE_FLOOR: 0.6,
+  /** Vertrieb hebt die Gewinn-RATE (nicht mehr den Pool): +dieser Anteil je Vertriebs-Kraft.
+   *  Kalibriert, sodass 2 Vertriebskräfte ~+14 % geben — wie der alte Markt-Vergrößerungs-Effekt;
+   *  ein Vertriebs-schweres Team (5 Kräfte) skaliert die Rate stärker (~+38 %) und hält so den
+   *  aggressiven Wachstumspfad (Richtung 600k) offen, ohne den ruhigen Basispfad zu beschleunigen. */
+  SALES_RATE_BONUS: 0.09,
 } as const;
 
 /**

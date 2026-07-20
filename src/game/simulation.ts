@@ -2078,18 +2078,11 @@ export function marketingPower(state: GameState): number {
     .reduce((sum, e) => sum + 0.5 + 0.5 * (e.skill / 100), 0);
 }
 
-// --- Markt-Pool (Marktanteil-Modell) ----------------------------------------
+// --- Marktanteil-Modell (entkoppelt) ----------------------------------------
 
-/** Endlicher Kunden-Pool je Größe. small/medium PRO STADT, large PRO LAND (national).
- * Wächst mit Sortimentsbreite (small: +MARKET.SMALL_PER_GROUP je gelisteter Gruppe),
- * mit dem Vertrieb (skill-gewichtet) und mit dem Ruf. */
-export function marketPool(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
-  let base = MARKET.BASE[type];
-  if (type === 'small') base += MARKET.SMALL_PER_GROUP * state.products.length;
-  base += salesAcquisitionPower(state) * MARKET.SALES_POOL_PER_REP[type];
-  const renown = type === 'large' ? nationalRenown(state) : siteRenown(state, site);
-  base *= 1 + (renown / RENOWN.MAX) * MARKET.RENOWN_POOL_BONUS;
-  return base;
+/** Basis-Markt einer Größe (klein/mittel je Stadt, large FIX pro Land). */
+function marketBase(type: CustomerType): number {
+  return MARKET.BASE[type];
 }
 /** Wie viele Kunden dieser Größe du betreust (large = national; sonst je Standort,
  * oder gesamt wenn site weggelassen). */
@@ -2098,36 +2091,46 @@ export function yourHeld(state: GameState, type: CustomerType, site?: SiteId): n
     (c) => c.active && c.type === type && (type === 'large' || site == null || (c.region ?? 'hq') === site),
   ).length;
 }
-/** Von Konkurrenten gehaltener Anteil des Pools. Stage 1: fixer Anteil (COMPETITOR_SHARE);
- * Stage 2 wird er dynamisch je Aggressivität & deinem Service. */
-export function competitorHeld(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
-  return marketPool(state, type, site) * MARKET.COMPETITOR_SHARE;
+/** Von Konkurrenten gehaltene Kunden. Stage 1: fixer Anteil des Basis-Markts;
+ * Stage 2 wird er dynamisch (wächst je Aggressivität, gebremst durch deinen Service,
+ * verschiebt sich per Abwerbung). site/type-abhängig für die spätere Dynamik. */
+export function competitorHeld(_state: GameState, type: CustomerType, _site: SiteId = 'hq'): number {
+  return Math.round(marketBase(type) * MARKET.COMPETITOR_SHARE);
 }
-/** Marktdurchdringung je Standort/Land: dein Anteil am bedienten Markt (du ÷ du+Konkurrenz). */
+/**
+ * Gesamt-Markt (Anzeige/Marktanteil): WÄCHST mit dem bedienten Markt (deine Kunden + die der
+ * Konkurrenz) — kein harter Deckel. Große Kunden: FIXER Markt je Land (kein Wachstum). Die
+ * Kundenmechanik läuft separat; hier kommen Kunden & Markt nur für die Kennzahl zusammen. */
+export function marketPool(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
+  if (type === 'large') return marketBase('large');
+  return marketBase(type) + yourHeld(state, type, site) + competitorHeld(state, type, site);
+}
+/** Marktanteil je Standort/Land: deine Kunden ÷ (deine + Konkurrenz). */
 export function marketPenetration(state: GameState, type: CustomerType, site: SiteId = 'hq'): number {
   const you = yourHeld(state, type, type === 'large' ? undefined : site);
   const comp = competitorHeld(state, type, site);
   return you + comp > 0 ? you / (you + comp) : 0;
 }
 
-/** Weekly chance of a NEW-customer inquiry of a given size. Die Sättigungs-Kurve
- * bleibt wie gehabt (BASE × Pool/(Pool + du + Konkurrenz)), nur zählt jetzt die
- * KONKURRENZ mit (sie drückt), und Service (guter = schneller) + Ruf fließen als
- * Faktoren ein. Der Pool ist endlich und je Stadt — Expansion bringt einen frischen. */
+/** Weekly chance of a NEW-customer inquiry of a given size. Die Rate saturiert am
+ * BASIS-Markt (je mehr du + Konkurrenz schon haben, desto seltener Neue) — aber weil der
+ * Markt mitwächst, gibt es keine harte Wand. Service (neutral bei 3★), Ruf UND Vertrieb
+ * heben die Rate (Vertrieb & Ruf nicht mehr den Pool). Expansion (2. Stadt) verdoppelt
+ * den Basis-Markt → frische Kunden. */
 export function typeInquiryChance(state: GameState, type: CustomerType): number {
   const sites: SiteId[] = type === 'large' ? ['hq'] : activeSites(state);
-  let pool = 0;
+  let base = 0;
   let comp = 0;
   for (const site of sites) {
-    pool += marketPool(state, type, site);
+    base += marketBase(type);
     comp += competitorHeld(state, type, site);
   }
   const you = yourHeld(state, type);
-  const saturation = pool > 0 ? pool / (pool + you + comp) : 0;
-  // Service neutral bei 3★, +/− je Stern (guter Service = schneller wahrgenommen).
-  const serviceFactor = clamp(1 + 0.1 * (state.serviceStars - 3), MARKET.SERVICE_FLOOR, 1.2);
+  const saturation = base > 0 ? base / (base + you + comp) : 0;
+  const serviceFactor = clamp(1 + 0.05 * (state.serviceStars - 3), MARKET.SERVICE_FLOOR, 1.1);
   const renownBoost = 1 + (nationalRenown(state) / RENOWN.MAX) * RENOWN.ACQUISITION_BOOST;
-  return INQUIRY_BASE_CHANCE[type] * saturation * serviceFactor * renownBoost;
+  const salesBonus = 1 + salesAcquisitionPower(state) * MARKET.SALES_RATE_BONUS;
+  return INQUIRY_BASE_CHANCE[type] * saturation * serviceFactor * renownBoost * salesBonus;
 }
 
 /** Expected new-customer inquiries per week across all unlocked tiers that have
