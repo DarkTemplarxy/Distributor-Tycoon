@@ -502,9 +502,17 @@ export const BRANCH_RENT = 1_500;
 export const BRANCH_MARKET_BONUS = 1.6;
 /** Anteil neuer Anfragen aus Region Süd, sobald der Standort offen ist. */
 export const BRANCH_INQUIRY_SHARE = 0.45;
-/** LKW-Transfer zwischen Standorten: Kosten je Palette + Fahrzeit in Tagen. */
+/** LKW-Transfer zwischen Standorten: Kosten je Palette (FREMD-Spediteur) + Fahrzeit
+ * in Tagen. Mit eigenem Fuhrpark fahren Paletten günstiger — bis zur Fuhrpark-
+ * Kapazität, der Rest zum Fremd-Tarif als Überlauf (siehe transferCost). */
 export const TRANSFER_COST_PER_PALLET = 90;
 export const TRANSFER_DAYS = 1;
+/** Transfer-Palettenpreis mit EIGENEM Fuhrpark (statt Fremd-Spediteur). */
+export const TRANSFER_COST_OWN_PER_PALLET = 35;
+/** Günstige Transfer-Kapazität je eigenem LKW (Paletten pro Fahrt zum Eigen-Tarif). */
+export const FLEET_TRANSFER_CAPACITY_PALLETS = 6;
+/** Maximale Fuhrpark-Größe (Anzahl LKW). */
+export const FLEET_MAX = 6;
 
 export function getProductDef(id: ProductId): ProductDef {
   return PRODUCT_DEFS.find((d) => d.id === id)!;
@@ -764,13 +772,16 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
   },
   {
     id: 'truck',
-    name: 'Eigener LKW',
+    name: 'Fuhrpark',
     icon: '🚚',
-    desc: 'Betriebsweiter Fuhrpark: eigene Auslieferung senkt die Logistikkosten je abgeholter Palette.',
+    desc: 'Dein eigener LKW-Fuhrpark: jeder LKW senkt die Logistikkosten der Kunden-Abholung UND schafft günstige, sichtbare Transfer-Kapazität zwischen den Standorten (statt teurem Fremd-Spediteur). Auf der Konzern-Karte siehst du die Laster fahren.',
     kind: 'facility',
-    max: 3,
+    max: FLEET_MAX,
     price: (l) => 3000 * l,
-    effectLabel: (l) => (l > 0 ? `Logistik −${Math.round(TRUCK_LOGISTICS_SAVE * l * 100)}%/Palette` : '—'),
+    effectLabel: (l) =>
+      l > 0
+        ? `${l} LKW · Abholung −${Math.round(TRUCK_LOGISTICS_SAVE * l * 100)}%/Pal · Transfer ${TRANSFER_COST_OWN_PER_PALLET}€ statt ${TRANSFER_COST_PER_PALLET}€ für ${l * FLEET_TRANSFER_CAPACITY_PALLETS} Pal./Fahrt`
+        : '—',
   },
 ];
 

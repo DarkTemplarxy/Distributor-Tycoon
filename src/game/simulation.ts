@@ -95,6 +95,9 @@ import {
   COOLING_SHELFLIFE_BONUS,
   NO_COOLING_SPOILAGE_MULT,
   TRUCK_LOGISTICS_SAVE,
+  TRANSFER_COST_PER_PALLET,
+  TRANSFER_COST_OWN_PER_PALLET,
+  FLEET_TRANSFER_CAPACITY_PALLETS,
   volumeDiscount,
   getStrategyDef,
   BIGORDER_CHANCE_PER_WEEK,
@@ -763,6 +766,24 @@ export function totalWeeklyDemand(state: GameState): number {
  * equipment (0 if none). */
 export function equipmentLevel(state: GameState, id: EquipmentId): number {
   return state.equipment?.[id] ?? 0;
+}
+
+/** Größe des eigenen Fuhrparks (Anzahl LKW) — der „Eigener LKW"-Ausbau, gewachsen
+ * zum sichtbaren Fuhrpark. */
+export function fleetSize(state: GameState): number {
+  return equipmentLevel(state, 'truck');
+}
+/** Günstige Transfer-Kapazität des Fuhrparks in Paletten je Fahrt (0 ohne LKW). */
+export function fleetTransferCapacityPallets(state: GameState): number {
+  return fleetSize(state) * FLEET_TRANSFER_CAPACITY_PALLETS;
+}
+/** Kosten eines Transfers über `pallets` Paletten: bis zur Fuhrpark-Kapazität zum
+ * günstigen Eigen-Tarif, der Überlauf zum teuren Fremd-Spediteur-Tarif. Ohne
+ * eigenen LKW ist alles Fremd-Tarif (= bisheriges Verhalten). */
+export function transferCost(state: GameState, pallets: number): number {
+  const own = Math.min(pallets, fleetTransferCapacityPallets(state));
+  const ext = Math.max(0, pallets - own);
+  return own * TRANSFER_COST_OWN_PER_PALLET + ext * TRANSFER_COST_PER_PALLET;
 }
 
 const lagerCount = (state: GameState): number => state.employees.filter((e) => e.role === 'lager').length;

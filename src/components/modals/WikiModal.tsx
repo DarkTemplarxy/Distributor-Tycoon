@@ -248,8 +248,10 @@ const ENTRIES: WikiEntry[] = [
         <p>
           <b>Regionalprodukte:</b> 🍷 Wein & 🫒 Oliven liefert der Lieferant NUR nach Süd, 🐟 Fisch
           NUR nach Nord. Will ein Kunde das Produkt der anderen Region, fährst du es per{' '}
-          <b>🚚 Transfer</b> (Inventar-Fenster, Kosten je Palette, ~1 Tag) vom Regal des einen in
-          den Wareneingang des anderen Standorts — die Haltbarkeit reist mit. Jeder Standort hat
+          <b>🚚 Transfer</b> (auf der Konzern-Karte, ~1 Tag) vom Regal des einen in den Wareneingang
+          des anderen Standorts — die Haltbarkeit reist mit. Mit <b>eigenem Fuhrpark</b> fahren die
+          Paletten günstig (bis zur Fuhrpark-Kapazität), darüber übernimmt der teurere Fremd-
+          Spediteur; die Laster siehst du live auf der Karte fahren. Jeder Standort hat
           sein eigenes Samstags-Bestellfenster; der Umschalter über der Halle wechselt die Ansicht.
           Vorsicht: Eröffnung + Personal + Warenaufbau summieren sich — wer zu früh expandiert,
           kann sich übernehmen.
@@ -443,7 +445,8 @@ const ENTRIES: WikiEntry[] = [
           viele wie gleichzeitig arbeitende Lagerkräfte (du kaufst sie in Stückzahl). <b>Anlagen</b>{' '}
           wirken betriebsweit: <b>❄️ Kühltechnik</b> (längere Haltbarkeit für ALLE Ware – ersetzt
           aber KEINE Kühlregale für kühlpflichtige Ware) und{' '}
-          <b>🚚 eigener LKW</b> (niedrigere Logistikkosten). Alles wirkt sofort im Cockpit.
+          <b>🚚 Fuhrpark</b> (eigene LKW: niedrigere Abholkosten UND günstige, sichtbare
+          Transfer-Kapazität zwischen den Standorten). Alles wirkt sofort im Cockpit.
         </p>
         <p>
           Die <b>Firmen-Strategie</b> ist eine Ausrichtung mit echten Trade-offs: der{' '}

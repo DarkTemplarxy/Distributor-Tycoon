@@ -41,7 +41,6 @@ import {
   BRANCH_PRICE,
   BRANCH_UNLOCK_MONTHLY,
   monthlyRevenue,
-  TRANSFER_COST_PER_PALLET,
   TRANSFER_DAYS,
   TABLE_PRICE,
   TRAINING_COST,
@@ -68,6 +67,8 @@ import {
   isInAssortment,
   managers,
   regionalKams,
+  transferCost,
+  fleetTransferCapacityPallets,
   nationalRenown,
   notify,
   placementBlocksAccess,
@@ -924,7 +925,8 @@ export function transferStock(
   if (shelfStock(product, fromSite) < qty) {
     return { ok: false, message: `Nur ${shelfStock(product, fromSite)}× ${product.name} im Regal ${SITE_META[fromSite].short}.` };
   }
-  const cost = Math.ceil(qty / PALETTE_SIZE) * TRANSFER_COST_PER_PALLET;
+  const pallets = Math.ceil(qty / PALETTE_SIZE);
+  const cost = transferCost(state, pallets);
   if (state.cash + availableCredit(state) < cost) {
     return { ok: false, message: `Transport kostet ${cost}€ – nicht bezahlbar.` };
   }
@@ -960,9 +962,11 @@ export function transferStock(
     arrivalDay: state.totalDays + TRANSFER_DAYS,
     cost,
   });
+  const ownPallets = Math.min(pallets, fleetTransferCapacityPallets(state));
+  const via = ownPallets >= pallets ? 'eigener Fuhrpark' : ownPallets > 0 ? `Fuhrpark + Fremd-Spedition` : 'Fremd-Spedition';
   notify(
     state,
-    `🚚 Transfer unterwegs: ${qty}× ${product.emoji} ${product.name} ${SITE_META[fromSite].short} → ${SITE_META[toSite].short} (${cost}€, ~${TRANSFER_DAYS} Tag).`,
+    `🚚 Transfer unterwegs: ${qty}× ${product.emoji} ${product.name} ${SITE_META[fromSite].short} → ${SITE_META[toSite].short} (${cost}€ · ${via}, ~${TRANSFER_DAYS} Tag).`,
     'info',
   );
   return { ok: true };

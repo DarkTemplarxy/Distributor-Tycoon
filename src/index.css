@@ -1119,6 +1119,8 @@ label.fld {
 }
 .km-tx-row .km-input { width: 90px; }
 .km-transfer .btn { width: 100%; }
+.km-fleet { margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-panel-2); }
+.km-fleet-head { display: flex; align-items: center; justify-content: space-between; }
 
 /* Konzern gründen + Zentrale */
 .konzern-banner {
