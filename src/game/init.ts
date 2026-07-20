@@ -14,57 +14,70 @@ import {
   STARTING_CASH,
   STARTING_STARS,
   TRUCK_COST_PER_PALLET,
-  type ProductDef,
+  articlesOfGroup,
+  defaultArticleOf,
+  getProductDef,
+  type ArticleDef,
 } from './constants';
 import type { Batch, Customer, Employee, GameState, Order, Product, Supplier } from './types';
 import { uid } from './util';
 import { STARTING_CUSTOMER_IDS, STEP, TUTORIAL_ORDER_ID } from './tutorial';
 
-/** Build a fresh Product from a catalog definition. Reused by the start scenario
- * and by the runtime "add to assortment" action, so both stay in sync. */
+/** Build a fresh Product (SKU/Artikel) from an article definition. Reused by the
+ * start scenario and by the runtime "add to assortment" action (which lists a
+ * whole group = all its articles), so both stay in sync. Marge/Haltbarkeit erben
+ * von der Gruppe, wenn der Artikel sie nicht überschreibt. */
 export function buildProduct(
-  def: ProductDef,
+  art: ArticleDef,
   opts?: { batches?: Batch[]; autoRestock?: Product['autoRestock'] },
 ): Product {
+  const g = getProductDef(art.groupId);
   return {
-    id: def.id,
-    name: def.name,
-    emoji: def.emoji,
-    einkaufspreis: def.einkaufspreis,
-    verkaufspreis: def.verkaufspreis,
-    zielmarge: def.zielmarge,
-    spoilageDays: def.spoilageDays,
+    id: art.id,
+    groupId: art.groupId,
+    name: art.name,
+    emoji: art.emoji,
+    einkaufspreis: art.einkaufspreis,
+    verkaufspreis: art.verkaufspreis,
+    zielmarge: art.zielmarge ?? g.zielmarge,
+    spoilageDays: art.spoilageDays ?? g.spoilageDays,
     batches: opts?.batches ?? [],
     autoRestock: opts?.autoRestock ?? { enabled: false, min: 40, target: 120 },
   };
 }
 
+/** Der Fisch-Leit-Artikel (Lachsfilet) trägt den Start-Bestand & die Tutorial-
+ * Aufträge — das Onboarding bleibt beim einen, klar sichtbaren Artikel. */
+export const STARTER_FISH = defaultArticleOf('fisch').id;
+
 function makeProducts(): Product[] {
-  // Only products unlocked at the start (fish) are in the assortment initially.
-  return PRODUCT_DEFS.filter((def) => def.unlockWeek === 0).map((def) => {
-    const batches: Batch[] = [];
-    // Give the player two starter palettes of fish (80 units) so the very first
-    // (now larger) orders can be fulfilled immediately from stock — an easier start.
-    if (def.id === 'fisch') {
-      batches.push({
-        id: uid('batch'),
-        productId: 'fisch',
-        quantity: 80,
-        expiryDay: def.spoilageDays, // created on day 0
-        location: 'shelf', // starter stock is already shelved
+  // Only groups unlocked at the start (fish) are in the assortment initially —
+  // jede gelistete Gruppe fächert in ihre Artikel auf.
+  return PRODUCT_DEFS.filter((def) => def.unlockWeek === 0).flatMap((def) =>
+    articlesOfGroup(def.id).map((art) => {
+      const batches: Batch[] = [];
+      // Give the player two starter palettes of the lead fish (80 units) so the
+      // very first orders can be fulfilled immediately from stock.
+      if (art.id === STARTER_FISH) {
+        batches.push({
+          id: uid('batch'),
+          productId: STARTER_FISH,
+          quantity: 80,
+          expiryDay: getProductDef('fisch').spoilageDays, // created on day 0
+          location: 'shelf', // starter stock is already shelved
+        });
+      }
+      return buildProduct(art, {
+        batches,
+        // Procurement starts fully MANUAL — automatic restock only after an
+        // Einkäufer is hired. The lead fish gets a demand-scaled min/target.
+        autoRestock:
+          art.id === STARTER_FISH
+            ? { enabled: false, min: 90, target: 160 }
+            : { enabled: false, min: 40, target: 120 },
       });
-    }
-    return buildProduct(def, {
-      batches,
-      // Procurement starts fully MANUAL — automatic restocking only kicks in once
-      // the player hires an Einkäufer. Sensible min/target are pre-filled for then
-      // (fisch scaled to the doubled weekly demand).
-      autoRestock:
-        def.id === 'fisch'
-          ? { enabled: false, min: 90, target: 160 }
-          : { enabled: false, min: 40, target: 120 },
-    });
-  });
+    }),
+  );
 }
 
 function makeCustomers(): Customer[] {
@@ -93,7 +106,7 @@ function makeCustomers(): Customer[] {
       // and Urban could go short during the guided phase.
       orderDayOfWeek: 1,
       nextOrderWeek: 1,
-      lines: [{ productId: 'fisch', price: 33.5, agreedPrice: 33.5, volume: 30 }],
+      lines: [{ productId: STARTER_FISH, price: 33.5, agreedPrice: 33.5, volume: 30 }],
     },
     {
       ...base,
@@ -103,7 +116,7 @@ function makeCustomers(): Customer[] {
       // Thursday, week 0 — day 0/Mon never fires a day-start, so an early fixed
       // weekday guarantees an organic order inside the very first week.
       orderDayOfWeek: 3,
-      lines: [{ productId: 'fisch', price: 33.5, agreedPrice: 33.5, volume: 32 }],
+      lines: [{ productId: STARTER_FISH, price: 33.5, agreedPrice: 33.5, volume: 32 }],
     },
   ];
 }
@@ -167,7 +180,7 @@ function makeStartingOrders(): Order[] {
     {
       id: TUTORIAL_ORDER_ID,
       customerId: STARTING_CUSTOMER_IDS[0],
-      productId: 'fisch',
+      productId: STARTER_FISH,
       quantity: 30,
       price: 33.5,
       createdDay: 0,
@@ -184,11 +197,13 @@ function makeSupplier(): Supplier {
     name: 'GroßMarkt Nord',
     // The supplier only lists products that are in the assortment; adding a
     // product later also adds its supplier offering.
-    products: PRODUCT_DEFS.filter((def) => def.unlockWeek === 0).map((def) => ({
-      productId: def.id,
-      price: def.einkaufspreis,
-      basePrice: def.einkaufspreis,
-    })),
+    products: PRODUCT_DEFS.filter((def) => def.unlockWeek === 0).flatMap((def) =>
+      articlesOfGroup(def.id).map((art) => ({
+        productId: art.id,
+        price: art.einkaufspreis,
+        basePrice: art.einkaufspreis,
+      })),
+    ),
   };
 }
 

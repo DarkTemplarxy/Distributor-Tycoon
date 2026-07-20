@@ -4,7 +4,7 @@ import { isFeatureUnlocked, STEP, tutorialOnStep } from '../game/tutorial';
 import { prepareOrder, restockForOrder } from '../game/actions';
 import { weekOf } from '../game/util';
 import type { Order } from '../game/types';
-import { CustomerTypeFilter, PRODUCT_COLOR, useCustomerTypeFilter } from './shared';
+import { CustomerTypeFilter, prodColor, useCustomerTypeFilter } from './shared';
 
 const STATUS_LABEL: Record<Order['status'], string> = {
   pending: 'Offen',
@@ -127,7 +127,7 @@ export function OrdersPanel() {
                     : 'badge-ready';
               return (
                 <div key={order.id} className="o-meta" style={{ alignItems: 'center' }}>
-                  <span style={{ color: PRODUCT_COLOR[order.productId] }}>
+                  <span style={{ color: prodColor(order.productId) }}>
                     {product.emoji} {order.quantity}× {product.name}
                   </span>
                   <span>@ {order.price.toFixed(2)}€</span>

@@ -6,7 +6,7 @@ import { freeCapacity, managers, regionalKams, notify, repriceAcceptChance } fro
 import { demandUpliftFromDiscount, getProductDef, getArticleDef, SITE_META, MANAGER_SLOTS, REGIONAL_KAM_LARGE_SLOTS, SLOT_COST } from '../../game/constants';
 import type { Customer, CustomerLine, CustomerType, Product } from '../../game/types';
 import { weekOf } from '../../game/util';
-import { CustomerTypeFilter, Stars, PRODUCT_COLOR, useCustomerTypeFilter } from '../shared';
+import { CustomerTypeFilter, Stars, prodColor, useCustomerTypeFilter } from '../shared';
 
 const TYPE_LABEL = { small: 'Klein', medium: 'Mittel', large: 'Groß' } as const;
 
@@ -49,14 +49,15 @@ function LineEditor({ customer, line, product }: { customer: Customer; line: Cus
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <span style={{ color: PRODUCT_COLOR[line.productId], minWidth: 96 }}>
+      <span style={{ color: prodColor(line.productId), minWidth: 96 }}>
         {(() => {
-          const art = line.articleId ? getArticleDef(line.articleId) : undefined;
+          const art = getArticleDef(line.productId);
           if (!art) return <>{product?.emoji} {product?.name}</>;
+          const groupDef = getProductDef(art.groupId);
           const city = art.home === 'national' ? 'landesweit' : SITE_META[art.home].short;
           return (
-            <span title={`Spezialität der Gruppe ${product?.name} · ${city}`}>
-              {art.emoji} {art.name} <span className="sub" style={{ fontSize: 11 }}>· {city}</span>
+            <span title={`${groupDef.emoji} ${groupDef.name} · ${city}`}>
+              {art.emoji} {art.name}
             </span>
           );
         })()}
@@ -211,7 +212,7 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
                           title="Offene Anfrage im Anfragen-Bildschirm beantworten!"
                         >
                           {demandInq.demand!.stage === 2 ? '⚠️ ULTIMATUM' : '🙋 Wunsch'}:{' '}
-                          {getProductDef(demandInq.preferredProduct).name} · noch {weeksLeft} Wo.
+                          {getArticleDef(demandInq.preferredProduct)?.name} · noch {weeksLeft} Wo.
                         </span>
                       </>
                     )}
@@ -284,7 +285,7 @@ export function CustomersModal({ onClose }: { onClose: () => void }) {
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 26 }}>
                     {c.lines.map((l) => (
-                      <LineEditor key={l.articleId ?? l.productId} customer={c} line={l} product={productOf(l.productId)} />
+                      <LineEditor key={l.productId} customer={c} line={l} product={productOf(l.productId)} />
                     ))}
                   </div>
 

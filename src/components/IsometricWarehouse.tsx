@@ -22,9 +22,9 @@ import {
   shelfStock,
   shelfUsed,
 } from '../game/simulation';
-import { PALETTE_SIZE, SHELF_SLOTS, WORK_END_HOUR, WORK_START_HOUR } from '../game/constants';
+import { PALETTE_SIZE, SHELF_SLOTS, WORK_END_HOUR, WORK_START_HOUR, groupOfArticle } from '../game/constants';
 import { dayName, formatClock, hourOf } from '../game/util';
-import type { GameState, ProductId, SiteId } from '../game/types';
+import type { ArticleId, GameState, ProductId, SiteId } from '../game/types';
 
 /**
  * Standort-Projektion (L3): für die Süd-Ansicht bauen wir eine leichte Kopie des
@@ -72,6 +72,10 @@ const PROD_HEX: Record<ProductId, string> = {
   wein: '#b0629e',
   oliven: '#9aa84f',
 };
+/** Farbe eines Artikels (SKU) über seine Gruppe (Phase B2). */
+function hexOf(id: string): string {
+  return PROD_HEX[(groupOfArticle(id) ?? id) as ProductId] ?? '#8a8f98';
+}
 const C = {
   skyTop: '#12303a',
   skyBottom: '#0c1a1f',
@@ -124,7 +128,7 @@ interface WorkerAnim {
   moving: boolean;
   carrying: boolean;
   /** Product currently being carried — colours the visible load. */
-  carryProduct: ProductId | null;
+  carryProduct: ArticleId | null;
   /** Physical device this worker is currently using (Paket 2) — drawn under them. */
   device: 'forklift' | 'cart' | null;
 }
@@ -200,7 +204,7 @@ function pickupPositions(state: GameState) {
 }
 
 interface ShelfPallet {
-  productId: ProductId;
+  productId: ArticleId;
   qty: number;
   urgency: 'ok' | 'warn' | 'crit';
 }
@@ -828,7 +832,7 @@ function worker(ctx: CanvasRenderingContext2D, v: View, a: WorkerAnim, shirt: st
   ctx.fill();
   if (a.carrying) {
     // The load, coloured by product so you SEE what is being moved.
-    const load = a.carryProduct ? PROD_HEX[a.carryProduct] : '#c79a5b';
+    const load = a.carryProduct ? hexOf(a.carryProduct) : '#c79a5b';
     roundRect(ctx, sx - 5 * s, baseY - 17 * s, 10 * s, 8 * s, 1.5 * s);
     ctx.fillStyle = load;
     ctx.fill();
@@ -1038,7 +1042,7 @@ function draw(
           const pal = shelfPals[si * SHELF_SLOTS + slot];
           if (!pal) continue;
           const [ox, oy] = slotOffsets[slot];
-          pallet(ctx, v, sh.gx + ox, sh.gy + oy, 0.3, PROD_HEX[pal.productId], pal.urgency);
+          pallet(ctx, v, sh.gx + ox, sh.gy + oy, 0.3, hexOf(pal.productId), pal.urgency);
         }
       },
     });
@@ -1057,7 +1061,7 @@ function draw(
     if (!pos) return;
     const overflow = k >= inbPos.length; // Stau — stacked beyond the last slot
     const off = overflow ? 0.12 * (k - inbPos.length + 1) : 0;
-    const col = PROD_HEX[pal.productId] ?? C.inbound;
+    const col = hexOf(pal.productId) ?? C.inbound;
     items.push({
       depth: pos.gx + pos.gy + off,
       z: overflow ? 1 : 0,
@@ -1069,7 +1073,7 @@ function draw(
   const ready = state.palettes.filter((p) => p.status === 'ready');
   ready.slice(0, pickPos.length).forEach((p, k) => {
     const pos = pickPos[k];
-    const col = PROD_HEX[p.productId] ?? '#8a8f98';
+    const col = hexOf(p.productId) ?? '#8a8f98';
     items.push({ depth: pos.gx + pos.gy, z: 0, draw: () => crate(ctx, v, pos.gx + 0.18, pos.gy + 0.18, 0.6, col, 'ok') });
   });
 
@@ -1108,7 +1112,7 @@ function draw(
       z: 2,
       draw: () => {
         // A few loaded pallets on the open bed (colours from the waiting orders).
-        const loadCols = ready.slice(0, 2).map((p) => PROD_HEX[p.productId] ?? C.inbound);
+        const loadCols = ready.slice(0, 2).map((p) => hexOf(p.productId) ?? C.inbound);
         loadCols.forEach((col, i) => {
           crate(ctx, v, gx + 0.15 + i * 0.5, gy + 0.2, 0.34, col, 'ok');
         });

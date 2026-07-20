@@ -46,17 +46,14 @@ import {
   INQUIRY_BASE_CHANCE,
   RENOWN,
   MARKET,
-  ARTICLE_DEFS,
-  ARTICLE_REACH,
-  ARTICLE_DEV_START_WEEK,
-  ARTICLE_DEV_CUSTOMER_AGE,
-  ARTICLE_DEV_CHANCE,
-  ARTICLE_VOLUME_FACTOR,
-  type ArticleDef,
+  groupOfArticle,
+  articleEconomics,
+  articlesOfGroup,
+  pickArticleForRegion,
+  defaultArticleOf,
   INQUIRY_DAY_OF_WEEK,
   ORDER_DAY_OF_WEEK,
   INQUIRY_EXPIRY_WEEKS,
-  INQUIRY_FAMILIAR_PRODUCT_CHANCE,
   INQUIRY_UNLISTED_PRODUCT_CHANCE,
   INQUIRY_PRICE_TIERS,
   LARGE_UNLOCK_MONTHLY,
@@ -149,6 +146,7 @@ import type {
   Palette,
   Product,
   ProductId,
+  ArticleId,
   PurchaseOrder,
   YearStats,
 } from './types';
@@ -314,7 +312,7 @@ export function coldShelfCapacity(state: GameState, site: SiteId = 'hq'): number
 }
 export function coldShelfUsed(state: GameState, site: SiteId = 'hq'): number {
   return state.products.reduce(
-    (s, p) => s + (getProductDef(p.id).requiresCooling ? shelfStock(p, site) : 0),
+    (s, p) => s + (getProductDef(p.groupId).requiresCooling ? shelfStock(p, site) : 0),
     0,
   );
 }
@@ -330,15 +328,15 @@ export function normalShelfUsed(state: GameState, site: SiteId = 'hq'): number {
 export function normalShelfFree(state: GameState, site: SiteId = 'hq'): number {
   return Math.max(0, normalShelfCapacity(state, site) - normalShelfUsed(state, site));
 }
-/** Freier Regalplatz für DIESES Produkt (kalt → Kühlregale, sonst normale). */
-export function shelfFreeFor(state: GameState, productId: ProductId, site: SiteId = 'hq'): number {
-  return getProductDef(productId).requiresCooling
+/** Freier Regalplatz für DIESEN Artikel (kalt → Kühlregale, sonst normale). */
+export function shelfFreeFor(state: GameState, articleId: ArticleId, site: SiteId = 'hq'): number {
+  return getProductDef(groupOfArticle(articleId)!).requiresCooling
     ? coldShelfFree(state, site)
     : normalShelfFree(state, site);
 }
-/** Regal-Gesamtkapazität, die diesem Produkt überhaupt offensteht. */
-export function shelfCapacityFor(state: GameState, productId: ProductId, site: SiteId = 'hq'): number {
-  return getProductDef(productId).requiresCooling
+/** Regal-Gesamtkapazität, die diesem Artikel überhaupt offensteht. */
+export function shelfCapacityFor(state: GameState, articleId: ArticleId, site: SiteId = 'hq'): number {
+  return getProductDef(groupOfArticle(articleId)!).requiresCooling
     ? coldShelfCapacity(state, site)
     : normalShelfCapacity(state, site);
 }
@@ -354,11 +352,11 @@ export function inboundFree(state: GameState, site: SiteId = 'hq'): number {
   return Math.max(0, inboundCapacity(state, site) - inboundUsed(state, site));
 }
 
-export function getProduct(state: GameState, id: ProductId): Product {
+export function getProduct(state: GameState, id: ArticleId): Product {
   return state.products.find((p) => p.id === id)!;
 }
 
-export function incomingPO(state: GameState, id: ProductId, site?: SiteId): number {
+export function incomingPO(state: GameState, id: ArticleId, site?: SiteId): number {
   let sum = 0;
   for (const po of state.purchaseOrders) {
     if (po.status !== 'pending') continue;
@@ -368,7 +366,12 @@ export function incomingPO(state: GameState, id: ProductId, site?: SiteId): numb
   return sum;
 }
 
+/** Ist die GRUPPE (Kategorie) im Sortiment (= mindestens ein Artikel davon gelistet)? */
 export function isInAssortment(state: GameState, id: ProductId): boolean {
+  return state.products.some((p) => p.groupId === id);
+}
+/** Ist dieser konkrete ARTIKEL (SKU) gelistet? */
+export function isArticleListed(state: GameState, id: ArticleId): boolean {
   return state.products.some((p) => p.id === id);
 }
 
@@ -749,29 +752,38 @@ export function buyerCapacity(state: GameState): number {
     state.employees.filter((e) => e.role === 'einkaeufer').length * BUYER_PRODUCT_CAPACITY
   );
 }
-/** Die betreuten Produktgruppen — in Listungs-Reihenfolge (die ältesten zuerst).
- * Nur diese werden automatisch bestellt und bei Preiserhöhungen verhandelt. */
-export function buyerCoveredProducts(state: GameState): ProductId[] {
-  return state.products.slice(0, buyerCapacity(state)).map((p) => p.id);
+/** Die betreuten Produktgruppen — in Listungs-Reihenfolge (die ältesten zuerst). */
+export function buyerCoveredGroups(state: GameState): ProductId[] {
+  const groups: ProductId[] = [];
+  for (const p of state.products) if (!groups.includes(p.groupId)) groups.push(p.groupId);
+  return groups.slice(0, buyerCapacity(state));
 }
-export function isBuyerCovered(state: GameState, productId: ProductId): boolean {
-  return buyerCoveredProducts(state).includes(productId);
+/** Die betreuten Artikel (= alle Artikel der betreuten Gruppen). Nur diese werden
+ * automatisch bestellt und bei Preiserhöhungen verhandelt. */
+export function buyerCoveredProducts(state: GameState): ArticleId[] {
+  const covered = new Set(buyerCoveredGroups(state));
+  return state.products.filter((p) => covered.has(p.groupId)).map((p) => p.id);
+}
+export function isBuyerCovered(state: GameState, articleId: ArticleId): boolean {
+  return buyerCoveredGroups(state).includes(groupOfArticle(articleId)!);
 }
 /** Unbetreute Gruppen (Sortiment breiter als die Einkäufer-Kapazität). */
 export function buyerUncoveredProducts(state: GameState): ProductId[] {
-  return state.products.slice(buyerCapacity(state)).map((p) => p.id);
+  const groups: ProductId[] = [];
+  for (const p of state.products) if (!groups.includes(p.groupId)) groups.push(p.groupId);
+  return groups.slice(buyerCapacity(state));
 }
 
 /** Contracted weekly demand for a product = sum of active customers' line volumes,
  * scaled by the company strategy (Mengen-Discounter orders more, Frische-Spezialist
  * a touch less). Applied at this single source so the cockpit, the order outlook
  * and the Einkäufer all see the same figure. */
-export function weeklyDemand(state: GameState, productId: ProductId, site?: SiteId): number {
+export function weeklyDemand(state: GameState, articleId: ArticleId, site?: SiteId): number {
   let sum = 0;
   for (const c of state.customers) {
     if (!c.active) continue;
     if (site && siteOfCustomer(c) !== site) continue;
-    for (const l of c.lines) if (l.productId === productId) sum += l.volume;
+    for (const l of c.lines) if (l.productId === articleId) sum += l.volume;
   }
   return Math.round(sum * strategyDemandFactor(state));
 }
@@ -861,7 +873,7 @@ export function truckCostPerPallet(state: GameState): number {
 export function spoilageDaysFor(state: GameState, product: Product, site: SiteId = 'hq'): number {
   const cooling = 1 + COOLING_SHELFLIFE_BONUS * equipmentLevel(state, 'cooling');
   const strat = getStrategyDef(state.strategy).spoilageFactor;
-  const needsCold = !!getProductDef(product.id).requiresCooling;
+  const needsCold = !!getProductDef(product.groupId).requiresCooling;
   const coldPenalty = needsCold && coldShelfCapacity(state, site) === 0 ? NO_COOLING_SPOILAGE_MULT : 1;
   return Math.max(1, Math.round(product.spoilageDays * cooling * strat * coldPenalty));
 }
@@ -870,7 +882,7 @@ export function spoilageDaysFor(state: GameState, product: Product, site: SiteId
  * mit Regal darauf) → Warnung: die Ware kann nirgends kalt lagern. */
 export function coldChainGap(state: GameState): boolean {
   if (coldShelfCapacity(state) > 0) return false;
-  return state.products.some((p) => getProductDef(p.id).requiresCooling);
+  return state.products.some((p) => getProductDef(p.groupId).requiresCooling);
 }
 
 /** Strategy multiplier on the price customers will pay in NEW deals. */
@@ -886,14 +898,14 @@ export function strategyDemandFactor(state: GameState): number {
 
 /** The per-unit purchase price in force for a product: an active supply contract
  * price if one is running, otherwise the spot price. */
-export function supplierUnitPrice(state: GameState, productId: ProductId): number {
+export function supplierUnitPrice(state: GameState, productId: ArticleId): number {
   const sp = state.supplier.products.find((s) => s.productId === productId);
   if (!sp) return 0;
   if (sp.contract && sp.contract.untilWeek > weekOf(state.totalDays)) return sp.contract.price;
   return sp.price;
 }
 /** Whether a product currently has a running supply contract. */
-export function hasActiveContract(state: GameState, productId: ProductId): boolean {
+export function hasActiveContract(state: GameState, productId: ArticleId): boolean {
   const sp = state.supplier.products.find((s) => s.productId === productId);
   return !!sp?.contract && sp.contract.untilWeek > weekOf(state.totalDays);
 }
@@ -1056,8 +1068,9 @@ function bestNegotiationSkill(state: GameState): number {
 
 // --- Demand / seasonal ------------------------------------------------------
 
-export function seasonalMultiplier(productId: ProductId, week: number): number {
-  return SEASONAL_TREND[productId][quarterOf(week)];
+export function seasonalMultiplier(id: ArticleId, week: number): number {
+  const group = (groupOfArticle(id) ?? id) as ProductId;
+  return SEASONAL_TREND[group][quarterOf(week)];
 }
 
 // Customer-size unlocks gate on the rolling MONTHLY revenue (sum of the last 4
@@ -1134,7 +1147,7 @@ function prepDaysFor(quantity: number, skill: number, bundleSize = 1, usesCart =
 function pickLagerWorker(
   state: GameState,
   kind: 'prep' | 'putaway',
-  productId: ProductId,
+  articleId: ArticleId,
   strictTask = false,
   site: SiteId = 'hq',
 ): { id: string } | undefined {
@@ -1145,8 +1158,8 @@ function pickLagerWorker(
   if (free.length === 0) return undefined;
   const taskScore = (e: { preferredTask?: 'prep' | 'putaway' }) =>
     e.preferredTask === kind ? 0 : !e.preferredTask ? 1 : 2;
-  const prodScore = (e: { preferredProduct?: ProductId }) =>
-    e.preferredProduct === productId ? 0 : !e.preferredProduct ? 1 : 2;
+  const prodScore = (e: { preferredProduct?: ArticleId }) =>
+    e.preferredProduct === articleId ? 0 : !e.preferredProduct ? 1 : 2;
   return free
     .slice()
     .sort((a, b) => taskScore(a) - taskScore(b) || prodScore(a) - prodScore(b))[0];
@@ -1793,7 +1806,7 @@ function collectDuePayments(state: GameState): void {
  * exact moment the order is placed. Returns the created PO, or null if empty. */
 export function createPurchaseOrderInternal(
   state: GameState,
-  items: { productId: ProductId; quantity: number }[],
+  items: { productId: ArticleId; quantity: number }[],
   opts?: { priceMultiplier?: number; leadDays?: number; siteId?: SiteId },
 ): PurchaseOrder | null {
   const site = opts?.siteId ?? 'hq';
@@ -1873,7 +1886,7 @@ export interface OrderOutlook {
  * backlog, what's on hand / in transit, what spoils within the week, and the
  * resulting deficit.
  */
-export function orderOutlook(state: GameState, productId: ProductId, site: SiteId = 'hq'): OrderOutlook {
+export function orderOutlook(state: GameState, productId: ArticleId, site: SiteId = 'hq'): OrderOutlook {
   const product = getProduct(state, productId);
   const stock = shelfStock(product, site) + inboundStock(product, site);
   const incoming = incomingPO(state, productId, site);
@@ -1913,7 +1926,7 @@ function refundCurrentWeekPo(state: GameState, site: SiteId = 'hq'): void {
  * within a week and safe for the [ÜBERSCHREIBEN] override. */
 export function commitWeeklyOrder(
   state: GameState,
-  items: { productId: ProductId; quantity: number }[],
+  items: { productId: ArticleId; quantity: number }[],
   site: SiteId = 'hq',
 ): PurchaseOrder | null {
   refundCurrentWeekPo(state, site);
@@ -1947,7 +1960,7 @@ function processWeeklyOrder(state: GameState, week: number): void {
   let budget = state.cash + availableCredit(state);
   const covered = new Set(buyerCoveredProducts(state));
   for (const site of activeSites(state)) {
-    const items: { productId: ProductId; quantity: number }[] = [];
+    const items: { productId: ArticleId; quantity: number }[] = [];
     for (const product of state.products) {
       if (!covered.has(product.id)) continue; // über der Einkäufer-Kapazität → manuell
       if (!supplierDeliversTo(product.id, site)) continue; // Regionalware: nur per Transfer
@@ -1978,14 +1991,18 @@ function processWeeklyOrder(state: GameState, week: number): void {
   // Einkäufer übernimmt (BUYER_PRODUCT_CAPACITY Gruppen pro Kopf).
   const uncovered = buyerUncoveredProducts(state);
   if (uncovered.length > 0) {
-    const needy = uncovered.filter((id) =>
-      activeSites(state).some(
-        (site) => supplierDeliversTo(id, site) && orderOutlook(state, id, site).deficit > 0,
+    // Eine unbetreute GRUPPE ist „needy", wenn irgendein Artikel darin an einem
+    // belieferbaren Standort ein Defizit hat.
+    const needy = uncovered.filter((group) =>
+      articlesOfGroup(group).some((art) =>
+        activeSites(state).some(
+          (site) => supplierDeliversTo(art.id, site) && orderOutlook(state, art.id, site).deficit > 0,
+        ),
       ),
     );
     if (needy.length > 0) {
       state.pendingOrderWeek = week;
-      const names = needy.map((id) => getProduct(state, id).name).join(', ');
+      const names = needy.map((group) => getProductDef(group).name).join(', ');
       notify(
         state,
         `📋 Einkäufer-Kapazität voll (${buyerCapacity(state)} Gruppen): ${names} unbetreut – manuell bestellen oder weiteren Einkäufer einstellen.`,
@@ -2017,28 +2034,31 @@ export function listableUnlistedProducts(state: GameState): ProductId[] {
   ).map((d) => d.id);
 }
 
-/** Live product if listed (its VK may have been re-priced by the player),
- * otherwise the catalog definition — inquiries may target listable-but-unlisted
- * products (Wachstumsmotor A). */
-function inquiryProductInfo(state: GameState, id: ProductId) {
-  return state.products.find((p) => p.id === id) ?? getProductDef(id);
+/** Live article if listed (its VK may have been re-priced by the player),
+ * otherwise the catalog economics — inquiries may target listable-but-unlisted
+ * articles (Wachstumsmotor A). Beide Formen liefern name/emoji/verkaufspreis. */
+function inquiryProductInfo(state: GameState, id: ArticleId) {
+  return state.products.find((p) => p.id === id) ?? articleEconomics(id)!;
 }
 
-/** Bias new inquiries toward products we already sell, so a new customer's
- * first order isn't guaranteed late by the supplier lead time. A slice of
- * demand targets listable-but-unlisted products — the market pulling the player
- * toward more breadth (accepting requires listing, see acceptInquiry). */
-function pickInquiryProduct(state: GameState): ProductId {
+/** Bias new inquiries toward ARTICLES we already sell, so a new customer's first
+ * order isn't guaranteed late by the supplier lead time. A slice of demand targets
+ * a listable-but-unlisted GROUP (represented by one of its articles) — the market
+ * pulling the player toward more breadth (accepting lists the group, see acceptInquiry). */
+function pickInquiryProduct(state: GameState, region: SiteId = 'hq'): ArticleId {
   const unlisted = listableUnlistedProducts(state);
   if (unlisted.length > 0 && Math.random() < INQUIRY_UNLISTED_PRODUCT_CHANCE) {
-    return pick(unlisted);
+    // Neue Gruppe (Markt-Sog): region-typischer Leit-Artikel; muss erst gelistet
+    // & bevorratet werden (Liefer-Verzug wie bisher gewollt).
+    return pickArticleForRegion(pick(unlisted), region).id;
   }
+  // Sonst: bevorzugt einen bereits VERKAUFTEN Artikel (auf Lager) — so wird ein
+  // Neukunde ohne Liefer-Verzug bedient (Artikel-Fragmentierung würde sonst jeden
+  // Neukunden garantiert zu spät beliefern). Fallback: irgendein gelisteter Artikel.
   const familiar = [
     ...new Set(state.customers.filter((c) => c.active).flatMap((c) => c.lines.map((l) => l.productId))),
   ];
-  if (familiar.length > 0 && Math.random() < INQUIRY_FAMILIAR_PRODUCT_CHANCE) {
-    return pick(familiar);
-  }
+  if (familiar.length > 0) return pick(familiar);
   return pick(state.products.map((p) => p.id));
 }
 
@@ -2081,9 +2101,11 @@ function rollInquiryTargetPrice(listVk: number): number {
 /** Weekly volume for a new line: customer-type range × product factor — cheap
  * products sell in bigger quantities (Menge statt Preis), so a Gemüse line is
  * worth roughly as much revenue as a Fisch line. */
-function rollLineVolume(type: CustomerType, productId: ProductId): number {
+function rollLineVolume(type: CustomerType, id: ArticleId): number {
   const [minV, maxV] = CUSTOMER_VOLUME_RANGE[type];
-  return Math.round(randInt(minV, maxV) * PRODUCT_VOLUME_FACTOR[productId]);
+  // id kann ein Artikel ODER (Tutorial) eine Gruppe sein — auf die Gruppe abbilden.
+  const group = (groupOfArticle(id) ?? id) as ProductId;
+  return Math.round(randInt(minV, maxV) * PRODUCT_VOLUME_FACTOR[group]);
 }
 
 /** Skill-weighted acquisition power of the Vertrieb team (each rep contributes
@@ -2103,69 +2125,10 @@ export function marketingPower(state: GameState): number {
     .reduce((sum, e) => sum + 0.5 + 0.5 * (e.skill / 100), 0);
 }
 
-// --- Artikel-Ebene: Spezialitäten, die Kunden über die Zeit entwickeln --------
-// Der Übergang von Gruppen zu Artikeln läuft über die Kunden: sobald ihre GRUPPE
-// gelistet ist, entwickeln vor allem Großkunden mit der Zeit den Wunsch nach
-// benannten Stadt-/Landes-Spezialitäten. Wirtschaft & Lager bleiben je Gruppe.
-
-/** Wie viele Spezialitäten-Artikel ein Kunde bereits listet. */
-function articleCountOf(cust: Customer): number {
-  return cust.lines.reduce((n, l) => (l.articleId ? n + 1 : n), 0);
-}
-/** Artikel, die dieser Kunde als Nächstes entwickeln KÖNNTE: Gruppe gelistet, noch
- * nicht in seiner Linie, innerhalb seiner Reichweite. Kleinkunden entwickeln genau
- * EINEN Artikel aus einer ANDEREN Stadt; Mittel bis zu 3 beliebige; Groß alle. */
-export function developableArticles(state: GameState, cust: Customer): ArticleDef[] {
-  if (articleCountOf(cust) >= ARTICLE_REACH[cust.type]) return [];
-  const region: SiteId = cust.region ?? 'hq';
-  const have = new Set(cust.lines.map((l) => l.articleId).filter(Boolean));
-  return ARTICLE_DEFS.filter((a) => {
-    if (have.has(a.id)) return false;
-    if (!isInAssortment(state, a.groupId)) return false;
-    const foreign = a.home !== 'national' && a.home !== region;
-    if (cust.type === 'small' && !foreign) return false; // klein: nur Fremdstadt
-    // Kühlpflichtige Spezialität nur als VEREDELUNG einer schon bezogenen Gruppe —
-    // ein Kunde beginnt über einen Artikel nie NEU mit einer Kühl-Gruppe (das würde
-    // den Kühl-Bedarf sprunghaft heben). Nicht-kühlpflichtige dürfen neue Linien sein.
-    if (getProductDef(a.groupId).requiresCooling && !cust.lines.some((l) => l.productId === a.groupId)) return false;
-    return true;
-  });
-}
-/** Wöchentlich (Mid/Late-Game): jeder Kunde entwickelt mit kleiner Chance eine neue
- * Spezialitäten-Linie — Großkunden am häufigsten, bis sie alle Artikel des Landes
- * listen. Neue Linie erbt Preis/Wirtschaft der Gruppe. */
-function developProductLines(state: GameState, newWeek: number): void {
-  if (state.tutorial?.active) return;
-  if (newWeek < ARTICLE_DEV_START_WEEK) return;
-  for (const cust of state.customers) {
-    if (!cust.active) continue;
-    // Nur etablierte Kunden entwickeln Spezialitäten (Geschmack braucht Zeit) — hält
-    // das noch wacklige Aufbau-Geschäft bewusst rein bei den Gruppen.
-    if (newWeek - (cust.sinceWeek ?? 0) < ARTICLE_DEV_CUSTOMER_AGE) continue;
-    if (Math.random() >= ARTICLE_DEV_CHANCE[cust.type]) continue;
-    const options = developableArticles(state, cust);
-    if (options.length === 0) continue;
-    const art = options[Math.floor(Math.random() * options.length)];
-    const def = getProductDef(art.groupId);
-    // Hat der Kunde die Gruppe schon (generisch), wird sie zur SPEZIALITÄT
-    // veredelt (kein Doppel-Line); sonst kommt eine neue Artikel-Linie dazu.
-    const existing = cust.lines.find((l) => l.productId === art.groupId);
-    let vol: number;
-    if (existing) {
-      existing.articleId = art.id;
-      vol = existing.volume;
-    } else {
-      // Neue Spezialität: nur ein Bruchteil der üblichen Menge (Premium/Nische).
-      vol = Math.max(1, Math.round(rollLineVolume(cust.type, art.groupId) * ARTICLE_VOLUME_FACTOR));
-      cust.lines.push({ productId: art.groupId, articleId: art.id, price: def.verkaufspreis, agreedPrice: def.verkaufspreis, volume: vol });
-    }
-    cust.loyalty = clamp(cust.loyalty + 2, 0, 100);
-    // Nur Großkunden melden (der sichtbare Late-Game-Sog); klein/mittel still.
-    if (cust.type === 'large') {
-      notify(state, `⭐ ${cust.name} listet jetzt auch ${art.emoji} ${art.name} (${def.emoji} ${def.name}) – ${vol}×/Woche.`, 'success');
-    }
-  }
-}
+// Phase B2: Der frühere „Spezialitäten-Übergang" (developProductLines) entfällt —
+// Kunden kaufen jetzt von Anfang an konkrete Artikel (pickArticleForRegion), und
+// mehr Artikel-Linien wachsen über den normalen Erweiterungs-Motor (neue Gruppe →
+// konkreter Artikel). Die Gruppe bleibt Kategorie für Freischaltung/Kühlpflicht.
 
 // --- Marktanteil-Modell (entkoppelt) ----------------------------------------
 
@@ -2278,11 +2241,14 @@ export function expectedNewInquiriesPerWeek(state: GameState): number {
 /** Create one NEW-customer inquiry of the given size. */
 function generateNewInquiry(state: GameState, type: CustomerType): void {
   const week = weekOf(state.totalDays);
-  const preferred = pickInquiryProduct(state);
-  const product = inquiryProductInfo(state, preferred);
   // Region: nach Ruf gewichtet — ein bekannter Standort (auch der neu eröffnete,
   // der einen Teil des Landes-Rufs geerbt hat) zieht mehr Neukunden an.
   const region: SiteId = pickInquiryRegion(state);
+  // Konkreter Artikel — pickInquiryProduct bevorzugt bereits VERKAUFTE Artikel (auf
+  // Lager), damit Neukunden ohne Liefer-Verzug bedient werden. Nur bei einer neuen
+  // (ungelisteten) Gruppe wird der region-typische Leit-Artikel gewählt.
+  const preferred = pickInquiryProduct(state, region);
+  const product = inquiryProductInfo(state, preferred);
   const inquiry: Inquiry = {
     id: uid('inq'),
     name: uniqueCustomerName(state, type),
@@ -2297,7 +2263,7 @@ function generateNewInquiry(state: GameState, type: CustomerType): void {
     region,
   };
   state.inquiries.push(inquiry);
-  const unlistedHint = isInAssortment(state, preferred) ? '' : ' (noch nicht gelistet!)';
+  const unlistedHint = isInAssortment(state, groupOfArticle(preferred)!) ? '' : ' (noch nicht gelistet!)';
   notify(
     state,
     `📨 Neue Kundenanfrage (${SITE_META[region].short}): ${inquiry.name} (${type}) sucht ${product.name}${unlistedHint}.`,
@@ -2315,9 +2281,11 @@ function generateNewInquiry(state: GameState, type: CustomerType): void {
  */
 function maybeGenerateExpansionInquiries(state: GameState): void {
   const week = weekOf(state.totalDays);
-  const listable = [
+  // Angeboten werden ARTIKEL: alle gelisteten SKUs + je unlistbarer Gruppe ihr
+  // Leit-Artikel (Annahme listet die Gruppe). So bekommt der Kunde eine konkrete SKU.
+  const listable: ArticleId[] = [
     ...state.products.map((p) => p.id),
-    ...listableUnlistedProducts(state),
+    ...listableUnlistedProducts(state).map((g) => defaultArticleOf(g).id),
   ];
   const busy = new Set<string>();
   for (const i of state.inquiries) {
@@ -2379,7 +2347,7 @@ function demandProcessActive(state: GameState): boolean {
 function pushDemandInquiry(
   state: GameState,
   cust: Customer,
-  productId: ProductId,
+  productId: ArticleId,
   stage: 1 | 2,
   deadlineWeek: number,
 ): void {
@@ -2530,7 +2498,7 @@ function poachRisk(cust: Customer): number {
   // Overpricing: agreed price vs the product's list price (verkaufspreis).
   let overprice = 0;
   for (const l of cust.lines) {
-    const list = getProductDef(l.productId).verkaufspreis;
+    const list = articleEconomics(l.productId)?.verkaufspreis ?? 0;
     if (list > 0) overprice = Math.max(overprice, (l.price - list) / list);
   }
   const priceFactor = 1 + Math.max(0, overprice) * 2; // teuer = attraktiveres Ziel
@@ -2671,18 +2639,18 @@ function maybeGenerateDemand(state: GameState): void {
   if (state.lastDemandWeek != null && week - state.lastDemandWeek < DEMAND_COOLDOWN_WEEKS) return;
   if (Math.random() > DEMAND_CHANCE_PER_WEEK) return;
 
-  // Anything listable counts — including products the player hasn't listed yet
-  // (the wish is exactly what pulls them toward listing, see Paket A).
-  const listable = [
+  // Anything listable counts (as ARTIKEL) — including a listable-but-unlisted
+  // group via its Leit-Artikel (the wish is what pulls them toward listing, Paket A).
+  const listable: ArticleId[] = [
     ...state.products.map((p) => p.id),
-    ...listableUnlistedProducts(state),
+    ...listableUnlistedProducts(state).map((g) => defaultArticleOf(g).id),
   ];
   // A customer already fielding an open ask (expansion or Großauftrag) or a
   // pending ultimatum must not get piled with a second — no double-booking.
   const busy = new Set<string>();
   for (const i of state.inquiries) if (i.status === 'open' && i.existingCustomerId) busy.add(i.existingCustomerId);
   for (const u of state.pendingUltimatums) busy.add(u.customerId);
-  const candidates: { cust: Customer; missing: ProductId[] }[] = [];
+  const candidates: { cust: Customer; missing: ArticleId[] }[] = [];
   for (const cust of state.customers) {
     if (!cust.active) continue;
     if (busy.has(cust.id)) continue;
@@ -2725,7 +2693,7 @@ function maybeGenerateBigOrder(state: GameState): void {
   const eligible = state.customers.filter((c) => c.active && !busy.has(c.id));
   if (eligible.length === 0) return;
 
-  const listed = state.products.filter((p) => isInAssortment(state, p.id));
+  const listed = state.products; // alle gelisteten Artikel
   if (listed.length === 0) return;
   const product = pick(listed);
   const cust = pick(eligible);
@@ -2790,8 +2758,8 @@ function fireDueUltimatums(state: GameState): void {
 
 /** The demanded line never came: the customer leaves completely — all lines,
  * all revenue. The pain is quantified so the loss is felt, not vague. */
-function churnDemandCustomer(state: GameState, cust: Customer, productId: ProductId): void {
-  const product = getProductDef(productId);
+function churnDemandCustomer(state: GameState, cust: Customer, productId: ArticleId): void {
+  const product = articleEconomics(productId)!;
   const weeklyRevenue = Math.round(cust.lines.reduce((s, l) => s + l.volume * l.price, 0));
   cust.active = false;
   releaseCustomerOrders(state, cust.id);
@@ -2816,7 +2784,7 @@ export function resolveDemandRejection(state: GameState, inq: Inquiry): void {
     return;
   }
   if (inq.demand.stage === 1) {
-    const product = getProductDef(inq.preferredProduct);
+    const product = articleEconomics(inq.preferredProduct)!;
     state.pendingUltimatums.push({
       customerId: cust.id,
       productId: inq.preferredProduct,
@@ -3167,7 +3135,6 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   // speist den bestehenden Abwanderungs-Pfad direkt darunter).
   runMarketWeek(state, newWeek);
   runRenownWeek(state);
-  developProductLines(state, newWeek);
 
   // 5c. Loyalty with teeth: deeply unhappy customers (below the threshold) may
   // quit — but NEVER without warning. Crossing the threshold raises the warning

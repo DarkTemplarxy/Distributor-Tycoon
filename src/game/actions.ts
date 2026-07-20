@@ -15,6 +15,9 @@ import {
   getEquipmentDef,
   getVehicleDef,
   getProductDef,
+  articlesOfGroup,
+  groupOfArticle,
+  articleEconomics,
   getStrategyDef,
   hallExpansionPrice,
   HIRE_WEEKS_UPFRONT,
@@ -59,7 +62,7 @@ import {
   CUSTOMER_VOLUME_RANGE,
   INQUIRY_EXPIRY_WEEKS,
 } from './constants';
-import type { CustomerLine, CustomerType, EquipmentId, GameState, Inquiry, Order, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
+import type { ArticleId, CustomerLine, CustomerType, EquipmentId, GameState, Inquiry, Order, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
 import {
   acceptInquiry as onboardInquiry,
   availableCredit,
@@ -125,7 +128,7 @@ export interface ActionResult {
  */
 export function placeWeeklyOrder(
   state: GameState,
-  items: { productId: ProductId; quantity: number }[],
+  items: { productId: ArticleId; quantity: number }[],
   site: SiteId = 'hq',
 ): ActionResult {
   const valid = items.filter((i) => i.quantity > 0 && supplierDeliversTo(i.productId, site));
@@ -160,18 +163,18 @@ export function placeWeeklyOrder(
 
 // --- Pricing ----------------------------------------------------------------
 
-export function setSalesPrice(state: GameState, productId: ProductId, price: number): void {
+export function setSalesPrice(state: GameState, productId: ArticleId, price: number): void {
   const product = getProduct(state, productId);
   product.verkaufspreis = Math.max(0, Math.round(price * 100) / 100);
 }
 
-export function setTargetMargin(state: GameState, productId: ProductId, margin: number): void {
+export function setTargetMargin(state: GameState, productId: ArticleId, margin: number): void {
   const product = getProduct(state, productId);
   product.zielmarge = clamp(margin, 0, 90);
 }
 
 /** Set the sales price from the target margin: price = cost / (1 - margin). */
-export function applyAutoPrice(state: GameState, productId: ProductId): void {
+export function applyAutoPrice(state: GameState, productId: ArticleId): void {
   const product = getProduct(state, productId);
   const m = clamp(product.zielmarge, 0, 89) / 100;
   const price = product.einkaufspreis / (1 - m);
@@ -180,7 +183,7 @@ export function applyAutoPrice(state: GameState, productId: ProductId): void {
 
 export function setAutoRestock(
   state: GameState,
-  productId: ProductId,
+  productId: ArticleId,
   rule: { enabled: boolean; min: number; target: number },
 ): void {
   const product = getProduct(state, productId);
@@ -208,12 +211,15 @@ export function addProduct(state: GameState, productId: ProductId): ActionResult
     return { ok: false, message: `Listungsgebühr ${def.listingFee}€ nicht bezahlbar.` };
   }
 
-  state.products.push(buildProduct(def));
-  state.supplier.products.push({
-    productId: def.id,
-    price: def.einkaufspreis,
-    basePrice: def.einkaufspreis,
-  });
+  // Eine Gruppe listen = alle ihre Artikel (SKUs) ins Sortiment + zum Lieferanten.
+  for (const art of articlesOfGroup(def.id)) {
+    state.products.push(buildProduct(art));
+    state.supplier.products.push({
+      productId: art.id,
+      price: art.einkaufspreis,
+      basePrice: art.einkaufspreis,
+    });
+  }
   if (def.listingFee > 0) {
     spend(state, def.listingFee);
     state.weekAcc.purchases += def.listingFee;
@@ -531,10 +537,10 @@ export function poachCompetitorCustomer(state: GameState, type: CustomerType): A
   if (freeCapacity(state, type) <= 0) {
     return { ok: false, message: 'Keine freie Kapazität für diese Größe – erst Slots/KAM schaffen.' };
   }
-  // Ein gelistetes, überall lieferbares Produkt, das der Wechselwillige ordern würde.
-  const listable = state.products.filter((p) => isInAssortment(state, p.id) && !getProductDef(p.id).exclusiveSite);
+  // Ein gelisteter, überall lieferbarer Artikel, den der Wechselwillige ordern würde.
+  const listable = state.products.filter((p) => !getProductDef(p.groupId).exclusiveSite);
   if (listable.length === 0) return { ok: false, message: 'Kein passendes gelistetes Produkt zum Anbieten.' };
-  const product = getProductDef(listable[Math.floor(Math.random() * listable.length)].id);
+  const product = listable[Math.floor(Math.random() * listable.length)];
   const raider = COMPETITOR_DEFS[Math.floor(Math.random() * COMPETITOR_DEFS.length)];
 
   spend(state, ABWERBE_COST);
@@ -618,7 +624,7 @@ export function repriceCooldownLeft(state: GameState, line: CustomerLine): numbe
 export function setCustomerLinePrice(
   state: GameState,
   customerId: string,
-  productId: ProductId,
+  productId: ArticleId,
   newPrice: number,
 ): ActionResult {
   const cust = state.customers.find((c) => c.id === customerId);
@@ -676,11 +682,13 @@ export function setCustomerLinePrice(
  * upfront but only pays once the customer actually says yes. */
 function ensureInquiryProductListed(
   state: GameState,
-  productId: ProductId,
+  articleId: ArticleId,
   opts?: { dryRun?: boolean },
 ): ActionResult {
-  if (isInAssortment(state, productId)) return { ok: true };
-  const def = getProductDef(productId);
+  // Der Artikel gehört zu einer Gruppe (Kategorie); gelistet wird immer die GRUPPE.
+  const group = groupOfArticle(articleId)!;
+  if (isInAssortment(state, group)) return { ok: true };
+  const def = getProductDef(group);
   const prefix = `Erfordert Listung von ${def.name} (Gebühr ${def.listingFee}€)`;
   if (weekOf(state.totalDays) < def.unlockWeek) {
     return { ok: false, message: `${prefix} – erst ab Woche ${def.unlockWeek + 1} möglich.` };
@@ -689,7 +697,7 @@ function ensureInquiryProductListed(
     return { ok: false, message: `${prefix} – Gebühr nicht bezahlbar.` };
   }
   if (opts?.dryRun) return { ok: true };
-  const res = addProduct(state, productId);
+  const res = addProduct(state, group);
   if (!res.ok) return { ok: false, message: `${prefix} – ${res.message}` };
   return { ok: true };
 }
@@ -871,14 +879,14 @@ export function setStrategy(state: GameState, id: StrategyId): ActionResult {
 
 /** Lock a supply contract: fix today's price (+ a small premium) for
  * CONTRACT_WEEKS weeks, shielding the product from quarterly hikes. */
-export function signSupplyContract(state: GameState, productId: ProductId): ActionResult {
+export function signSupplyContract(state: GameState, productId: ArticleId): ActionResult {
   const sp = state.supplier.products.find((s) => s.productId === productId);
   if (!sp) return { ok: false, message: 'Produkt nicht beim Lieferanten.' };
   if (hasActiveContract(state, productId)) return { ok: false, message: 'Es läuft bereits ein Vertrag.' };
   const week = weekOf(state.totalDays);
   const price = Math.round(supplierUnitPrice(state, productId) * (1 + CONTRACT_PREMIUM) * 100) / 100;
   sp.contract = { price, untilWeek: week + CONTRACT_WEEKS };
-  const def = getProductDef(productId);
+  const def = articleEconomics(productId)!;
   notify(
     state,
     `📝 Liefervertrag für ${def.name}: EK für ${CONTRACT_WEEKS} Wochen auf €${price.toFixed(2)} fixiert (+${Math.round(CONTRACT_PREMIUM * 100)}% Prämie) – geschützt vor Erhöhungen.`,
@@ -888,11 +896,11 @@ export function signSupplyContract(state: GameState, productId: ProductId): Acti
 }
 
 /** Cancel a running supply contract (back to the spot price). */
-export function cancelSupplyContract(state: GameState, productId: ProductId): ActionResult {
+export function cancelSupplyContract(state: GameState, productId: ArticleId): ActionResult {
   const sp = state.supplier.products.find((s) => s.productId === productId);
   if (!sp?.contract) return { ok: false, message: 'Kein Vertrag aktiv.' };
   delete sp.contract;
-  const def = getProductDef(productId);
+  const def = articleEconomics(productId)!;
   notify(state, `📝 Liefervertrag für ${def.name} beendet – wieder Spotpreis.`, 'info');
   return { ok: true };
 }
@@ -1064,7 +1072,7 @@ export function foundRegionalOffice(state: GameState): ActionResult {
  * bleibt erhalten; dort muss er normal eingelagert werden). */
 export function transferStock(
   state: GameState,
-  productId: ProductId,
+  productId: ArticleId,
   quantity: number,
   fromSite: SiteId,
   toSite: SiteId,
@@ -1351,7 +1359,7 @@ export function autoManageSite(state: GameState, site: SiteId): void {
 
   // 3. Cold shelving when the site carries cold ware and runs low.
   const carriesCold = state.products.some(
-    (p) => getProductDef(p.id).requiresCooling && supplierDeliversTo(p.id, site),
+    (p) => getProductDef(p.groupId).requiresCooling && supplierDeliversTo(p.id, site),
   );
   if (carriesCold && (coldChainGap(state) || coldShelfFree(state, site) < 80) && afford(4_000)) {
     const t = freeStorageTileAt(state, site);
@@ -1388,13 +1396,13 @@ export function runSiteManagers(state: GameState): void {
 
 /** Wochenbedarf eines Produkts am Standort: Summe der Linien-Volumina der Kunden dieser
  * Region (Näherung für „wie viel braucht der Standort davon pro Woche"). */
-function siteProductWeeklyDemand(state: GameState, productId: ProductId, site: SiteId): number {
+function siteProductWeeklyDemand(state: GameState, productId: ArticleId, site: SiteId): number {
   return state.customers
     .filter((c) => c.active && (c.region ?? 'hq') === site)
     .reduce((sum, c) => sum + c.lines.filter((l) => l.productId === productId).reduce((a, l) => a + l.volume, 0), 0);
 }
 /** Bereits zu diesem Standort unterwegs (in-flight Transfers) für ein Produkt. */
-function inflightTransferQty(state: GameState, productId: ProductId, toSite: SiteId): number {
+function inflightTransferQty(state: GameState, productId: ArticleId, toSite: SiteId): number {
   return (state.transfers ?? [])
     .filter((t) => t.productId === productId && t.toSite === toSite)
     .reduce((a, t) => a + t.quantity, 0);
@@ -1417,7 +1425,7 @@ export function runLogistikleiter(state: GameState): void {
   const reserve = Math.max(A.RESERVE_FLOOR, monthlyRevenue(state) * A.RESERVE_PER_MONTHLY);
 
   const sites: SiteId[] = activeSites(state);
-  let best: { productId: ProductId; from: SiteId; to: SiteId; qty: number; gap: number } | null = null;
+  let best: { productId: ArticleId; from: SiteId; to: SiteId; qty: number; gap: number } | null = null;
   for (const to of sites) {
     for (const from of sites) {
       if (from === to) continue;

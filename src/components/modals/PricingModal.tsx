@@ -1,7 +1,7 @@
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import { applyAutoPrice, setSalesPrice, setTargetMargin } from '../../game/actions';
-import { PRODUCT_COLOR } from '../shared';
+import { prodColor } from '../shared';
 
 export function PricingModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
@@ -30,7 +30,7 @@ export function PricingModal({ onClose }: { onClose: () => void }) {
             <div key={product.id} className="row" style={{ flexWrap: 'wrap' }}>
               <span style={{ fontSize: 22 }}>{product.emoji}</span>
               <div className="grow" style={{ minWidth: 120 }}>
-                <div className="title" style={{ color: PRODUCT_COLOR[product.id] }}>
+                <div className="title" style={{ color: prodColor(product.id) }}>
                   {product.name}
                 </div>
                 <div className="sub">EK {product.einkaufspreis}€</div>

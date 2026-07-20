@@ -31,7 +31,7 @@ export type SiteId = 'hq' | 'sued' | 'west' | 'ost' | 'suedwest' | 'mitte';
 /** Ein laufender Waren-Transfer zwischen Standorten (LKW unterwegs). */
 export interface Transfer {
   id: string;
-  productId: ProductId;
+  productId: ArticleId;
   quantity: number;
   fromSite: SiteId;
   toSite: SiteId;
@@ -81,7 +81,8 @@ export type NotificationType = 'info' | 'success' | 'warn' | 'error';
  * a worker has put them away on a shelf ('shelf'). */
 export interface Batch {
   id: string;
-  productId: ProductId;
+  /** Phase B2: der konkrete Artikel (SKU), zu dem diese Charge gehört. */
+  productId: ArticleId;
   quantity: number;
   /** Absolute game-day (state.totalDays) on which this batch spoils. */
   expiryDay: number;
@@ -90,8 +91,14 @@ export interface Batch {
   siteId?: SiteId;
 }
 
+/** Phase B2: ein „Product" ist jetzt ein konkreter ARTIKEL (SKU) — die Einheit,
+ * die gelagert, bestellt und verkauft wird. `id` ist die ArticleId, `groupId` die
+ * Kategorie (Produktgruppe), aus der Freischaltung, Listungsgebühr, Kühlpflicht,
+ * Regional-Exklusivität und die UI-Gruppierung stammen (getProductDef(groupId)). */
 export interface Product {
-  id: ProductId;
+  id: ArticleId;
+  /** Produktgruppe (Kategorie) dieses Artikels. */
+  groupId: ProductId;
   name: string;
   emoji: string;
   /** Purchase price per unit (from supplier). */
@@ -107,14 +114,10 @@ export interface Product {
   autoRestock: { enabled: boolean; min: number; target: number };
 }
 
-/** One product a customer buys: its own price and weekly volume. */
+/** One article a customer buys: its own price and weekly volume. Phase B2:
+ * `productId` ist die ArticleId (SKU); die Gruppe wird via groupOfArticle abgeleitet. */
 export interface CustomerLine {
-  productId: ProductId;
-  /** Konkreter Spezialitäten-Artikel (Stufe 3), falls diese Linie eine Stadt-/Landes-
-   * Spezialität IST (statt der generischen Gruppe). Wirtschaft & Lager laufen weiter
-   * über die Gruppe (productId); articleId ist die feinere Katalog-Ebene, die vor
-   * allem Großkunden über die Zeit sammeln. Optional → alte Spielstände bleiben gültig. */
-  articleId?: string;
+  productId: ArticleId;
   /** Current price per unit. */
   price: number;
   /** Baseline units ordered per week. */
@@ -185,7 +188,7 @@ export interface Inquiry {
   type: CustomerType;
   /** When set, this is an expansion request from an existing customer (add a product line). */
   existingCustomerId?: string;
-  preferredProduct: ProductId;
+  preferredProduct: ArticleId;
   suggestedVolume: number;
   /** The price the potential customer is hoping for (per unit). */
   targetPrice: number;
@@ -215,14 +218,14 @@ export interface Inquiry {
  * customer returns with an ultimatum for the same product in `fireWeek`. */
 export interface PendingUltimatum {
   customerId: string;
-  productId: ProductId;
+  productId: ArticleId;
   fireWeek: number;
 }
 
 export interface Order {
   id: string;
   customerId: string;
-  productId: ProductId;
+  productId: ArticleId;
   quantity: number;
   /** Price per unit locked in at order time. */
   price: number;
@@ -239,7 +242,7 @@ export interface Palette {
   id: string;
   orderId: string;
   customerId: string;
-  productId: ProductId;
+  productId: ArticleId;
   quantity: number;
   status: PaletteStatus;
   /** Standort, an dem die Palette steht (L3). Undefined = 'hq'. */
@@ -247,7 +250,7 @@ export interface Palette {
 }
 
 export interface PurchaseOrderItem {
-  productId: ProductId;
+  productId: ArticleId;
   quantity: number;
   pricePerUnit: number;
 }
@@ -294,7 +297,7 @@ export type WorkerTask =
     }
   | {
       kind: 'putaway';
-      productId: ProductId;
+      productId: ArticleId;
       quantity: number;
       /** Expiry carried with the pallet in transit from inbound to the shelf. */
       expiryDay: number;
@@ -316,7 +319,7 @@ export interface Employee {
    * is assigned, matching tasks go to them first; without matching work they
    * take anything (priority, not exclusivity). Undefined = no preference.
    * Optional for save compatibility. */
-  preferredProduct?: ProductId;
+  preferredProduct?: ArticleId;
   /** Instruction (Lager only): which task TYPE this worker prioritises —
    * 'putaway' (Einlagern) or 'prep' (Herrichten). They do it first, but still
    * help with the other when there is no preferred work (soft, not exclusive).
@@ -330,7 +333,7 @@ export interface Employee {
 }
 
 export interface SupplierProduct {
-  productId: ProductId;
+  productId: ArticleId;
   price: number;
   basePrice: number;
   /** Active supply contract (Paket 3): a price fixed until `untilWeek`. While
@@ -504,10 +507,10 @@ export interface GameState {
   currentWeekPoIdSued?: string | null;
   /** Units demanded per product during the currently-running week (accumulates
    * as customer orders come in). Rolled into demandLog at the weekly rollover. */
-  demandThisWeek: Partial<Record<ProductId, number>>;
+  demandThisWeek: Partial<Record<ArticleId, number>>;
   /** Per-product history of weekly demanded units (most recent last), used by the
    * order recommendation ("average of the last 2 weeks"). */
-  demandLog: Partial<Record<ProductId, number[]>>;
+  demandLog: Partial<Record<ArticleId, number[]>>;
 
   /** Owned equipment levels (Paket 2). Missing/undefined = level 0. Optional for
    * save compatibility; read via equipmentLevel(). */

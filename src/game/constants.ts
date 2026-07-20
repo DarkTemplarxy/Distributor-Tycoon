@@ -2,9 +2,9 @@
 // Tunable game constants. Everything the designer might want to tweak lives here.
 // ============================================================================
 
-import type { CustomerType, EquipmentId, GameState, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
+import type { ArticleId, CustomerType, EquipmentId, GameState, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
 
-export const SAVE_VERSION = 18;
+export const SAVE_VERSION = 19;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
 
 /** How many real seconds one in-game day lasts at 1x speed. Higher = more time
@@ -595,6 +595,23 @@ export function groupOfArticle(id: string): ProductId | undefined {
   return getArticleDef(id)?.groupId;
 }
 
+/** Der „Leit-Artikel" einer Gruppe (erster im Katalog) — die Standard-SKU, wenn nur
+ * die Gruppe bekannt ist (Tutorial, Starter-Bestand). */
+export function defaultArticleOf(groupId: ProductId): ArticleDef {
+  return articlesOfGroup(groupId)[0];
+}
+
+/** Wählt einen konkreten Artikel einer Gruppe für einen Kunden aus der Region:
+ * bevorzugt einen in DIESER Stadt heimischen Artikel, sonst einen landesweiten,
+ * sonst den Leit-Artikel. So bekommen Süd-Kunden ihre Regional-Spezialitäten. */
+export function pickArticleForRegion(groupId: ProductId, region: SiteId = 'hq'): ArticleDef {
+  const arts = articlesOfGroup(groupId);
+  const home = arts.filter((a) => a.home === region);
+  const national = arts.filter((a) => a.home === 'national');
+  const pool = home.length ? home : national.length ? national : arts;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 /** Aufgelöste Artikel-Ökonomie inkl. der von der Gruppe geerbten Felder
  * (Kühlpflicht, Regional-Exklusivität, sowie Marge/Haltbarkeit als Default).
  * Grundlage für Phase B2 (Lager/Aufträge/Einkauf auf Artikel-Ebene). */
@@ -663,11 +680,13 @@ export const ARTICLE_VOLUME_FACTOR = 0.4;
  * solange kein Standort existiert.) */
 export const HQ_EXCLUSIVE_PRODUCTS: ProductId[] = ['fisch'];
 
-/** Liefert der Lieferant dieses Produkt an diesen Standort? */
-export function supplierDeliversTo(productId: ProductId, siteId: SiteId): boolean {
-  const def = getProductDef(productId);
+/** Liefert der Lieferant diesen Artikel an diesen Standort? (Exklusivität erbt der
+ * Artikel von seiner Gruppe.) Akzeptiert Artikel- ODER Gruppen-Id. */
+export function supplierDeliversTo(id: ArticleId, siteId: SiteId): boolean {
+  const group = (groupOfArticle(id) ?? id) as ProductId;
+  const def = getProductDef(group);
   if (def.exclusiveSite) return def.exclusiveSite === siteId;
-  if (HQ_EXCLUSIVE_PRODUCTS.includes(productId)) return siteId === 'hq';
+  if (HQ_EXCLUSIVE_PRODUCTS.includes(group)) return siteId === 'hq';
   return true;
 }
 

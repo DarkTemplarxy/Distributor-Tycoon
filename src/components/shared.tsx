@@ -1,6 +1,7 @@
 // Small shared presentational helpers used across the UI.
 
 import { useState } from 'react';
+import { groupOfArticle } from '../game/constants';
 import type { CustomerType, ProductId } from '../game/types';
 
 export const PRODUCT_COLOR: Record<ProductId, string> = {
@@ -14,6 +15,12 @@ export const PRODUCT_COLOR: Record<ProductId, string> = {
   wein: 'var(--wein)',
   oliven: 'var(--oliven)',
 };
+
+/** Farbe eines Artikels ODER einer Gruppe (Artikel erben die Kategorie-Farbe der
+ * Gruppe). Phase B2: Auftrags-/Lager-Keys sind Artikel — hier auf die Gruppe abbilden. */
+export function prodColor(id: string): string {
+  return PRODUCT_COLOR[(groupOfArticle(id) ?? id) as ProductId] ?? 'var(--text-dim)';
+}
 
 export function Stars({ value }: { value: number }) {
   const full = Math.round(value);

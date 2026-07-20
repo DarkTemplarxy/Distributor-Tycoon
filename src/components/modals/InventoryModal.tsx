@@ -3,7 +3,7 @@ import { useGame } from '../../state/GameProvider';
 import { branchOpen, incomingPO, inboundStock, shelfStock } from '../../game/simulation';
 import { transferStock } from '../../game/actions';
 import { PALETTE_SIZE, SITE_META } from '../../game/constants';
-import { PRODUCT_COLOR } from '../shared';
+import { prodColor } from '../shared';
 
 export function InventoryModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
@@ -36,7 +36,7 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div className="title" style={{ color: PRODUCT_COLOR[product.id] }}>
+                  <div className="title" style={{ color: prodColor(product.id) }}>
                     {shelf} Stk <span className="sub">im Regal</span>
                   </div>
                   <div className="sub">

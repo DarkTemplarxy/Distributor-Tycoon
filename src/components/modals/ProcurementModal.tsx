@@ -19,7 +19,7 @@ import {
 } from '../../game/actions';
 import { CONTRACT_PREMIUM, CONTRACT_WEEKS, SITE_META, supplierDeliversTo, VOLUME_DISCOUNT_TIERS } from '../../game/constants';
 import { euro, weekOf } from '../../game/util';
-import { PRODUCT_COLOR } from '../shared';
+import { prodColor } from '../shared';
 
 export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
@@ -142,7 +142,7 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
               >
                 <span style={{ fontSize: 16 }}>{p?.emoji}</span>
                 <div className="grow">
-                  <div className="sub" style={{ color: PRODUCT_COLOR[sp.productId], fontWeight: 600 }}>
+                  <div className="sub" style={{ color: prodColor(sp.productId), fontWeight: 600 }}>
                     {p?.name}
                   </div>
                   <div className="sub">
@@ -223,7 +223,7 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ fontSize: 22 }}>{product.emoji}</span>
                     <div className="grow">
-                      <div className="title" style={{ color: PRODUCT_COLOR[product.id] }}>
+                      <div className="title" style={{ color: prodColor(product.id) }}>
                         {product.name} <span className="sub">· EK {price}€/Stk</span>
                       </div>
                       <div

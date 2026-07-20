@@ -5,6 +5,8 @@ import { counterAcceptChance, freeCapacity, isInAssortment, notify, shelfStock }
 import { acceptInquiry, counterOffer, dismissInquiry } from '../../game/actions';
 import {
   getProductDef,
+  articleEconomics,
+  groupOfArticle,
   LARGE_UNLOCK_MONTHLY,
   MEDIUM_UNLOCK_MONTHLY,
   monthlyRevenue,
@@ -12,7 +14,7 @@ import {
 import { STEP, TUTORIAL_INQUIRY_IDS, TUTORIAL_MEAT_INQUIRY_ID, tutorialOnStep } from '../../game/tutorial';
 import type { CustomerType } from '../../game/types';
 import { euro, weekOf } from '../../game/util';
-import { PRODUCT_COLOR } from '../shared';
+import { prodColor } from '../shared';
 
 const TYPE_LABEL: Record<CustomerType, string> = { small: 'Klein', medium: 'Mittel', large: 'Groß' };
 
@@ -126,7 +128,7 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
           // the catalog definition for name/emoji.
           const product =
             state.products.find((p) => p.id === inq.preferredProduct) ??
-            getProductDef(inq.preferredProduct);
+            articleEconomics(inq.preferredProduct)!;
 
           // --- Großauftrag (Paket 5): a one-off bet, its own card ---
           if (inq.bigOrder) {
@@ -151,7 +153,7 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                     </div>
                     <div className="sub">
                       Will einmalig{' '}
-                      <b style={{ color: PRODUCT_COLOR[inq.preferredProduct] }}>
+                      <b style={{ color: prodColor(inq.preferredProduct) }}>
                         {need}× {product.emoji} {product.name}
                       </b>{' '}
                       @ {inq.targetPrice}€{' '}
@@ -187,8 +189,8 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
             );
           }
 
-          const needsListing = !isInAssortment(state, inq.preferredProduct);
-          const listingFee = getProductDef(inq.preferredProduct).listingFee;
+          const needsListing = !isInAssortment(state, groupOfArticle(inq.preferredProduct)!);
+          const listingFee = getProductDef(groupOfArticle(inq.preferredProduct)!).listingFee;
           // Margin the wish price would yield vs the current EK — the owner
           // knows their own list prices, so we surface the quality of the offer
           // (good deal vs lowball) instead of making the player do the maths.
@@ -238,7 +240,7 @@ export function InquiriesModal({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="sub">
                     {isExpansion ? 'Möchte zusätzlich:' : 'Wunsch:'}{' '}
-                    <span style={{ color: PRODUCT_COLOR[inq.preferredProduct] }}>
+                    <span style={{ color: prodColor(inq.preferredProduct) }}>
                       {product.emoji} {product.name}
                     </span>{' '}
                     · {inq.suggestedVolume}×/Woche · Wunschpreis {inq.targetPrice}€{' '}

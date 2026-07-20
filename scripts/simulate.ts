@@ -75,6 +75,7 @@ import {
   BUYER_PRODUCT_CAPACITY,
   EQUIPMENT_DEFS,
   getProductDef,
+  articleEconomics,
   LARGE_UNLOCK_MONTHLY,
   MEDIUM_UNLOCK_MONTHLY,
   monthlyRevenue,
@@ -159,7 +160,7 @@ function orderDeficit(s: GameState) {
  * counter-offers up to it (taking the rejection risk — the growth brake).
  * Def-based, so it also works for inquiries targeting not-yet-listed products. */
 function targetMarginPrice(preferredProduct: GameState['products'][number]['id']): number {
-  const p = getProductDef(preferredProduct);
+  const p = articleEconomics(preferredProduct)!;
   return Math.round((p.einkaufspreis / (1 - p.zielmarge / 100)) * 2) / 2;
 }
 
@@ -380,7 +381,7 @@ function maxEff(s: GameState, profile: 'max' | 'ambi' = 'max') {
       }
       // Cold + normal shelf headroom vs volume.
       const carriesCold = s.products.some(
-        (p) => getProductDef(p.id).requiresCooling && supplierAtSite(p.id, site),
+        (p) => getProductDef(p.groupId).requiresCooling && supplierAtSite(p.id, site),
       );
       if (carriesCold && coldShelfFree(s, site) < 120 && afford(4_000)) {
         const t = freeStorageTileAt(s, site);
@@ -448,10 +449,10 @@ function maxEff(s: GameState, profile: 'max' | 'ambi' = 'max') {
 
   // Product breadth — ONE group at a time, only with healthy service and cold-shelf
   // headroom (a new SKU needs stock + cold shelving before its orders land).
-  const coldTight = s.products.some((p) => getProductDef(p.id).requiresCooling) && coldShelfFree(s) < 80;
+  const coldTight = s.products.some((p) => getProductDef(p.groupId).requiresCooling) && coldShelfFree(s) < 80;
   if (s.serviceStars >= 4.3 && !coldTight) {
     for (const def of PRODUCT_DEFS) {
-      if (s.products.some((p) => p.id === def.id)) continue;
+      if (s.products.some((p) => p.groupId === def.id)) continue;
       if (def.exclusiveSite === 'sued' && !branchOpen(s)) continue;
       if (weekOf(s.totalDays) < def.unlockWeek) continue;
       if (afford(def.listingFee + 30_000)) { addProduct(s, def.id); break; }
@@ -485,9 +486,9 @@ function maxEff(s: GameState, profile: 'max' | 'ambi' = 'max') {
 /** Does the supplier deliver this product to this site (mirror of the game rule,
  * kept local to avoid another import churn)? */
 function supplierAtSite(id: GameState['products'][number]['id'], site: 'hq' | 'sued'): boolean {
-  const def = getProductDef(id);
-  if (def.exclusiveSite) return def.exclusiveSite === site;
-  if (id === 'fisch') return site === 'hq';
+  const ae = articleEconomics(id)!;
+  if (ae.exclusiveSite) return ae.exclusiveSite === site;
+  if (ae.groupId === 'fisch') return site === 'hq';
   return true;
 }
 
@@ -549,13 +550,14 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
           // the rest — accept if the wish already meets it, else counter up to it
           // (may be rejected → irregular, earned growth). Def-based lookup: the
           // inquiry may target a product that isn't listed yet (accepting auto-lists it).
-          const p = getProductDef(inq.preferredProduct);
-          // A new product (not yet listed) means paying its listing fee AND tying
+          const p = articleEconomics(inq.preferredProduct)!;
+          const groupDef = getProductDef(p.groupId);
+          // A new group (not yet listed) means paying its listing fee AND tying
           // up cash in expensive stock. A sensible operator paces that expansion:
           // only list when there's a healthy cash buffer beyond the fee. (maxeff
           // pre-lists its whole assortment proactively once established, in maxEff().)
-          const alreadyListed = s.products.some((pp) => pp.id === p.id);
-          if (!alreadyListed && s.cash < p.listingFee + 20000) continue;
+          const alreadyListed = s.products.some((pp) => pp.id === inq.preferredProduct);
+          if (!alreadyListed && s.cash < groupDef.listingFee + 20000) continue;
           const wishMargin = inq.targetPrice > 0 ? ((inq.targetPrice - p.einkaufspreis) / inq.targetPrice) * 100 : 0;
           if (wishMargin < p.zielmarge * 0.7) continue; // lowball — not worth it
           const target = targetMarginPrice(inq.preferredProduct);
@@ -586,7 +588,7 @@ function runSim(strategy: Strategy, weeks: number): RunResult {
     if (strategy === 'sinnvoll' || strategy === 'maxeff' || strategy === 'ambitioniert') {
       const needsColdSpace =
         coldChainGap(s) ||
-        (s.products.some((p) => getProductDef(p.id).requiresCooling) && coldShelfFree(s) < 40);
+        (s.products.some((p) => getProductDef(p.groupId).requiresCooling) && coldShelfFree(s) < 40);
       if (needsColdSpace && s.cash > 4000) {
         const t = freeStorageTile(s);
         if (t) {
