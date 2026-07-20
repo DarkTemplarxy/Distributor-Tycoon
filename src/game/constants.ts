@@ -493,7 +493,7 @@ export const PRODUCT_DEFS: ProductDef[] = [
   // einsatz), kann sich übernehmen; wer wartet, wächst langsamer. Kühlpflichtige
   // Gruppen lagern ausschließlich in Kühlregalen (❄️ Kühlbereich im Bau-Modus).
   { id: 'kaese', name: 'Käse & Molkerei', emoji: '🧀', einkaufspreis: 22, verkaufspreis: 40, zielmarge: 45, spoilageDays: 30, unlockWeek: 14, listingFee: 3000, requiresCooling: true },
-  { id: 'obst', name: 'Obst & Frische', emoji: '🍎', einkaufspreis: 12, verkaufspreis: 20, zielmarge: 40, spoilageDays: 10, unlockWeek: 20, listingFee: 6000 },
+  { id: 'obst', name: 'Obst & Frische', emoji: '🍎', einkaufspreis: 12, verkaufspreis: 20, zielmarge: 40, spoilageDays: 16, unlockWeek: 20, listingFee: 6000 },
   { id: 'tiefkuehl', name: 'Tiefkühlkost', emoji: '🧊', einkaufspreis: 28, verkaufspreis: 52, zielmarge: 46, spoilageDays: 90, unlockWeek: 30, listingFee: 18000, requiresCooling: true },
   { id: 'delikatess', name: 'Feinkost', emoji: '🦞', einkaufspreis: 60, verkaufspreis: 120, zielmarge: 50, spoilageDays: 25, unlockWeek: 42, listingFee: 45000, requiresCooling: true },
   // --- Süd-Regionalprodukte (L3): nur mit eröffnetem Standort Süd listbar, der
@@ -560,7 +560,7 @@ export const ARTICLE_CATALOG: ArticleDef[] = [
   // 🍎 Obst & Frische (EK12 / VK20)
   { id: 'aepfel', name: 'Äpfel', emoji: '🍎', groupId: 'obst', home: 'national', einkaufspreis: 10, verkaufspreis: 17, spoilageDays: 14 },
   { id: 'bananen', name: 'Bananen', emoji: '🍌', groupId: 'obst', home: 'national', einkaufspreis: 9, verkaufspreis: 15 },
-  { id: 'erdbeeren', name: 'Erdbeeren', emoji: '🍓', groupId: 'obst', home: 'national', einkaufspreis: 16, verkaufspreis: 28, spoilageDays: 6 },
+  { id: 'erdbeeren', name: 'Erdbeeren', emoji: '🍓', groupId: 'obst', home: 'national', einkaufspreis: 16, verkaufspreis: 28, spoilageDays: 10 },
   { id: 'bodensee', name: 'Bodensee-Äpfel', emoji: '🍎', groupId: 'obst', home: 'sued', einkaufspreis: 14, verkaufspreis: 24, spoilageDays: 14 },
   // 🧊 Tiefkühlkost (EK28 / VK52, kühlpflichtig)
   { id: 'tk_pizza', name: 'TK-Pizza', emoji: '🍕', groupId: 'tiefkuehl', home: 'national', einkaufspreis: 20, verkaufspreis: 36 },

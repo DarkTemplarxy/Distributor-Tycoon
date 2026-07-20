@@ -1817,18 +1817,26 @@ export function createPurchaseOrderInternal(
   const site = opts?.siteId ?? 'hq';
   const mult = opts?.priceMultiplier ?? 1;
   let total = 0;
-  const poItems = items
-    // Regional-Regel (L3): der Lieferant bringt exklusive Produkte nur an ihren
-    // Standort (Fisch → Nord, Wein/Oliven → Süd). Anderes fliegt hier raus.
-    .filter((i) => i.quantity > 0 && supplierDeliversTo(i.productId, site))
-    .map((i) => {
-      // Contract price if one is running, else spot; then the bulk discount for
-      // ordering a large quantity of THIS product in one go.
-      const base = supplierUnitPrice(state, i.productId);
-      const unit = Math.round(base * (1 - volumeDiscount(i.quantity)) * mult * 100) / 100;
-      total += i.quantity * unit;
-      return { productId: i.productId, quantity: i.quantity, pricePerUnit: unit };
-    });
+  const deliverable = items.filter((i) => i.quantity > 0 && supplierDeliversTo(i.productId, site));
+  // Mengenrabatt (C3): auf die aggregierte GRUPPEN-Menge dieser Bestellung, nicht
+  // je Einzel-Artikel. Seit dem Artikel-Modell splittet sich die Nachfrage einer
+  // Gruppe auf mehrere SKUs — ein Rabatt je Artikel würde durch den Split unter die
+  // Staffelschwellen fallen. Der Distributor verhandelt den Bulk-Satz aber auf die
+  // ganze KATEGORIE, die er beim Lieferanten abnimmt.
+  const groupQty = new Map<ProductId, number>();
+  for (const i of deliverable) {
+    const g = groupOfArticle(i.productId)!;
+    groupQty.set(g, (groupQty.get(g) ?? 0) + i.quantity);
+  }
+  const poItems = deliverable.map((i) => {
+    // Contract price if one is running, else spot; then the bulk discount for the
+    // whole category ordered this week.
+    const base = supplierUnitPrice(state, i.productId);
+    const disc = volumeDiscount(groupQty.get(groupOfArticle(i.productId)!) ?? i.quantity);
+    const unit = Math.round(base * (1 - disc) * mult * 100) / 100;
+    total += i.quantity * unit;
+    return { productId: i.productId, quantity: i.quantity, pricePerUnit: unit };
+  });
   if (poItems.length === 0) return null;
 
   spend(state, total);
