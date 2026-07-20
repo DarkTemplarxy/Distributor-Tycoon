@@ -51,7 +51,11 @@ export type Role =
   | 'regionalkam'; // Regional-KAM: betreut die landesweiten Großkunden (bis zu 3 je Kopf).
 
 /** Buyable capital upgrades (Paket 2). */
-export type EquipmentId = 'forklift' | 'packstation' | 'cooling' | 'truck';
+export type EquipmentId = 'forklift' | 'packstation' | 'cooling';
+
+/** Fahrzeugklassen des eigenen Fuhrparks (Konzern-Logistik). Vier Größen mit
+ * eigener Palettenkapazität, Kaufpreis und Monatskosten (Instandhaltung + Treibstoff). */
+export type VehicleId = 'transporter' | 'lkw' | 'sattelzug' | 'lastzug';
 
 /** Company strategy stance (Paket 4). */
 export type StrategyId = 'full' | 'fresh' | 'volume';
@@ -494,6 +498,10 @@ export interface GameState {
   /** Owned equipment levels (Paket 2). Missing/undefined = level 0. Optional for
    * save compatibility; read via equipmentLevel(). */
   equipment?: Partial<Record<EquipmentId, number>>;
+  /** Eigener Fuhrpark: Anzahl je Fahrzeugklasse (Konzern-Logistik). Optional/lazy für
+   * alte Spielstände; read via fleetCount(). Kapazität senkt die Transferkosten (bis zur
+   * Kapazität günstig) und die Abholkosten; jedes Fahrzeug kostet monatlich Unterhalt. */
+  fleet?: Partial<Record<VehicleId, number>>;
   /** Company strategy (Paket 4). Undefined = 'full'. Read via strategyOf(). */
   strategy?: StrategyId;
   /** Week the strategy was last switched — cooldown anchor. */

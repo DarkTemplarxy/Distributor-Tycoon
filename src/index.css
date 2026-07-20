@@ -1119,8 +1119,13 @@ label.fld {
 }
 .km-tx-row .km-input { width: 90px; }
 .km-transfer .btn { width: 100%; }
-.km-fleet { margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-panel-2); }
+.km-fleet { margin-top: 16px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-panel-2); }
 .km-fleet-head { display: flex; align-items: center; justify-content: space-between; }
+.km-veh-list { display: flex; flex-direction: column; gap: 6px; }
+.km-veh { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); }
+.km-veh-emoji { font-size: 22px; }
+.km-veh-title { font-weight: 600; font-size: 13px; }
+.km-veh .btn { width: auto; white-space: nowrap; }
 
 /* Konzern gründen + Zentrale */
 .konzern-banner {

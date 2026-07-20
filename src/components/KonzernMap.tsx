@@ -22,15 +22,17 @@ import {
   nationalRenown,
   regionalKams,
   fleetSize,
+  fleetCount,
   fleetTransferCapacityPallets,
+  fleetMonthlyCost,
   transferCost,
 } from '../game/simulation';
-import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundRegionalOffice, buyEquipment } from '../game/actions';
+import { siteManager, siteWeeklyVolume, hireEmployee, transferStock, foundRegionalOffice, buyVehicle } from '../game/actions';
 import {
   SITE_META, ROLE_SALARY, HIRE_WEEKS_UPFRONT, BRANCH_UNLOCK_MONTHLY,
   TRANSFER_DAYS, TRANSFER_COST_PER_PALLET, TRANSFER_COST_OWN_PER_PALLET, PALETTE_SIZE,
   KONZERN_C_LEVEL, REGIONAL_OFFICE_ROLES, REGIONAL_KAM_LARGE_SLOTS,
-  REGIONAL_OFFICE_FOUND_COST, FLEET_MAX, FLEET_TRANSFER_CAPACITY_PALLETS, getEquipmentDef,
+  REGIONAL_OFFICE_FOUND_COST, FLEET_VEHICLES,
 } from '../game/constants';
 import type { OfficeRole } from '../game/constants';
 import {
@@ -186,18 +188,20 @@ function TransferTrucks({ state }: { state: GameState }) {
   );
 }
 
-/** Der eigene Fuhrpark als sichtbares Depot: geparkte LKW (die gerade nicht auf der
- * Route unterwegs sind). So sieht man den Fuhrpark UND die Bewegung auf der Karte. */
-function FleetDepot({ x, y, parked, total }: { x: number; y: number; parked: number; total: number }) {
-  const rows = Math.min(parked, 4);
+/** Der eigene Fuhrpark als sichtbares Depot: geparkte Fahrzeuge (die gerade nicht auf
+ * der Route unterwegs sind), mit den echten Fahrzeug-Emojis der Klassen. So sieht man
+ * den Fuhrpark UND die Bewegung auf der Karte. */
+function FleetDepot({ x, y, emojis, inTransit }: { x: number; y: number; emojis: string[]; inTransit: number }) {
+  const total = emojis.length;
+  const parkedEmojis = emojis.slice(0, Math.max(0, total - inTransit)).slice(0, 5);
   return (
     <g transform={`translate(${x},${y})`}>
-      <rect x={-14} y={-30} width={148} height={64} rx={10} fill="var(--bg-panel-2)" stroke="var(--border)" strokeWidth={2} opacity={0.85} />
+      <rect x={-14} y={-30} width={190} height={64} rx={10} fill="var(--bg-panel-2)" stroke="var(--border)" strokeWidth={2} opacity={0.85} />
       <text x={-6} y={-14} fontSize={12} fill="var(--text-dim)" fontWeight={700}>🚚 Fuhrpark {total}</text>
-      {Array.from({ length: rows }).map((_, i) => (
-        <text key={i} x={-2 + i * 34} y={22} fontSize={24}>🚚</text>
+      {parkedEmojis.map((e, i) => (
+        <text key={i} x={-2 + i * 34} y={22} fontSize={24}>{e}</text>
       ))}
-      {parked === 0 && total > 0 && <text x={-2} y={20} fontSize={11} fill="var(--text-faint)">alle unterwegs</text>}
+      {parkedEmojis.length === 0 && total > 0 && <text x={-2} y={20} fontSize={11} fill="var(--text-faint)">alle unterwegs</text>}
     </g>
   );
 }
@@ -328,6 +332,47 @@ function RegionalOfficePanel({ state, foundedWeek, onHire, onBack }: {
   );
 }
 
+/** Der eigene Fuhrpark: vier Fahrzeugklassen (5/10/20/30 Pal.), je Kaufpreis + Monats-
+ * kosten. Mehr Gesamtkapazität = mehr günstige Transfer-Paletten je Fahrt + niedrigere
+ * Abholkosten. Sichtbar als Depot auf der Karte. */
+function FuhrparkPanel({ state, fleet, fleetCapPal, fleetMonthly, onBuy }: {
+  state: GameState; fleet: number; fleetCapPal: number; fleetMonthly: number;
+  onBuy: (id: (typeof FLEET_VEHICLES)[number]['id']) => void;
+}) {
+  return (
+    <div className="km-fleet">
+      <div className="km-fleet-head">
+        <span>🚚 <b>Fuhrpark</b></span>
+        <span className="pill">{fleet} Fahrzeuge · {fleetCapPal} Pal./Fahrt</span>
+      </div>
+      <p className="sub" style={{ margin: '2px 0 8px' }}>
+        {fleet > 0
+          ? `Günstige Transfer-Kapazität ${fleetCapPal} Pal./Fahrt (${TRANSFER_COST_OWN_PER_PALLET}€ statt ${TRANSFER_COST_PER_PALLET}€), Überlauf zum Fremd-Tarif; senkt auch die Abholkosten. Unterhalt ${eur(fleetMonthly)}€/Monat.`
+          : `Noch kein eigenes Fahrzeug – Transfers laufen zum teuren Fremd-Tarif (${TRANSFER_COST_PER_PALLET}€/Pal.). Kaufe Fahrzeuge für günstige Kapazität.`}
+      </p>
+      <div className="km-veh-list">
+        {FLEET_VEHICLES.map((v) => {
+          const owned = fleetCount(state, v.id);
+          const afford = state.cash >= v.price;
+          return (
+            <div key={v.id} className="km-veh">
+              <span className="km-veh-emoji">{v.emoji}</span>
+              <div className="grow">
+                <div className="km-veh-title">{v.name}{owned > 0 && <span className="pill good" style={{ marginLeft: 6 }}>{owned}×</span>}</div>
+                <div className="sub">{v.capacity} Pal./Fahrt · {eur(v.monthly)}€/Monat</div>
+              </div>
+              <button className="btn small" disabled={!afford} onClick={() => onBuy(v.id)}
+                title={!afford ? `Kostet ${eur(v.price)}€` : `Kaufpreis ${eur(v.price)}€, danach ${eur(v.monthly)}€/Monat`}>
+                Kaufen · {eur(v.price)}€
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEnterSite: (site: SiteId) => void }) {
   const { state, mutate } = useGame();
   const branchOpen = !!state.branchWarehouse;
@@ -369,12 +414,11 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
   const txCost = transferCost(state, txPallets);
   const doTransfer = () => { if (txProduct) mutate((s) => transferStock(s, txProduct, txQty, txFrom, txTo)); };
 
-  // Fuhrpark (eigener LKW-Bestand): sichtbare, günstige Transfer-Kapazität.
+  // Fuhrpark (4 Fahrzeugklassen): sichtbare, günstige Transfer-Kapazität + Monatskosten.
   const fleet = fleetSize(state);
   const fleetCapPal = fleetTransferCapacityPallets(state);
-  const truckDef = getEquipmentDef('truck');
-  const nextTruckPrice = truckDef.price(fleet + 1);
-  const buyTruck = () => mutate((s) => buyEquipment(s, 'truck'));
+  const fleetMonthly = fleetMonthlyCost(state);
+  const buyVeh = (id: (typeof FLEET_VEHICLES)[number]['id']) => mutate((s) => buyVehicle(s, id));
   const txOwnPal = Math.min(txPallets, fleetCapPal);
 
   return (
@@ -395,7 +439,7 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
             </button>
           )}
           <span className="pill">📣 Ruf {nationalRenown(state).toFixed(0)}</span>
-          {branchOpen && <span className="pill">🚚 Fuhrpark {fleet}</span>}
+          <span className="pill">🚚 Fuhrpark {fleet}</span>
           <span className="pill">Marktanteil {(share * 100).toFixed(1)}% · Platz {rank}/{totalRanks}</span>
           <span className="km-money">💶 {eur(state.cash)}</span>
         </div>
@@ -480,9 +524,11 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
 
               {/* Laufende Transfers als fahrende LKW */}
               {branchOpen && <TransferTrucks state={state} />}
-              {/* Eigener Fuhrpark: geparkte LKW im Depot (sichtbare Kapazität) */}
-              {branchOpen && fleet > 0 && (
-                <FleetDepot x={110} y={545} total={fleet} parked={Math.max(0, fleet - (state.transfers?.length ?? 0))} />
+              {/* Eigener Fuhrpark: geparkte Fahrzeuge im Depot (sichtbare Kapazität) */}
+              {fleet > 0 && (
+                <FleetDepot x={110} y={545}
+                  emojis={FLEET_VEHICLES.flatMap((v) => Array(fleetCount(state, v.id)).fill(v.emoji))}
+                  inTransit={state.transfers?.length ?? 0} />
               )}
             </svg>
           )}
@@ -591,28 +637,9 @@ export function KonzernMap({ onClose, onEnterSite }: { onClose: () => void; onEn
                   Senden ({SITE_META[txFrom].short} → {SITE_META[txTo].short})
                 </button>
 
-                {/* Eigener Fuhrpark: sichtbare, günstige Transfer-Kapazität */}
-                <div className="km-fleet">
-                  <div className="km-fleet-head">
-                    <span>🚚 <b>Fuhrpark</b></span>
-                    <span className="pill">{fleet}/{FLEET_MAX} LKW</span>
-                  </div>
-                  <p className="sub" style={{ margin: '2px 0 6px' }}>
-                    {fleet > 0
-                      ? `Kapazität: ${fleetCapPal} Pal./Fahrt zum Eigen-Tarif (${TRANSFER_COST_OWN_PER_PALLET}€ statt ${TRANSFER_COST_PER_PALLET}€), darüber Fremd-Spedition. Senkt auch die Abholkosten.`
-                      : `Noch kein eigener LKW – Transfers laufen zum teuren Fremd-Tarif (${TRANSFER_COST_PER_PALLET}€/Pal.). Ein LKW bringt ${FLEET_TRANSFER_CAPACITY_PALLETS} Pal./Fahrt günstig.`}
-                  </p>
-                  {fleet < FLEET_MAX ? (
-                    <button className="btn" disabled={state.cash < nextTruckPrice} onClick={buyTruck}
-                      title={state.cash < nextTruckPrice ? `Kostet ${eur(nextTruckPrice)}€` : undefined}>
-                      LKW kaufen ({eur(nextTruckPrice)}€) → {fleet + 1}. LKW
-                    </button>
-                  ) : (
-                    <span className="pill good">Fuhrpark voll ausgebaut</span>
-                  )}
-                </div>
               </div>
             )}
+            <FuhrparkPanel state={state} fleet={fleet} fleetCapPal={fleetCapPal} fleetMonthly={fleetMonthly} onBuy={buyVeh} />
             </>
           ) : (
             <div className="km-hint">

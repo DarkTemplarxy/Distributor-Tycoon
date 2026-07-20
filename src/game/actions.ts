@@ -13,6 +13,7 @@ import {
   EXPRESS_PO_LEAD_DAYS,
   EXPRESS_RESTOCK_SURCHARGE,
   getEquipmentDef,
+  getVehicleDef,
   getProductDef,
   getStrategyDef,
   hallExpansionPrice,
@@ -46,7 +47,7 @@ import {
   TRAINING_COST,
   TRAINING_SKILL_GAIN,
 } from './constants';
-import type { CustomerLine, EquipmentId, GameState, Order, ProductId, Role, SiteId, StrategyId } from './types';
+import type { CustomerLine, EquipmentId, GameState, Order, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
 import {
   acceptInquiry as onboardInquiry,
   availableCredit,
@@ -711,6 +712,25 @@ export function buyEquipment(state: GameState, id: EquipmentId): ActionResult {
   state.equipment[id] = owned + 1;
   const what = def.kind === 'perWorker' ? `#${owned + 1}` : `Stufe ${owned + 1}`;
   notify(state, `${def.icon} ${def.name} ${what} gekauft (${price}€): ${def.effectLabel(owned + 1)}.`, 'success');
+  return { ok: true };
+}
+
+/** Ein Fahrzeug einer Fuhrpark-Klasse kaufen: einmaliger Kaufpreis; danach laufende
+ * Monatskosten (Instandhaltung + Treibstoff, monatlich abgebucht). Mehr Kapazität =
+ * mehr günstige Transfer-Paletten je Fahrt + niedrigere Abholkosten. */
+export function buyVehicle(state: GameState, id: VehicleId): ActionResult {
+  const def = getVehicleDef(id);
+  if (state.cash + availableCredit(state) < def.price) {
+    return { ok: false, message: `${def.name} kostet ${def.price.toLocaleString('de-DE')}€.` };
+  }
+  spend(state, def.price);
+  if (!state.fleet) state.fleet = {};
+  state.fleet[id] = (state.fleet[id] ?? 0) + 1;
+  notify(
+    state,
+    `${def.emoji} ${def.name} gekauft (${def.price.toLocaleString('de-DE')}€): +${def.capacity} Paletten Transfer-Kapazität, ${def.monthly.toLocaleString('de-DE')}€/Monat Unterhalt.`,
+    'success',
+  );
   return { ok: true };
 }
 

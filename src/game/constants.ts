@@ -2,7 +2,7 @@
 // Tunable game constants. Everything the designer might want to tweak lives here.
 // ============================================================================
 
-import type { CustomerType, EquipmentId, GameState, ProductId, Role, SiteId, StrategyId } from './types';
+import type { CustomerType, EquipmentId, GameState, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
 
 export const SAVE_VERSION = 17;
 export const SAVE_KEY = 'distributor-tycoon-save-v1';
@@ -509,10 +509,39 @@ export const TRANSFER_COST_PER_PALLET = 90;
 export const TRANSFER_DAYS = 1;
 /** Transfer-Palettenpreis mit EIGENEM Fuhrpark (statt Fremd-Spediteur). */
 export const TRANSFER_COST_OWN_PER_PALLET = 35;
-/** Günstige Transfer-Kapazität je eigenem LKW (Paletten pro Fahrt zum Eigen-Tarif). */
-export const FLEET_TRANSFER_CAPACITY_PALLETS = 6;
-/** Maximale Fuhrpark-Größe (Anzahl LKW). */
-export const FLEET_MAX = 6;
+
+/**
+ * Fuhrpark-Fahrzeugklassen: vier Größen mit eigener Palettenkapazität, einmaligem
+ * Kaufpreis und laufenden Monatskosten (Instandhaltung + Treibstoff). Größere Fahrzeuge
+ * sind pro Palette günstiger (Skaleneffekt) — aber die Monatskosten binden dich, also
+ * skalierst du den Fuhrpark auf dein Transfer-Volumen. Die Gesamtkapazität bestimmt,
+ * wie viele Paletten je Fahrt zum günstigen Eigen-Tarif reisen (Überlauf: Fremd-Tarif),
+ * und senkt zusätzlich die Kunden-Abholkosten.
+ */
+export interface VehicleDef {
+  id: VehicleId;
+  name: string;
+  emoji: string;
+  /** Palettenkapazität je Fahrt (günstiger Eigen-Tarif bis zu dieser Summe). */
+  capacity: number;
+  /** Einmaliger Kaufpreis. */
+  price: number;
+  /** Laufende Monatskosten (Instandhaltung + Treibstoff). */
+  monthly: number;
+}
+export const FLEET_VEHICLES: VehicleDef[] = [
+  { id: 'transporter', name: 'Transporter', emoji: '🚐', capacity: 5, price: 4_000, monthly: 400 },
+  { id: 'lkw', name: 'LKW', emoji: '🚚', capacity: 10, price: 7_000, monthly: 700 },
+  { id: 'sattelzug', name: 'Sattelzug', emoji: '🚛', capacity: 20, price: 13_000, monthly: 1_200 },
+  { id: 'lastzug', name: 'Lastzug', emoji: '🚛', capacity: 30, price: 18_000, monthly: 1_600 },
+];
+export function getVehicleDef(id: VehicleId): VehicleDef {
+  return FLEET_VEHICLES.find((v) => v.id === id)!;
+}
+/** Die Fuhrpark-Gesamtkapazität senkt die Abholkosten je Palette Kapazität … */
+export const PICKUP_SAVE_PER_CAPACITY = 0.008;
+/** … bis zu diesem Multiplikator-Boden (max. 60 % Ersparnis). */
+export const PICKUP_SAVE_FLOOR = 0.4;
 
 export function getProductDef(id: ProductId): ProductDef {
   return PRODUCT_DEFS.find((d) => d.id === id)!;
@@ -715,7 +744,6 @@ export const FORKLIFT_PUTAWAY_SPEED = 0.35; // a worker WITH a forklift einlager
 export const PACKSTATION_PREP_SPEED = 0.3; // a worker WITH a picking cart herrichtet this much faster
 /** Per-level effect strengths (facility upgrades). */
 export const COOLING_SHELFLIFE_BONUS = 0.25; // Haltbarkeit extended per level
-export const TRUCK_LOGISTICS_SAVE = 0.2; // logistics €/Palette cheaper per level
 
 /** How many of each per-worker device you may own (soft cap ≈ max sensible crew). */
 export const MAX_FORKLIFTS = 8;
@@ -769,19 +797,6 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     max: 3,
     price: (l) => 2500 * l,
     effectLabel: (l) => (l > 0 ? `Haltbarkeit +${Math.round(COOLING_SHELFLIFE_BONUS * l * 100)}%` : '—'),
-  },
-  {
-    id: 'truck',
-    name: 'Fuhrpark',
-    icon: '🚚',
-    desc: 'Dein eigener LKW-Fuhrpark: jeder LKW senkt die Logistikkosten der Kunden-Abholung UND schafft günstige, sichtbare Transfer-Kapazität zwischen den Standorten (statt teurem Fremd-Spediteur). Auf der Konzern-Karte siehst du die Laster fahren.',
-    kind: 'facility',
-    max: FLEET_MAX,
-    price: (l) => 3000 * l,
-    effectLabel: (l) =>
-      l > 0
-        ? `${l} LKW · Abholung −${Math.round(TRUCK_LOGISTICS_SAVE * l * 100)}%/Pal · Transfer ${TRANSFER_COST_OWN_PER_PALLET}€ statt ${TRANSFER_COST_PER_PALLET}€ für ${l * FLEET_TRANSFER_CAPACITY_PALLETS} Pal./Fahrt`
-        : '—',
   },
 ];
 

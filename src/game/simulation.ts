@@ -94,10 +94,11 @@ import {
   BUYER_PRODUCT_CAPACITY,
   COOLING_SHELFLIFE_BONUS,
   NO_COOLING_SPOILAGE_MULT,
-  TRUCK_LOGISTICS_SAVE,
   TRANSFER_COST_PER_PALLET,
   TRANSFER_COST_OWN_PER_PALLET,
-  FLEET_TRANSFER_CAPACITY_PALLETS,
+  FLEET_VEHICLES,
+  PICKUP_SAVE_PER_CAPACITY,
+  PICKUP_SAVE_FLOOR,
   volumeDiscount,
   getStrategyDef,
   BIGORDER_CHANCE_PER_WEEK,
@@ -122,6 +123,7 @@ import type {
   CustomerLine,
   CustomerType,
   EquipmentId,
+  VehicleId,
   SiteId,
   Transfer,
   GameState,
@@ -768,18 +770,26 @@ export function equipmentLevel(state: GameState, id: EquipmentId): number {
   return state.equipment?.[id] ?? 0;
 }
 
-/** Größe des eigenen Fuhrparks (Anzahl LKW) — der „Eigener LKW"-Ausbau, gewachsen
- * zum sichtbaren Fuhrpark. */
-export function fleetSize(state: GameState): number {
-  return equipmentLevel(state, 'truck');
+/** Anzahl Fahrzeuge einer Fuhrpark-Klasse (0 ohne). */
+export function fleetCount(state: GameState, id: VehicleId): number {
+  return state.fleet?.[id] ?? 0;
 }
-/** Günstige Transfer-Kapazität des Fuhrparks in Paletten je Fahrt (0 ohne LKW). */
+/** Gesamtzahl der Fahrzeuge im Fuhrpark. */
+export function fleetSize(state: GameState): number {
+  return FLEET_VEHICLES.reduce((s, v) => s + fleetCount(state, v.id), 0);
+}
+/** Günstige Transfer-Kapazität des Fuhrparks in Paletten je Fahrt (Summe aller
+ * Fahrzeug-Kapazitäten; 0 ohne Fuhrpark). */
 export function fleetTransferCapacityPallets(state: GameState): number {
-  return fleetSize(state) * FLEET_TRANSFER_CAPACITY_PALLETS;
+  return FLEET_VEHICLES.reduce((s, v) => s + fleetCount(state, v.id) * v.capacity, 0);
+}
+/** Laufende Monatskosten des Fuhrparks (Instandhaltung + Treibstoff je Fahrzeug). */
+export function fleetMonthlyCost(state: GameState): number {
+  return FLEET_VEHICLES.reduce((s, v) => s + fleetCount(state, v.id) * v.monthly, 0);
 }
 /** Kosten eines Transfers über `pallets` Paletten: bis zur Fuhrpark-Kapazität zum
  * günstigen Eigen-Tarif, der Überlauf zum teuren Fremd-Spediteur-Tarif. Ohne
- * eigenen LKW ist alles Fremd-Tarif (= bisheriges Verhalten). */
+ * Fuhrpark ist alles Fremd-Tarif (= bisheriges Verhalten). */
 export function transferCost(state: GameState, pallets: number): number {
   const own = Math.min(pallets, fleetTransferCapacityPallets(state));
   const ext = Math.max(0, pallets - own);
@@ -815,9 +825,11 @@ export function blendedPutawayHours(state: GameState): number {
   const frac = Math.min(equipmentLevel(state, 'forklift'), crew) / crew;
   return PUTAWAY_HOURS_PER_UNIT * (1 - FORKLIFT_PUTAWAY_SPEED * frac);
 }
-/** Logistics cost per pallet after the eigener-LKW upgrade. */
+/** Logistics cost per pallet for customer pickups — a bigger eigener Fuhrpark
+ * (mehr Gesamtkapazität) senkt die Abholkosten, gedeckelt (max. 60 % Ersparnis). */
 export function truckCostPerPallet(state: GameState): number {
-  return Math.round(state.truck.costPerPallet * Math.max(0.25, 1 - TRUCK_LOGISTICS_SAVE * equipmentLevel(state, 'truck')));
+  const save = Math.max(PICKUP_SAVE_FLOOR, 1 - fleetTransferCapacityPallets(state) * PICKUP_SAVE_PER_CAPACITY);
+  return Math.round(state.truck.costPerPallet * save);
 }
 /** Effective shelf life for a product's fresh batches: cooling extends it, the
  * Frische-Spezialist strategy shortens it. Kühlpflichtige Gruppen (Käse, Tiefkühl,
@@ -2799,23 +2811,28 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   // full month the four weekly shares add up to the amount actually debited below.
   const weeklySalary = state.employees.reduce((s, e) => s + e.salary, 0);
   const monthlyRent = currentMonthlyRent(state);
+  // Fuhrpark-Unterhalt (Instandhaltung + Treibstoff) ist ein monatlicher Fixkosten-
+  // block wie die Miete: wöchentlicher Anteil ins Logistik-Konto, Barabbuchung monatlich.
+  const fleetMonthly = fleetMonthlyCost(state);
   state.weekAcc.salaries += weeklySalary;
   state.weekAcc.rent += monthlyRent / WEEKS_PER_MONTH;
+  state.weekAcc.logistics += fleetMonthly / WEEKS_PER_MONTH;
 
-  // 1c. Cash side — at month end the whole month's salaries + rent are actually
-  // debited, all at once (accrued through the weekly shares above). newWeek is the
-  // start of the next month when it is divisible by 4.
+  // 1c. Cash side — at month end the whole month's salaries + rent (+ Fuhrpark-
+  // Unterhalt) are actually debited, all at once (accrued through the weekly shares
+  // above). newWeek is the start of the next month when it is divisible by 4.
   if (newWeek % WEEKS_PER_MONTH === 0 && newWeek > 0) {
     const monthlySalary = weeklySalary * WEEKS_PER_MONTH;
-    spend(state, monthlySalary + monthlyRent);
+    spend(state, monthlySalary + monthlyRent + fleetMonthly);
     const expansions = state.warehouse.expansions + state.warehouse.officeExpansions;
     const rentNote =
       expansions > 0
         ? `Miete ${Math.round(monthlyRent)}€ (Basis ${MONTHLY_RENT}€ + ${expansions} Erweiterungen)`
         : `Miete ${MONTHLY_RENT}€`;
+    const fleetNote = fleetMonthly > 0 ? ` + Fuhrpark ${Math.round(fleetMonthly)}€` : '';
     notify(
       state,
-      `💸 Monatsabschluss: Personal ${Math.round(monthlySalary)}€ + ${rentNote} abgebucht.`,
+      `💸 Monatsabschluss: Personal ${Math.round(monthlySalary)}€ + ${rentNote}${fleetNote} abgebucht.`,
       'warn',
     );
   }

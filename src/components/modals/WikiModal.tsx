@@ -249,9 +249,12 @@ const ENTRIES: WikiEntry[] = [
           <b>Regionalprodukte:</b> 🍷 Wein & 🫒 Oliven liefert der Lieferant NUR nach Süd, 🐟 Fisch
           NUR nach Nord. Will ein Kunde das Produkt der anderen Region, fährst du es per{' '}
           <b>🚚 Transfer</b> (auf der Konzern-Karte, ~1 Tag) vom Regal des einen in den Wareneingang
-          des anderen Standorts — die Haltbarkeit reist mit. Mit <b>eigenem Fuhrpark</b> fahren die
-          Paletten günstig (bis zur Fuhrpark-Kapazität), darüber übernimmt der teurere Fremd-
-          Spediteur; die Laster siehst du live auf der Karte fahren. Jeder Standort hat
+          des anderen Standorts — die Haltbarkeit reist mit. Deinen <b>eigenen Fuhrpark</b> baust du
+          auf der Konzern-Karte aus <b>vier Fahrzeugklassen</b> (🚐 Transporter 5, 🚚 LKW 10,
+          🚛 Sattelzug 20, Lastzug 30 Paletten) – je <b>Kaufpreis + Monatskosten</b> (Instandhaltung
+          & Treibstoff). Die Gesamtkapazität fährt Transfer-Paletten günstig (darüber der teurere
+          Fremd-Spediteur) und senkt die Abholkosten; die Fahrzeuge siehst du live auf der Karte.
+          Jeder Standort hat
           sein eigenes Samstags-Bestellfenster; der Umschalter über der Halle wechselt die Ansicht.
           Vorsicht: Eröffnung + Personal + Warenaufbau summieren sich — wer zu früh expandiert,
           kann sich übernehmen.
@@ -444,9 +447,8 @@ const ENTRIES: WikiEntry[] = [
           gerade benutzt, und sind in der Halle sichtbar. Für vollen Effekt brauchst du etwa so
           viele wie gleichzeitig arbeitende Lagerkräfte (du kaufst sie in Stückzahl). <b>Anlagen</b>{' '}
           wirken betriebsweit: <b>❄️ Kühltechnik</b> (längere Haltbarkeit für ALLE Ware – ersetzt
-          aber KEINE Kühlregale für kühlpflichtige Ware) und{' '}
-          <b>🚚 Fuhrpark</b> (eigene LKW: niedrigere Abholkosten UND günstige, sichtbare
-          Transfer-Kapazität zwischen den Standorten). Alles wirkt sofort im Cockpit.
+          aber KEINE Kühlregale für kühlpflichtige Ware). Alles wirkt sofort im Cockpit. Den
+          eigenen <b>🚚 Fuhrpark</b> baust du separat auf der Konzern-Karte auf (siehe unten).
         </p>
         <p>
           Die <b>Firmen-Strategie</b> ist eine Ausrichtung mit echten Trade-offs: der{' '}

@@ -262,7 +262,8 @@ export function createInitialState(): GameState {
       spoilageLoss: 0,
       ultimatumsHeld: 0,
     },
-    equipment: { forklift: 0, packstation: 0, cooling: 0, truck: 0 },
+    equipment: { forklift: 0, packstation: 0, cooling: 0 },
+    fleet: {},
     strategy: 'full',
     // strategyChangedWeek intentionally unset: the FIRST stance choice is free;
     // the cooldown only starts once the player has actually switched.
