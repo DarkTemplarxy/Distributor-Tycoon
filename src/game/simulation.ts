@@ -2028,7 +2028,7 @@ function pickInquiryProduct(state: GameState): ProductId {
 
 /** A customer name not already used by an active customer or an open inquiry,
  * so the customer list never shows confusing duplicates. */
-function uniqueCustomerName(state: GameState, type: CustomerType): string {
+export function uniqueCustomerName(state: GameState, type: CustomerType): string {
   const taken = new Set<string>();
   for (const c of state.customers) if (c.active) taken.add(c.name);
   for (const i of state.inquiries) if (i.status === 'open') taken.add(i.name);
@@ -2861,7 +2861,8 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
     orderDayOfWeek: randInt(0, 5), // Mon-Sat
     nextOrderWeek: week + 1, // one-week grace to pre-stock before the first order
     serviceRating: 3,
-    loyalty: 60,
+    // Ein gezielt abgeworbener Kunde kommt schon etwas überzeugt (höhere Startloyalität).
+    loyalty: inq.poached ? 68 : 60,
     lateDeliveries: 0,
     deliveryLeadWeeks: CUSTOMER_LEAD_WEEKS[inq.type],
     volatility: CUSTOMER_VOLATILITY[inq.type],
@@ -2872,6 +2873,16 @@ export function acceptInquiry(state: GameState, inq: Inquiry, priceOverride?: nu
   };
   state.customers.push(customer);
   inq.status = 'accepted';
+  if (inq.poached) {
+    // Du hast ihn der Konkurrenz weggenommen → ihr Slot dieser Größe sinkt.
+    addCompetitorSlot(state, inq.type, inq.region ?? 'hq', -1);
+    notify(
+      state,
+      `🎯 Abgeworben! ${inq.name} wechselt von ${inq.poached.fromName} zu dir (${inq.suggestedVolume}× @ ${price}€) · betreut von ${mgr.isChef ? 'dir' : mgr.name}.`,
+      'success',
+    );
+    return;
+  }
   notify(
     state,
     `🎉 ${inq.name} ist jetzt Kunde! ${inq.suggestedVolume}× @ ${price}€ · betreut von ${mgr.isChef ? 'dir' : mgr.name}.`,

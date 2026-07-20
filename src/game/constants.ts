@@ -1090,6 +1090,19 @@ export const COMP_SHARE_MAX_MULT = 1.6;
 /** Wöchentliche Annäherung der Slots ans Gleichgewicht (träge). */
 export const COMP_SLOT_EASE = 0.1;
 
+// --- Gezielte Abwerbe-Aktion (Stufe 3, offensiv) -----------------------------
+// Du gehst in die Offensive: gegen eine Gebühr wirbt dein Vertrieb einen Kunden
+// eines Wettbewerbers ab → er schickt dir eine Wechsel-Anfrage (Warm-Lead), die du
+// wie üblich abschließt. Wie preisbereit der Lead ist, hängt von deinem Ruf ab
+// (guter Ruf = leichter zu profitablem Preis). Nur alle paar Wochen möglich.
+/** Kosten einer gezielten Abwerbe-Aktion (Vertriebs-/Marketing-Vorstoß). */
+export const ABWERBE_COST = 6_000;
+/** Frequenz-Sperre: erst nach so vielen Wochen wieder möglich. */
+export const ABWERBE_COOLDOWN_WEEKS = 6;
+/** Grund-Preisabschlag, den ein abgeworbener Lead erwartet (er wechselt für einen
+ * besseren Deal). Hoher Ruf senkt diesen Abschlag (bis auf 0). */
+export const ABWERBE_TARGET_DISCOUNT = 0.12;
+
 // ============================================================================
 // Milestones — "Onkels Notizbuch". Definitions (title, description, condition,
 // uncle comment) live here as constants, matched to the per-save progress by id

@@ -1,7 +1,8 @@
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { marketRanking, marketShare, playerRank, yourHeld, competitorHeld, activeSites } from '../../game/simulation';
-import { COMPETITOR_DEFS, POACH_SAFE_LOYALTY, CUSTOMER_EMOJI } from '../../game/constants';
+import { marketRanking, marketShare, playerRank, yourHeld, competitorHeld, activeSites, freeCapacity } from '../../game/simulation';
+import { poachCompetitorCustomer, abwerbeCooldownLeft } from '../../game/actions';
+import { COMPETITOR_DEFS, POACH_SAFE_LOYALTY, CUSTOMER_EMOJI, ABWERBE_COST, ABWERBE_COOLDOWN_WEEKS } from '../../game/constants';
 import type { CustomerType } from '../../game/types';
 import { weekOf } from '../../game/util';
 
@@ -19,7 +20,9 @@ function aggrLabel(a: number): string {
 }
 
 export function MarketModal({ onClose }: { onClose: () => void }) {
-  const { state } = useGame();
+  const { state, mutate } = useGame();
+  const cooldown = abwerbeCooldownLeft(state);
+  const canAfford = state.cash >= ABWERBE_COST;
   const rows = marketRanking(state);
   const share = marketShare(state);
   const rank = playerRank(state);
@@ -61,6 +64,35 @@ export function MarketModal({ onClose }: { onClose: () => void }) {
             <span className={`pill ${share >= 0.5 ? 'good' : ''}`}>{(share * 100).toFixed(0)}%</span>
           </div>
         ))}
+      </div>
+
+      <h3>🎯 Kunden gezielt abwerben</h3>
+      <p className="hint" style={{ marginBottom: 8 }}>
+        Geh in die Offensive: für <b>{ABWERBE_COST.toLocaleString('de-DE')}€</b> wirbt dein Vertrieb
+        einen Kunden eines Wettbewerbers ab – er schickt dir eine <b>Wechsel-Anfrage</b>, die du im
+        Anfragen-Screen abschließt. <b>Guter Ruf</b> = besserer Zielpreis. Nur alle{' '}
+        {ABWERBE_COOLDOWN_WEEKS} Wochen möglich.
+      </p>
+      <div className="row" style={{ padding: '10px 12px', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
+        {cooldown > 0 ? (
+          <div className="sub">⏳ Nächste Abwerbung in <b>{cooldown} Woche{cooldown === 1 ? '' : 'n'}</b> möglich.</div>
+        ) : (
+          TYPE_ROWS.map(({ type, label }) => {
+            const cap = freeCapacity(state, type);
+            const disabled = !canAfford || cap <= 0;
+            return (
+              <button
+                key={type}
+                className="btn"
+                disabled={disabled}
+                title={!canAfford ? 'Zu wenig Kapital' : cap <= 0 ? 'Keine freie Kapazität – erst Slots/KAM schaffen' : ''}
+                onClick={() => mutate((s) => poachCompetitorCustomer(s, type))}
+              >
+                {CUSTOMER_EMOJI[type]} {label.replace('kunden', '')} abwerben
+              </button>
+            );
+          })
+        )}
       </div>
 
       <div className="two-col" style={{ marginBottom: 12 }}>

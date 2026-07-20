@@ -336,6 +336,11 @@ const ENTRIES: WikiEntry[] = [
           und <b>faire Preise</b>. Aggressive Wettbewerber (siehe Ranking) schlagen häufiger zu, je
           größer dein Kundenstamm ist.
         </p>
+        <p>
+          Du kannst auch selbst angreifen: die <b>🎯 gezielte Abwerbe-Aktion</b> (im Markt-Fenster)
+          holt dir gegen eine Gebühr einen Kunden eines Wettbewerbers als <b>Wechsel-Anfrage</b> –
+          guter Ruf verbessert den Zielpreis, und nur alle paar Wochen möglich.
+        </p>
       </>
     ),
   },

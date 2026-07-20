@@ -50,8 +50,15 @@ import {
   TRAINING_SKILL_GAIN,
   GEGENANGEBOT_LOYALTY_RESTORE,
   POACH_SAFE_LOYALTY,
+  ABWERBE_COST,
+  ABWERBE_COOLDOWN_WEEKS,
+  ABWERBE_TARGET_DISCOUNT,
+  COMPETITOR_DEFS,
+  CUSTOMER_EMOJI,
+  CUSTOMER_VOLUME_RANGE,
+  INQUIRY_EXPIRY_WEEKS,
 } from './constants';
-import type { CustomerLine, EquipmentId, GameState, Order, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
+import type { CustomerLine, CustomerType, EquipmentId, GameState, Inquiry, Order, ProductId, Role, SiteId, StrategyId, VehicleId } from './types';
 import {
   acceptInquiry as onboardInquiry,
   availableCredit,
@@ -95,6 +102,7 @@ import {
   tryPrepareOrder,
   releaseCustomerOrders,
   addCompetitorSlot,
+  uniqueCustomerName,
 } from './simulation';
 import { buildProduct, makeBranchWarehouse } from './init';
 import { clamp, uid, weekOf } from './util';
@@ -498,6 +506,62 @@ export function surrenderCustomer(state: GameState): ActionResult {
   releaseCustomerOrders(state, cust.id);
   addCompetitorSlot(state, cust.type, cust.region ?? 'hq', 1);
   notify(state, `🏴 ${cust.name} wechselt zu ${p.raiderEmoji} ${p.raiderName}. Verlorener Wochenumsatz: ~${weekly}€.`, 'warn');
+  return { ok: true };
+}
+
+/** Wochen bis zur nächsten möglichen gezielten Abwerbe-Aktion (0 = jetzt). */
+export function abwerbeCooldownLeft(state: GameState): number {
+  if (state.lastAbwerbeWeek == null) return 0;
+  return Math.max(0, state.lastAbwerbeWeek + ABWERBE_COOLDOWN_WEEKS - weekOf(state.totalDays));
+}
+
+/**
+ * Gezielte Abwerbe-Aktion (Stufe 3, offensiv): gegen eine Gebühr wirbt dein Vertrieb
+ * einen Kunden eines Wettbewerbers ab. Er schickt dir einen Warm-Lead (Wechsel-Anfrage),
+ * den du im Anfragen-Screen abschließt — beim Abschluss sinkt der Konkurrenz-Slot. Wie
+ * preisbereit der Lead ist, hängt am Ruf (guter Ruf = näher am Listenpreis). Nur alle
+ * ABWERBE_COOLDOWN_WEEKS Wochen möglich.
+ */
+export function poachCompetitorCustomer(state: GameState, type: CustomerType): ActionResult {
+  const cd = abwerbeCooldownLeft(state);
+  if (cd > 0) return { ok: false, message: `Nächste Abwerbung erst in ${cd} Woche${cd === 1 ? '' : 'n'} möglich.` };
+  if (state.cash < ABWERBE_COST) return { ok: false, message: `Zu wenig Kapital – ${ABWERBE_COST.toLocaleString('de-DE')}€ nötig.` };
+  if (freeCapacity(state, type) <= 0) {
+    return { ok: false, message: 'Keine freie Kapazität für diese Größe – erst Slots/KAM schaffen.' };
+  }
+  // Ein gelistetes, überall lieferbares Produkt, das der Wechselwillige ordern würde.
+  const listable = state.products.filter((p) => isInAssortment(state, p.id) && !getProductDef(p.id).exclusiveSite);
+  if (listable.length === 0) return { ok: false, message: 'Kein passendes gelistetes Produkt zum Anbieten.' };
+  const product = getProductDef(listable[Math.floor(Math.random() * listable.length)].id);
+  const raider = COMPETITOR_DEFS[Math.floor(Math.random() * COMPETITOR_DEFS.length)];
+
+  spend(state, ABWERBE_COST);
+  const week = weekOf(state.totalDays);
+  state.lastAbwerbeWeek = week;
+  // Ruf senkt den Wunsch-Abschlag des Leads (guter Ruf = leichter profitabel zu holen).
+  const discount = ABWERBE_TARGET_DISCOUNT * (1 - nationalRenown(state) / RENOWN.MAX);
+  const targetPrice = Math.round(product.verkaufspreis * (1 - discount) * 2) / 2;
+  const [minV, maxV] = CUSTOMER_VOLUME_RANGE[type];
+  const inq: Inquiry = {
+    id: uid('inq'),
+    name: uniqueCustomerName(state, type),
+    emoji: CUSTOMER_EMOJI[type],
+    type,
+    preferredProduct: product.id,
+    suggestedVolume: Math.round((minV + maxV) / 2),
+    targetPrice,
+    createdWeek: week,
+    expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
+    status: 'open',
+    region: 'hq',
+    poached: { fromName: raider.name },
+  };
+  state.inquiries.push(inq);
+  notify(
+    state,
+    `🎯 Abwerbe-Vorstoß bei ${raider.emoji} ${raider.name}: ${inq.name} ist wechselbereit und sucht ${product.emoji} ${product.name} (Zielpreis ${targetPrice}€). Schließ den Deal im Anfragen-Screen ab!`,
+    'success',
+  );
   return { ok: true };
 }
 

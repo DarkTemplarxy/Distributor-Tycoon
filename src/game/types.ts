@@ -196,6 +196,9 @@ export interface Inquiry {
   /** Region des anfragenden Kunden (L3). Undefined = 'hq' (Nord). Süd-Anfragen
    * erscheinen nur mit eröffnetem Standort Süd. */
   region?: SiteId;
+  /** Gezielt abgeworbener Konkurrenz-Kunde (Stufe 3): ein Warm-Lead, den DU aktiv
+   * geholt hast. Beim Abschluss sinkt der Konkurrenz-Slot dieser Größe. Optional. */
+  poached?: { fromName: string };
 }
 
 /** A scheduled stage-2 escalation: after a rejected/expired wish, the same
@@ -537,6 +540,8 @@ export interface GameState {
   };
   /** Ob die erste (erklärende) Abwerbe-Attacke im 3. Monat schon lief. Optional. */
   firstAttackShown?: boolean;
+  /** Woche der letzten gezielten Abwerbe-Aktion (Stufe 3) – Cooldown-Anker. Optional. */
+  lastAbwerbeWeek?: number;
 
   /** Ruf (Renown, 0..100) je Standort — Bekanntheit der Marke. Baut sich aus Service
    * & Kundenzahl auf und zieht schneller Neukunden an. Ein neuer Standort erbt einen
