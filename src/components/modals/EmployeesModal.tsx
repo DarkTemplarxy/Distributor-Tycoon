@@ -4,6 +4,7 @@ import { useGame } from '../../state/GameProvider';
 import {
   BUYER_PRODUCT_CAPACITY,
   HIRE_WEEKS_UPFRONT,
+  listedGroupCount,
   MANAGER_SLOTS,
   ROLE_EMOJI,
   ROLE_LABEL,
@@ -98,13 +99,13 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
             <div className="title" style={{ fontSize: 13 }}>Einkäufer</div>
             <div className="sub">
               {state.employees.some((e) => e.role === 'einkaeufer')
-                ? `Betreut ${Math.min(state.products.length, buyerCapacity(state))}/${state.products.length} Produktgruppen (max. ${BUYER_PRODUCT_CAPACITY} pro Einkäufer) – Auto-Bestellung & Preisverhandlung nur für betreute.`
+                ? `Betreut ${Math.min(listedGroupCount(state), buyerCapacity(state))}/${listedGroupCount(state)} Produktgruppen (max. ${BUYER_PRODUCT_CAPACITY} pro Einkäufer) – Auto-Bestellung & Preisverhandlung nur für betreute.`
                 : 'Keiner – volle Preiserhöhungen, manuelle Bestellung'}
             </div>
           </div>
           <span
-            className={`pill ${state.employees.some((e) => e.role === 'einkaeufer') && buyerCapacity(state) < state.products.length ? 'warn' : ''}`}
-            title={buyerCapacity(state) < state.products.length && state.employees.some((e) => e.role === 'einkaeufer') ? 'Sortiment breiter als die Einkäufer-Kapazität – unbetreute Gruppen musst du manuell bestellen, Preiserhöhungen treffen sie voll.' : undefined}
+            className={`pill ${state.employees.some((e) => e.role === 'einkaeufer') && buyerCapacity(state) < listedGroupCount(state) ? 'warn' : ''}`}
+            title={buyerCapacity(state) < listedGroupCount(state) && state.employees.some((e) => e.role === 'einkaeufer') ? 'Sortiment breiter als die Einkäufer-Kapazität – unbetreute Gruppen musst du manuell bestellen, Preiserhöhungen treffen sie voll.' : undefined}
           >
             {state.employees.filter((e) => e.role === 'einkaeufer').length}
           </span>

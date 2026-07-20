@@ -221,6 +221,16 @@ export function monthlyRevenue(state: GameState): number {
   return state.reports.slice(-4).reduce((s, r) => s + r.revenue, 0);
 }
 
+/**
+ * Anzahl gelisteter PRODUKTGRUPPEN (nicht Artikel). Seit dem Artikel-Modell hält
+ * `state.products` mehrere Artikel je Gruppe (Start: 4 Fisch-Artikel), deshalb
+ * misst `products.length` NICHT mehr die Sortimentsbreite. Meilensteine & Hürden,
+ * die „ein zweites Produkt" o. ä. meinen, zählen die distinkten Gruppen.
+ */
+export function listedGroupCount(state: GameState): number {
+  return new Set(state.products.map((p) => p.groupId)).size;
+}
+
 export interface OfficeRole { emoji: string; title: string; blurb: string }
 
 /**
@@ -279,8 +289,8 @@ export const REGIONAL_OFFICE_ROLES: RegionalRoleDef[] = [
   {
     emoji: '🛒', title: 'Einkaufsleiter', blurb: 'Bündelt die Beschaffung des ganzen Landes.',
     hurdle: `Ab ${REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS} gelisteten Produktgruppen.`,
-    unlocked: (s) => s.products.length >= REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS,
-    progress: (s) => `${Math.min(s.products.length, REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS)}/${REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS} Gruppen`,
+    unlocked: (s) => listedGroupCount(s) >= REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS,
+    progress: (s) => `${Math.min(listedGroupCount(s), REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS)}/${REGIONAL_UNLOCK.EINKAUFSLEITER_PRODUCTS} Gruppen`,
   },
   {
     emoji: '🚚', title: 'Logistikleiter', role: 'logistik',
@@ -1367,10 +1377,10 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
   {
     id: 'second_product',
     emoji: '🧺',
-    title: 'Zweites Produkt gelistet',
-    description: 'Nimm ein zweites Produkt ins Sortiment auf.',
-    uncleComment: 'Ein zweites Produkt im Regal. So wächst ein Sortiment – Schritt für Schritt.',
-    check: (s) => s.products.length >= 2,
+    title: 'Zweite Produktgruppe gelistet',
+    description: 'Nimm eine zweite Produktgruppe ins Sortiment auf.',
+    uncleComment: 'Eine zweite Produktgruppe im Regal. So wächst ein Sortiment – Schritt für Schritt.',
+    check: (s) => listedGroupCount(s) >= 2,
   },
   {
     id: 'revenue_5k',
@@ -1407,10 +1417,10 @@ export const MILESTONE_DEFS: MilestoneDef[] = [
   {
     id: 'all_products',
     emoji: '🧺',
-    title: 'Alle drei Produkte',
-    description: 'Habe alle drei Produkte im Sortiment.',
-    uncleComment: 'Alle drei Produktgruppen. Ein richtiger Vollsortimenter – das hab ich nie geschafft.',
-    check: (s) => s.products.length >= 3,
+    title: 'Dritte Produktgruppe',
+    description: 'Führe drei verschiedene Produktgruppen im Sortiment.',
+    uncleComment: 'Drei Produktgruppen im Regal. Langsam wirst du zum Vollsortimenter – weiter so!',
+    check: (s) => listedGroupCount(s) >= 3,
   },
   {
     id: 'ultimatum_held',
