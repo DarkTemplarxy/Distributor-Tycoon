@@ -18,6 +18,11 @@ export type ProductId =
   | 'wein'
   | 'oliven';
 
+/** Katalog-Id eines konkreten Artikels (SKU) innerhalb einer Produktgruppe.
+ * Vorerst ein String-Alias über den ARTICLE_CATALOG (Phase B1); Phase B2 macht
+ * Artikel zur primären Lager-/Auftrags-Ebene, die Gruppe wird zur Kategorie. */
+export type ArticleId = string;
+
 /** Standorte (L3): 'hq' = Hauptlager Nord (immer da), 'sued' = Standort Süd
  * (eröffenbar). Alle siteId-Felder sind optional; undefined bedeutet 'hq' —
  * so bleiben alte Spielstände ohne Migration gültig. */

@@ -505,28 +505,127 @@ export interface ArticleDef {
   id: string;
   name: string;
   emoji: string;
-  /** Produktgruppe, deren Wirtschaft/Lager der Artikel erbt. */
+  /** Produktgruppe (Kategorie), zu der der Artikel gehört. */
   groupId: ProductId;
   /** Heimat: nur in dieser Stadt heimisch, oder 'national' (überall). */
   home: SiteId | 'national';
+  /** SKU-Ökonomie: eigener Einkaufs-/Verkaufspreis je Artikel. */
+  einkaufspreis: number;
+  verkaufspreis: number;
+  /** Optional abweichende Zielmarge / Haltbarkeit; sonst von der Gruppe geerbt. */
+  zielmarge?: number;
+  spoilageDays?: number;
 }
 
-export const ARTICLE_DEFS: ArticleDef[] = [
-  // 2 einzigartige Artikel je Stadt …
-  { id: 'krabben', name: 'Nordsee-Krabben', emoji: '🦐', groupId: 'fisch', home: 'hq' },
-  { id: 'weiderind', name: 'Holsteiner Weiderind', emoji: '🐄', groupId: 'fleisch', home: 'hq' },
-  { id: 'bergkaese', name: 'Allgäuer Bergkäse', emoji: '🧀', groupId: 'kaese', home: 'sued' },
-  { id: 'bodensee', name: 'Bodensee-Äpfel', emoji: '🍎', groupId: 'obst', home: 'sued' },
-  // … und 2 landesweite Signatur-Artikel (die „Krone", spät, je eigene Gruppe).
-  { id: 'trueffel', name: 'Périgord-Trüffel', emoji: '🍄', groupId: 'delikatess', home: 'national' },
-  { id: 'wagyu', name: 'Wagyu-Rücken', emoji: '🥩', groupId: 'tiefkuehl', home: 'national' },
+// ============================================================================
+// ARTICLE_CATALOG (Phase B1) — der volle Artikel-Katalog: jede der 9 Gruppen wird
+// in mehrere konkrete Artikel (SKUs) mit EIGENER Ökonomie aufgefächert. Kühlpflicht
+// und Regional-Exklusivität erbt der Artikel von seiner Gruppe (ProductDef); Marge
+// und Haltbarkeit können je Artikel abweichen, sonst Gruppen-Default.
+// Additiv: der laufende (gruppenbasierte) Übergangs-Motor nutzt weiter nur die
+// Legacy-Teilmenge ARTICLE_DEFS (eine Spezialität je Gruppe). Phase B2 schaltet
+// Lager/Aufträge/Einkauf/Empfehlung auf die Artikel-Ebene um.
+// ============================================================================
+export const ARTICLE_CATALOG: ArticleDef[] = [
+  // 🐟 Fisch (Gruppe EK20 / VK33,5)
+  { id: 'lachs', name: 'Lachsfilet', emoji: '🐟', groupId: 'fisch', home: 'national', einkaufspreis: 22, verkaufspreis: 37 },
+  { id: 'kabeljau', name: 'Kabeljau', emoji: '🐟', groupId: 'fisch', home: 'national', einkaufspreis: 18, verkaufspreis: 30 },
+  { id: 'forelle', name: 'Forelle', emoji: '🐟', groupId: 'fisch', home: 'national', einkaufspreis: 16, verkaufspreis: 27 },
+  { id: 'krabben', name: 'Nordsee-Krabben', emoji: '🦐', groupId: 'fisch', home: 'hq', einkaufspreis: 28, verkaufspreis: 48 },
+  // 🥩 Fleisch (EK15 / VK25)
+  { id: 'rinderhack', name: 'Rinderhack', emoji: '🥩', groupId: 'fleisch', home: 'national', einkaufspreis: 14, verkaufspreis: 23 },
+  { id: 'schweinefilet', name: 'Schweinefilet', emoji: '🥓', groupId: 'fleisch', home: 'national', einkaufspreis: 16, verkaufspreis: 27 },
+  { id: 'haehnchen', name: 'Hähnchenbrust', emoji: '🍗', groupId: 'fleisch', home: 'national', einkaufspreis: 11, verkaufspreis: 18 },
+  { id: 'weiderind', name: 'Holsteiner Weiderind', emoji: '🐄', groupId: 'fleisch', home: 'hq', einkaufspreis: 24, verkaufspreis: 42 },
+  // 🥦 Gemüse (EK10 / VK16,5)
+  { id: 'kartoffeln', name: 'Kartoffeln', emoji: '🥔', groupId: 'gemuese', home: 'national', einkaufspreis: 7, verkaufspreis: 12 },
+  { id: 'brokkoli', name: 'Brokkoli', emoji: '🥦', groupId: 'gemuese', home: 'national', einkaufspreis: 11, verkaufspreis: 18 },
+  { id: 'tomaten', name: 'Tomaten', emoji: '🍅', groupId: 'gemuese', home: 'national', einkaufspreis: 12, verkaufspreis: 20 },
+  { id: 'zwiebeln', name: 'Zwiebeln', emoji: '🧅', groupId: 'gemuese', home: 'national', einkaufspreis: 6, verkaufspreis: 10 },
+  // 🧀 Käse & Molkerei (EK22 / VK40, kühlpflichtig)
+  { id: 'gouda', name: 'Gouda', emoji: '🧀', groupId: 'kaese', home: 'national', einkaufspreis: 18, verkaufspreis: 32 },
+  { id: 'emmentaler', name: 'Emmentaler', emoji: '🧀', groupId: 'kaese', home: 'national', einkaufspreis: 22, verkaufspreis: 40 },
+  { id: 'frischkaese', name: 'Frischkäse', emoji: '🧈', groupId: 'kaese', home: 'national', einkaufspreis: 16, verkaufspreis: 28, spoilageDays: 18 },
+  { id: 'bergkaese', name: 'Allgäuer Bergkäse', emoji: '🧀', groupId: 'kaese', home: 'sued', einkaufspreis: 30, verkaufspreis: 55 },
+  // 🍎 Obst & Frische (EK12 / VK20)
+  { id: 'aepfel', name: 'Äpfel', emoji: '🍎', groupId: 'obst', home: 'national', einkaufspreis: 10, verkaufspreis: 17, spoilageDays: 14 },
+  { id: 'bananen', name: 'Bananen', emoji: '🍌', groupId: 'obst', home: 'national', einkaufspreis: 9, verkaufspreis: 15 },
+  { id: 'erdbeeren', name: 'Erdbeeren', emoji: '🍓', groupId: 'obst', home: 'national', einkaufspreis: 16, verkaufspreis: 28, spoilageDays: 6 },
+  { id: 'bodensee', name: 'Bodensee-Äpfel', emoji: '🍎', groupId: 'obst', home: 'sued', einkaufspreis: 14, verkaufspreis: 24, spoilageDays: 14 },
+  // 🧊 Tiefkühlkost (EK28 / VK52, kühlpflichtig)
+  { id: 'tk_pizza', name: 'TK-Pizza', emoji: '🍕', groupId: 'tiefkuehl', home: 'national', einkaufspreis: 20, verkaufspreis: 36 },
+  { id: 'tk_gemuese', name: 'TK-Gemüse', emoji: '🥦', groupId: 'tiefkuehl', home: 'national', einkaufspreis: 14, verkaufspreis: 25 },
+  { id: 'tk_pommes', name: 'TK-Pommes', emoji: '🍟', groupId: 'tiefkuehl', home: 'national', einkaufspreis: 12, verkaufspreis: 22 },
+  { id: 'wagyu', name: 'Wagyu-Rücken', emoji: '🥩', groupId: 'tiefkuehl', home: 'national', einkaufspreis: 95, verkaufspreis: 190 },
+  // 🦞 Feinkost (EK60 / VK120, kühlpflichtig)
+  { id: 'hummer', name: 'Hummer', emoji: '🦞', groupId: 'delikatess', home: 'national', einkaufspreis: 70, verkaufspreis: 140 },
+  { id: 'kaviar', name: 'Kaviar', emoji: '🫙', groupId: 'delikatess', home: 'national', einkaufspreis: 120, verkaufspreis: 240 },
+  { id: 'gaenseleber', name: 'Gänseleber', emoji: '🦆', groupId: 'delikatess', home: 'national', einkaufspreis: 80, verkaufspreis: 160 },
+  { id: 'trueffel', name: 'Périgord-Trüffel', emoji: '🍄', groupId: 'delikatess', home: 'national', einkaufspreis: 140, verkaufspreis: 280 },
+  // 🍷 Wein & Sekt (EK35 / VK62, Süd-exklusiv)
+  { id: 'rotwein', name: 'Rotwein', emoji: '🍷', groupId: 'wein', home: 'national', einkaufspreis: 30, verkaufspreis: 54 },
+  { id: 'weisswein', name: 'Weißwein', emoji: '🥂', groupId: 'wein', home: 'national', einkaufspreis: 28, verkaufspreis: 50 },
+  { id: 'sekt', name: 'Sekt', emoji: '🍾', groupId: 'wein', home: 'national', einkaufspreis: 40, verkaufspreis: 72 },
+  { id: 'champagner', name: 'Champagner', emoji: '🍾', groupId: 'wein', home: 'national', einkaufspreis: 60, verkaufspreis: 108 },
+  // 🫒 Antipasti & Oliven (EK18 / VK33, kühlpflichtig, Süd-exklusiv)
+  { id: 'gruene_oliven', name: 'Grüne Oliven', emoji: '🫒', groupId: 'oliven', home: 'national', einkaufspreis: 16, verkaufspreis: 29 },
+  { id: 'schwarze_oliven', name: 'Schwarze Oliven', emoji: '🫒', groupId: 'oliven', home: 'national', einkaufspreis: 18, verkaufspreis: 33 },
+  { id: 'antipasti', name: 'Antipasti-Mix', emoji: '🥗', groupId: 'oliven', home: 'national', einkaufspreis: 22, verkaufspreis: 40 },
+  { id: 'sonnentomaten', name: 'Getrocknete Tomaten', emoji: '🍅', groupId: 'oliven', home: 'national', einkaufspreis: 20, verkaufspreis: 36 },
 ];
-// Hinweis: jeder Artikel liegt in einer EIGENEN Gruppe → ein Kunde hat je Gruppe
-// höchstens eine Linie (generisch ODER als Spezialität). Das erhält die bestehende
-// „eine Linie je Produktgruppe"-Invariante (Auftragslogik, Preis-Editor, Keys).
+
+/** Legacy-Spezialitäten (Stufe-3-Übergang): genau eine je Gruppe. Der aktuelle
+ * gruppenbasierte Übergangs-Motor (developProductLines) nutzt weiter NUR diese
+ * Teilmenge, damit Phase B1 rein additiv ist. Phase B2 ersetzt das durch den
+ * vollen Katalog auf Artikel-Ebene. */
+const LEGACY_SPECIALTY_IDS = new Set(['krabben', 'weiderind', 'bergkaese', 'bodensee', 'trueffel', 'wagyu']);
+export const ARTICLE_DEFS: ArticleDef[] = ARTICLE_CATALOG.filter((a) => LEGACY_SPECIALTY_IDS.has(a.id));
 
 export function getArticleDef(id: string): ArticleDef | undefined {
-  return ARTICLE_DEFS.find((a) => a.id === id);
+  return ARTICLE_CATALOG.find((a) => a.id === id);
+}
+
+/** Alle Artikel einer Gruppe (Katalog-Reihenfolge). */
+export function articlesOfGroup(groupId: ProductId): ArticleDef[] {
+  return ARTICLE_CATALOG.filter((a) => a.groupId === groupId);
+}
+
+/** Die Gruppe (Kategorie) eines Artikels. */
+export function groupOfArticle(id: string): ProductId | undefined {
+  return getArticleDef(id)?.groupId;
+}
+
+/** Aufgelöste Artikel-Ökonomie inkl. der von der Gruppe geerbten Felder
+ * (Kühlpflicht, Regional-Exklusivität, sowie Marge/Haltbarkeit als Default).
+ * Grundlage für Phase B2 (Lager/Aufträge/Einkauf auf Artikel-Ebene). */
+export interface ArticleEconomics {
+  einkaufspreis: number;
+  verkaufspreis: number;
+  zielmarge: number;
+  spoilageDays: number;
+  requiresCooling: boolean;
+  exclusiveSite?: SiteId;
+  name: string;
+  emoji: string;
+  groupId: ProductId;
+  home: SiteId | 'national';
+}
+export function articleEconomics(id: string): ArticleEconomics | undefined {
+  const a = getArticleDef(id);
+  if (!a) return undefined;
+  const g = getProductDef(a.groupId);
+  return {
+    einkaufspreis: a.einkaufspreis,
+    verkaufspreis: a.verkaufspreis,
+    zielmarge: a.zielmarge ?? g.zielmarge,
+    spoilageDays: a.spoilageDays ?? g.spoilageDays,
+    requiresCooling: !!g.requiresCooling,
+    exclusiveSite: g.exclusiveSite,
+    name: a.name,
+    emoji: a.emoji,
+    groupId: a.groupId,
+    home: a.home,
+  };
 }
 
 /** Wie viele FREMD-Artikel (über die eigene Stadt + landesweite hinaus) ein Kunde je
