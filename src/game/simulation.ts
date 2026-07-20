@@ -3316,7 +3316,10 @@ function onDayStart(state: GameState, dayIndex: number): void {
  * exist (the recovery path may re-enter the growth beat). */
 function forceTutorialInquiries(state: GameState): void {
   const week = weekOf(state.totalDays);
-  const product = getProduct(state, 'fisch');
+  // Phase B: die Tutorial-Anfragen laufen über den konkreten Fisch-Leit-Artikel
+  // (Lachsfilet) statt der Gruppe 'fisch' — der Kunde bezieht ja eine echte SKU.
+  const fishArticle = defaultArticleOf('fisch').id;
+  const product = getProduct(state, fishArticle);
   let created = 0;
   for (const id of TUTORIAL_INQUIRY_IDS) {
     if (state.inquiries.some((i) => i.id === id)) continue;
@@ -3329,8 +3332,8 @@ function forceTutorialInquiries(state: GameState): void {
       name: uniqueCustomerName(state, 'small'),
       emoji: CUSTOMER_EMOJI.small,
       type: 'small',
-      preferredProduct: 'fisch',
-      suggestedVolume: rollLineVolume('small', 'fisch'),
+      preferredProduct: fishArticle,
+      suggestedVolume: rollLineVolume('small', fishArticle),
       targetPrice: Math.round(product.verkaufspreis * (isCounterLesson ? 0.9 : 1) * 2) / 2,
       createdWeek: week,
       expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
@@ -3349,14 +3352,16 @@ function forceTutorialInquiries(state: GameState): void {
 function forceMeatInquiry(state: GameState): void {
   if (state.inquiries.some((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID)) return;
   const week = weekOf(state.totalDays);
-  const product = getProduct(state, 'fleisch');
+  // Konkreter Fleisch-Leit-Artikel (Rinderhack) statt der Gruppe 'fleisch'.
+  const meatArticle = defaultArticleOf('fleisch').id;
+  const product = getProduct(state, meatArticle);
   state.inquiries.push({
     id: TUTORIAL_MEAT_INQUIRY_ID,
     name: uniqueCustomerName(state, 'small'),
     emoji: CUSTOMER_EMOJI.small,
     type: 'small',
-    preferredProduct: 'fleisch',
-    suggestedVolume: rollLineVolume('small', 'fleisch'),
+    preferredProduct: meatArticle,
+    suggestedVolume: rollLineVolume('small', meatArticle),
     targetPrice: Math.round(product.verkaufspreis * 2) / 2,
     createdWeek: week,
     expiryWeek: week + INQUIRY_EXPIRY_WEEKS,
