@@ -1,6 +1,6 @@
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
-import { branchOpen, incomingPO, inboundStock, shelfStock } from '../../game/simulation';
+import { activeSites, branchOpen, incomingPO, inboundStock, shelfStock } from '../../game/simulation';
 import { transferStock } from '../../game/actions';
 import { PALETTE_SIZE, SITE_META } from '../../game/constants';
 import { prodColor, groupedProducts, CategorySection } from '../shared';
@@ -8,6 +8,7 @@ import { prodColor, groupedProducts, CategorySection } from '../shared';
 export function InventoryModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
   const hasBranch = branchOpen(state);
+  const openSites = activeSites(state);
 
   return (
     <Modal title="Inventar & Verderblichkeit" icon="📦" onClose={onClose} wide>
@@ -46,7 +47,9 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
                   <div className="sub">
                     {hasBranch && (
                       <>
-                        🏭 {shelfStock(product, 'hq')} · 🏗️ Süd {shelfStock(product, 'sued')} ·{' '}
+                        {openSites
+                          .map((st) => `${SITE_META[st].emoji} ${SITE_META[st].short} ${shelfStock(product, st)}`)
+                          .join(' · ')}{' · '}
                       </>
                     )}
                     {inbound > 0 && <>📥 {inbound} im Wareneingang · </>}
@@ -56,21 +59,31 @@ export function InventoryModal({ onClose }: { onClose: () => void }) {
               </div>
 
               {hasBranch && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   <span className="sub" style={{ minWidth: 100 }}>🚚 Transfer (1 Palette):</span>
-                  {([['hq', 'sued'], ['sued', 'hq']] as const).map(([from, to]) => (
-                    <button
-                      key={from}
-                      className="btn small ghost"
-                      disabled={shelfStock(product, from) < PALETTE_SIZE}
-                      title={`${PALETTE_SIZE}× vom Regal ${SITE_META[from].short} in den Wareneingang ${SITE_META[to].short} fahren (Kosten je Palette, ~1 Tag).`}
-                      onClick={() =>
-                        mutate((s) => transferStock(s, product.id, PALETTE_SIZE, from, to))
-                      }
-                    >
-                      {SITE_META[from].short} → {SITE_META[to].short}
-                    </button>
-                  ))}
+                  {/* Nur Standorte mit vollem Palettenbestand als Quelle → je Ziel ein
+                      Knopf. Verhindert eine O(n²)-Knopfflut und zeigt nur sinnvolle Wege. */}
+                  {openSites
+                    .filter((from) => shelfStock(product, from) >= PALETTE_SIZE)
+                    .flatMap((from) =>
+                      openSites
+                        .filter((to) => to !== from)
+                        .map((to) => (
+                          <button
+                            key={`${from}-${to}`}
+                            className="btn small ghost"
+                            title={`${PALETTE_SIZE}× vom Regal ${SITE_META[from].short} in den Wareneingang ${SITE_META[to].short} fahren (Kosten je Palette, ~1 Tag).`}
+                            onClick={() =>
+                              mutate((s) => transferStock(s, product.id, PALETTE_SIZE, from, to))
+                            }
+                          >
+                            {SITE_META[from].short} → {SITE_META[to].short}
+                          </button>
+                        )),
+                    )}
+                  {openSites.filter((from) => shelfStock(product, from) >= PALETTE_SIZE).length === 0 && (
+                    <span className="sub">– kein Standort mit voller Palette</span>
+                  )}
                   {(state.transfers ?? []).filter((t) => t.productId === product.id).length > 0 && (
                     <span className="pill">
                       🚚 {(state.transfers ?? []).filter((t) => t.productId === product.id).reduce((a, t) => a + t.quantity, 0)} unterwegs

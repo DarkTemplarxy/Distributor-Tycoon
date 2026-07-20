@@ -1913,7 +1913,7 @@ export function orderOutlook(state: GameState, productId: ArticleId, site: SiteI
 /** Cancel & refund the current week's still-pending PO (used when the player
  * overrides the Einkäufer / re-submits the weekly order). */
 function refundCurrentWeekPo(state: GameState, site: SiteId = 'hq'): void {
-  const id = site === 'sued' ? state.currentWeekPoIdSued : state.currentWeekPoId;
+  const id = state.currentWeekPoBySite[site];
   if (!id) return;
   const idx = state.purchaseOrders.findIndex((p) => p.id === id && p.status === 'pending');
   if (idx >= 0) {
@@ -1922,8 +1922,7 @@ function refundCurrentWeekPo(state: GameState, site: SiteId = 'hq'): void {
     state.weekAcc.purchases -= po.totalCost;
     state.purchaseOrders.splice(idx, 1);
   }
-  if (site === 'sued') state.currentWeekPoIdSued = null;
-  else state.currentWeekPoId = null;
+  delete state.currentWeekPoBySite[site];
 }
 
 /** Place (or replace) the current week's purchase order in one shot. Any order
@@ -1936,8 +1935,8 @@ export function commitWeeklyOrder(
 ): PurchaseOrder | null {
   refundCurrentWeekPo(state, site);
   const po = createPurchaseOrderInternal(state, items, { siteId: site });
-  if (site === 'sued') state.currentWeekPoIdSued = po ? po.id : null;
-  else state.currentWeekPoId = po ? po.id : null;
+  if (po) state.currentWeekPoBySite[site] = po.id;
+  else delete state.currentWeekPoBySite[site];
   if (site === 'hq') state.pendingOrderWeek = null;
   return po;
 }
@@ -3227,7 +3226,7 @@ function weeklyRollover(state: GameState, endedWeek: number, newWeek: number): v
   // 6b. Start of a fresh order-week: forget last week's purchase order (it is on
   // its way / delivered — do NOT refund it) and clear any leftover prompt. The
   // Saturday step then places exactly one order for the new week.
-  state.currentWeekPoId = null;
+  state.currentWeekPoBySite = {};
   state.pendingOrderWeek = null;
 
   // 7. Weekly report notification.
@@ -3303,7 +3302,7 @@ function onDayStart(state: GameState, dayIndex: number): void {
   // if the player already ordered earlier this week we don't prompt again. During
   // the tutorial the prompt is held back until the ordering beat unlocks it.
   const orderingUnlocked = !state.tutorial?.active || state.tutorial.step >= STEP.ORDER;
-  if (dow === ORDER_DAY_OF_WEEK && state.currentWeekPoId === null && orderingUnlocked) {
+  if (dow === ORDER_DAY_OF_WEEK && state.currentWeekPoBySite.hq == null && orderingUnlocked) {
     processWeeklyOrder(state, week);
   }
 }
@@ -3497,7 +3496,7 @@ export function advanceTutorial(state: GameState): void {
       // as a time-based fallback).
       if (state.pendingOrderWeek != null) t.orderPromptSeen = true;
       if (
-        state.currentWeekPoId != null ||
+        state.currentWeekPoBySite.hq != null ||
         (t.orderPromptSeen && state.pendingOrderWeek == null)
       ) {
         t.step = STEP.CAPACITY;

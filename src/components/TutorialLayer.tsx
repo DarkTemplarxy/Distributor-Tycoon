@@ -305,7 +305,7 @@ export function TutorialLayer() {
     if (!isInAssortment(state, 'fleisch')) phase = 1;
     else if (!meatInq) phase = 2; // waiting for the Thursday inquiry
     else if (meatInq.status === 'open') phase = 3;
-    else if (state.currentWeekPoId == null) phase = 4;
+    else if (state.currentWeekPoBySite?.hq == null) phase = 4;
     else phase = null; // lesson done — waiting for the monthly statement
     if (phase == null) return null;
     coach = MEAT_COACH[phase];

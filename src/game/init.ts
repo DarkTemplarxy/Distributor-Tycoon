@@ -264,7 +264,7 @@ export function createInitialState(): GameState {
     // The first order window opens on the first Saturday (once the player has
     // seen the opening week's demand); the 80 starting fish cover until then.
     pendingOrderWeek: null,
-    currentWeekPoId: null,
+    currentWeekPoBySite: {},
     demandThisWeek: {},
     demandLog: {},
 

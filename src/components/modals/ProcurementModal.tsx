@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Modal } from '../Modal';
 import { useGame } from '../../state/GameProvider';
 import {
+  activeSites,
   availableCredit,
   branchOpen,
   hasActiveContract,
@@ -25,13 +26,14 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
   const { state, mutate } = useGame();
   const einkaeufer = hasEinkaeufer(state);
   const hasBranch = branchOpen(state);
+  const openSites = activeSites(state);
   // L3: für welchen Standort diese Bestellung gilt — jeder Standort hat sein
   // eigenes Wochen-Bestellfenster (der Lieferant liefert direkt dorthin).
   const [orderSite, setOrderSite] = useState<SiteId>('hq');
 
   // This week's already-placed order (auto by the Einkäufer or a manual order the
   // player made earlier this week). Present => show a summary + override.
-  const currentPoId = orderSite === 'sued' ? state.currentWeekPoIdSued : state.currentWeekPoId;
+  const currentPoId = state.currentWeekPoBySite?.[orderSite];
   const currentPo = state.purchaseOrders.find(
     (p) => p.id === currentPoId && p.status === 'pending',
   );
@@ -77,9 +79,13 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
       result = placeWeeklyOrder(s, items, orderSite);
     });
     if (result.ok) {
-      if (orderSite === 'hq' && hasBranch) {
-        // Nach der Nord-Bestellung direkt zum Süd-Fenster wechseln.
-        setOrderSite('sued');
+      // Direkt zum nächsten offenen Standort wechseln, der diese Woche noch keine
+      // Bestellung hat; sind alle versorgt, Fenster schließen.
+      const next = openSites.find(
+        (st) => st !== orderSite && state.currentWeekPoBySite?.[st] == null,
+      );
+      if (next) {
+        setOrderSite(next);
         setQty({});
         setEditing(false);
       } else onClose();
@@ -96,9 +102,9 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
       </p>
 
       {hasBranch && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
           <span className="sub">Bestellung für Standort:</span>
-          {(['hq', 'sued'] as const).map((st) => (
+          {openSites.map((st) => (
             <button
               key={st}
               className={`btn small${orderSite === st ? ' primary' : ' ghost'}`}
@@ -109,12 +115,11 @@ export function ProcurementModal({ onClose }: { onClose: () => void }) {
               }}
             >
               {SITE_META[st].emoji} {SITE_META[st].short}
+              {state.currentWeekPoBySite?.[st] != null && ' ✓'}
             </button>
           ))}
           <span className="sub" style={{ fontStyle: 'italic' }}>
-            {orderSite === 'sued'
-              ? 'Süd bekommt 🍷/🫒 exklusiv – Fisch nur per Transfer aus Nord.'
-              : 'Nord bekommt 🐟 exklusiv – Wein/Oliven nur per Transfer aus Süd.'}
+            Jeder Standort wird direkt beliefert; Regionalware (🐟 Nord, 🍷/🫒 Süd) nur per Transfer.
           </span>
         </div>
       )}

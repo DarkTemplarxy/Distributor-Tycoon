@@ -500,11 +500,10 @@ export interface GameState {
    * manual Monday order is awaiting the player (no Einkäufer) — the UI opens the
    * order screen and pauses until it's handled. Null when nothing is pending. */
   pendingOrderWeek: number | null;
-  /** Id of the purchase order placed for the current week (auto by the Einkäufer
-   * or manually), so it can be shown as "already ordered" and overridden. */
-  currentWeekPoId: string | null;
-  /** Wochen-PO des Standorts Süd (L3), analog zu currentWeekPoId. Optional. */
-  currentWeekPoIdSued?: string | null;
+  /** Id der diese Woche gesetzten Wochen-Bestellung JE STANDORT (auto durch den
+   * Einkäufer oder manuell) — zeigt „bereits bestellt" + Überschreiben. Jeder
+   * Standort hat sein eigenes Bestellfenster; am Montag-Rollover geleert. */
+  currentWeekPoBySite: Partial<Record<SiteId, string>>;
   /** Units demanded per product during the currently-running week (accumulates
    * as customer orders come in). Rolled into demandLog at the weekly rollover. */
   demandThisWeek: Partial<Record<ArticleId, number>>;

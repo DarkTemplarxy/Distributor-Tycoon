@@ -31,7 +31,7 @@ function tutorialGlowTarget(state: GameState): ModalId {
     if (!isInAssortment(state, 'fleisch')) return 'sortiment';
     const meatInq = state.inquiries.find((i) => i.id === TUTORIAL_MEAT_INQUIRY_ID);
     if (meatInq?.status === 'open') return 'inquiries';
-    if (meatInq && state.currentWeekPoId == null && state.pendingOrderWeek != null) return 'procurement';
+    if (meatInq && state.currentWeekPoBySite?.hq == null && state.pendingOrderWeek != null) return 'procurement';
   }
   return null;
 }

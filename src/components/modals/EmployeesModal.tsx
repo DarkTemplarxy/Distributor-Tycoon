@@ -14,6 +14,7 @@ import {
   WEEKS_PER_MONTH,
 } from '../../game/constants';
 import {
+  activeSites,
   branchOpen,
   buyerCapacity,
   currentMonthlyRent,
@@ -292,8 +293,8 @@ export function EmployeesModal({ onClose }: { onClose: () => void }) {
                 <div className="sub">Vorkasse {euro(upfront)}</div>
               </div>
               {role === 'lager' && hasBranch ? (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {(['hq', 'sued'] as const).map((st) => (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {activeSites(state).map((st) => (
                     <button
                       key={st}
                       className="btn primary small"

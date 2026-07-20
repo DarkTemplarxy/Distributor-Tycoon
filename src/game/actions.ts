@@ -139,7 +139,7 @@ export function placeWeeklyOrder(
   }
   // commitWeeklyOrder refunds this week's existing order first, so that amount is
   // available again toward the new one.
-  const currentId = site === 'sued' ? state.currentWeekPoIdSued : state.currentWeekPoId;
+  const currentId = state.currentWeekPoBySite[site];
   const current = state.purchaseOrders.find(
     (p) => p.id === currentId && p.status === 'pending',
   );
@@ -1078,7 +1078,9 @@ export function transferStock(
   toSite: SiteId,
   auto = false,
 ): ActionResult {
-  if (!branchOpen(state)) return { ok: false, message: 'Standort Süd ist noch nicht eröffnet.' };
+  const open = activeSites(state);
+  if (!open.includes(fromSite)) return { ok: false, message: `${SITE_META[fromSite].name} ist nicht eröffnet.` };
+  if (!open.includes(toSite)) return { ok: false, message: `${SITE_META[toSite].name} ist nicht eröffnet.` };
   if (fromSite === toSite) return { ok: false, message: 'Gleicher Standort.' };
   const product = getProduct(state, productId);
   const qty = Math.round(quantity);
