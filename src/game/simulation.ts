@@ -27,6 +27,7 @@ import {
   CUSTOMER_EMOJI,
   CUSTOMER_LEAD_WEEKS,
   CUSTOMER_NAME_POOL,
+  BACKLOG_CATCHUP_WEEKS,
   CUSTOMER_VOLATILITY,
   CUSTOMER_VOLUME_RANGE,
   DAYS_PER_WEEK,
@@ -1912,7 +1913,19 @@ export function orderOutlook(state: GameState, productId: ArticleId, site: SiteI
     )
     .reduce((s, o) => s + o.quantity, 0);
   const expiring = expiringWithinDays(product, state.totalDays, DAYS_PER_WEEK);
-  const deficit = Math.max(0, Math.round(backlog + fixDemand - stock - incoming + expiring));
+  // Rückstand (offene Aufträge) zuerst gegen das VERRECHNEN, was schon da oder im
+  // Zulauf ist. Der Rest wird NICHT jede Woche komplett neu gekauft: die letzte
+  // Bestellung für diesen Rückstand rollt bereits durchs Lager (im Wochentakt ist
+  // sie bis zum Bestellfenster geliefert, `incoming` also ≈0), und mehr als der
+  // Durchsatz verschickt, kann ohnehin nicht raus. Ein ungedeckelter Rückstand
+  // erzeugt sonst Monster-Bestellungen → Verderb + Kassen-Schock (Konkurs-Ursache).
+  // Deshalb den Nachhol-Anteil je Woche auf BACKLOG_CATCHUP_WEEKS × Wochenbedarf deckeln.
+  const covered = stock + incoming;
+  const uncoveredBacklog = Math.max(0, backlog - covered);
+  const backlogCatchup = Math.min(uncoveredBacklog, Math.ceil(fixDemand * BACKLOG_CATCHUP_WEEKS));
+  const coverAfterBacklog = Math.max(0, covered - backlog);
+  const demandNeed = Math.max(0, fixDemand + expiring - coverAfterBacklog);
+  const deficit = Math.max(0, Math.round(backlogCatchup + demandNeed));
   return { fixDemand, backlog, stock, incoming, expiring, deficit };
 }
 

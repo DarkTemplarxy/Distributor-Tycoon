@@ -1090,6 +1090,12 @@ export function volumeDiscount(qty: number): number {
   return 0;
 }
 
+/** Nachhol-Deckel für den Rückstand in der Bestellempfehlung: pro Woche wird höchstens
+ * so viel × Wochenbedarf zusätzlich bestellt, um offene Aufträge aufzuholen. Verhindert,
+ * dass ein gestauter Rückstand (der sich physisch nur mit Durchsatz-Tempo abarbeiten
+ * lässt) jede Woche als Monster-Bestellung neu eingekauft wird → Verderb + Kassen-Schock. */
+export const BACKLOG_CATCHUP_WEEKS = 1;
+
 /** A supply contract fixes today's price for this many weeks… */
 export const CONTRACT_WEEKS = 12;
 /** …at a small premium over the current spot price (the cost of the guarantee).
